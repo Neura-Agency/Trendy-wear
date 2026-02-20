@@ -595,11 +595,6 @@ export default function Home() {
             </div>
           </div>
           <div style={{ display: 'flex', gap: 12 }}>
-            {isSuperAdmin && (
-              <button className="btn btn-glass" style={{ padding: '0.75rem 1.5rem', borderRadius: 12, borderColor: 'var(--purple)', color: 'var(--purple)' }} onClick={() => setShowReport(true)}>
-                📊 Reports
-              </button>
-            )}
             <button className="btn btn-primary" style={{ padding: '0.75rem 1.5rem', borderRadius: 12 }} onClick={() => setShowSaleModal(true)}>
               + Add New Sale
             </button>

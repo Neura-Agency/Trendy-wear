@@ -1,0 +1,15 @@
+{
+  "/_app": "pages/_app.js",
+  "/_error": "pages/_error.js",
+  "/_document": "pages/_document.js",
+  "/": "pages/index.js",
+  "/inventory": "pages/inventory.js",
+  "/credentials": "pages/credentials.js",
+  "/api/orders": "pages/api/orders.js",
+  "/api/expenses": "pages/api/expenses.js",
+  "/api/storeInventory": "pages/api/storeInventory.js",
+  "/api/store": "pages/api/store.js",
+  "/api/clients": "pages/api/clients.js",
+  "/api/stream": "pages/api/stream.js",
+  "/api/purchases": "pages/api/purchases.js"
+}
