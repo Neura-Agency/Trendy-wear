@@ -94,11 +94,11 @@
       "id": "o_1771533096841_4yfm",
       "date": "2026-02-19T20:31:36.842Z",
       "includedInPayout": false,
-      "commissionPercent": 15,
+      "commissionPercent": 20,
       "costPrice": 700,
-      "commissionAmount": 210,
-      "adminTake": 1190,
-      "profit": 490
+      "commissionAmount": 280,
+      "adminTake": 1120,
+      "profit": 420
     },
     {
       "productName": "Sample T-Shirt",
@@ -123,8 +123,22 @@
       "productName": "Sample T-Shirt",
       "category": "Apparel",
       "brand": "SampleBrand",
-      "size": "M",
-      "color": "Blue",
+      "size": [
+        "M",
+        "L"
+      ],
+      "color": [
+        "blue",
+        "black"
+      ],
+      "otherVariants": {
+        "allotedStores": [
+          "Trendy Wear",
+          "Grenz Wear",
+          "Thrift Wear"
+        ],
+        "picture": "/images/size_L.webp"
+      },
       "batchNumber": "B-100",
       "costPrice": 700,
       "sellingPrice": 1500,
@@ -132,6 +146,34 @@
       "lowStockWarning": 5,
       "id": "p_2000000000000_x1",
       "date": "2026-02-19T10:00:00Z"
+    },
+    {
+      "productName": "Summer Breeze Tee",
+      "category": "T-shirt",
+      "brand": "Nike",
+      "costPrice": 1500,
+      "quantity": 10,
+      "batchNumber": "ITEM-5GLUNQ",
+      "size": [
+        "M",
+        "S",
+        "XS"
+      ],
+      "color": [
+        "green",
+        "red",
+        "orange"
+      ],
+      "otherVariants": {
+        "allotedStores": [
+          "Grenz Wear",
+          "Trendy Wear"
+        ],
+        "picture": "/images/size_L.webp"
+      },
+      "owner": "yahya",
+      "id": "p_1771672969375",
+      "date": "2026-02-21T11:22:49.375Z"
     }
   ],
   "inventory": [
@@ -139,12 +181,53 @@
       "productName": "Sample T-Shirt",
       "category": "Apparel",
       "brand": "SampleBrand",
-      "size": "M",
-      "color": "Blue",
+      "size": [
+        "M",
+        "L"
+      ],
+      "color": [
+        "blue",
+        "black"
+      ],
+      "otherVariants": {
+        "allotedStores": [
+          "Trendy Wear",
+          "Grenz Wear",
+          "Thrift Wear"
+        ],
+        "picture": "/images/size_L.webp"
+      },
       "batchNumber": "B-100",
       "costPrice": 700,
       "sellingPrice": 1500,
-      "quantityAvailable": 18,
+      "quantityAvailable": 21,
+      "lowStockWarning": 5
+    },
+    {
+      "productName": "Summer Breeze Tee",
+      "category": "T-shirt",
+      "brand": "Nike",
+      "size": [
+        "M",
+        "S",
+        "XS"
+      ],
+      "color": [
+        "green",
+        "red",
+        "orange"
+      ],
+      "otherVariants": {
+        "allotedStores": [
+          "Grenz Wear",
+          "Trendy Wear"
+        ],
+        "picture": "/images/size_L.webp"
+      },
+      "batchNumber": "ITEM-5GLUNQ",
+      "costPrice": 1500,
+      "sellingPrice": 0,
+      "quantityAvailable": 10,
       "lowStockWarning": 5
     }
   ],

@@ -1,0 +1,187 @@
+// Application types for Trendy Wear ERP
+
+export interface User {
+  username: string;
+  role: 'admin' | 'store';
+  scope?: 'all';
+  storeName?: string;
+  managedStores?: string[];
+}
+
+export interface Store {
+  commission: number;
+  paidAmount: number;
+  paid: boolean;
+  createdAt: string;
+  paidAt?: string;
+}
+
+export interface Order {
+  id: string;
+  productName: string;
+  quantity: number;
+  sellingPrice: number;
+  shipmentCost: number;
+  storeName: string;
+  clientName: string;
+  type: string;
+  date: string;
+  includedInPayout: boolean;
+  commissionPercent: number;
+  costPrice: number;
+  commissionAmount: number;
+  adminTake: number;
+  profit: number;
+}
+
+export interface Purchase {
+  id: string;
+  productName: string;
+  category: string;
+  brand: string;
+  size: string | string[];
+  color: string | string[];
+  otherVariants?: any;
+  batchNumber: string;
+  costPrice: number;
+  sellingPrice: number;
+  quantity: number;
+  lowStockWarning: number;
+  date: string;
+  owner?: string;
+}
+
+export interface InventoryItem {
+  productName: string;
+  category: string;
+  brand: string;
+  size: string | string[];
+  color: string | string[];
+  otherVariants?: any;
+  batchNumber: string;
+  costPrice: number;
+  sellingPrice: number;
+  quantityAvailable: number;
+  lowStockWarning: number;
+  owner?: string;
+}
+
+export interface StoreInventoryItem {
+  productName: string;
+  ownerSupplyPrice: number;
+  commissionPercent: number;
+  storeSellingPrice: number;
+  quantityAssigned: number;
+  quantityRemaining: number;
+  owner?: string;
+}
+
+export interface Expense {
+  id: string;
+  title: string;
+  amount: number;
+  date: string;
+  category?: string;
+}
+
+export interface Client {
+  id: string;
+  name: string;
+  phone: string;
+  orders?: Order[];
+  paymentsReceived?: number;
+}
+
+export interface Account {
+  password: string;
+  role: 'admin' | 'store';
+  scope?: 'all';
+  storeName?: string;
+  managedStores?: string[];
+}
+
+export interface AppData {
+  accounts: Record<string, Account>;
+  stores: Record<string, Store>;
+  orders: Order[];
+  purchases: Purchase[];
+  inventory: InventoryItem[];
+  expenses: Expense[];
+  clients: Client[];
+  storeInventory: Record<string, Record<string, StoreInventoryItem>>;
+  settings: {
+    defaultCommission: number;
+    lowStockThreshold: number;
+  };
+}
+
+// Component prop types
+export interface LayoutProps {
+  children: React.ReactNode;
+  user: User;
+  onLogout: () => void;
+}
+
+export interface LoginProps {
+  onLogin: (user: User) => void;
+}
+
+export interface PageProps {
+  user?: User;
+  onLogin?: (user: User) => void;
+  onLogout?: () => void;
+}
+
+export interface BadgeProps {
+  type?: 'green' | 'blue' | 'red' | 'orange' | 'purple' | 'gray';
+  style?: React.CSSProperties;
+  children: React.ReactNode;
+}
+
+export interface SectionCardProps {
+  title: string;
+  icon?: string;
+  action?: React.ReactNode;
+  children: React.ReactNode;
+}
+
+export interface ModalProps {
+  open?: boolean;
+  onClose: () => void;
+}
+
+export interface SaleModalProps extends ModalProps {
+  onSave?: (order: Partial<Order>) => void;
+  stores?: Record<string, Store>;
+  inventory?: InventoryItem[];
+  user?: User;
+  isAdmin?: boolean;
+  isSuperAdmin?: boolean;
+}
+
+export interface CreateStoreModalProps extends ModalProps {
+  onSave: (store: { name: string; username: string; password: string; commission: number }) => void;
+}
+
+export interface ReportModalProps extends ModalProps {
+  data: AppData;
+}
+
+export interface AddInventoryModalProps extends ModalProps {
+  onSave: (inventory: any) => void;
+  stores: string[];
+}
+
+export interface AllotToStoreModalProps extends ModalProps {
+  stores: string[];
+  inventory: InventoryItem[];
+  allotedQtyByProduct: Record<string, number>;
+  storeCommissionByName: Record<string, number>;
+  onSave: (payload: {
+    storeName: string;
+    productName: string;
+    quantity: number;
+    ownerSupplyPrice: number;
+    commissionPercent: number;
+  }) => void;
+}
