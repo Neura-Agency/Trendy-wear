@@ -2,7 +2,6 @@
 // Run this once to migrate your existing data
 
 import fs from 'fs'
-import bcrypt from 'bcryptjs'
 import { supabaseAdmin, TABLES } from '../lib/supabase'
 
 // Read current data.json
@@ -16,20 +15,18 @@ async function migrateData() {
     console.log('📝 Migrating settings...')
     const settingsData = [
       {
-        setting_key: 'defaultCommission',
-        setting_value: currentData.settings.defaultCommission.toString(),
-        data_type: 'number'
+        key: 'defaultCommission',
+        value: currentData.settings.defaultCommission
       },
       {
-        setting_key: 'lowStockThreshold', 
-        setting_value: currentData.settings.lowStockThreshold.toString(),
-        data_type: 'number'
+        key: 'lowStockThreshold',
+        value: currentData.settings.lowStockThreshold
       }
     ]
     
     const { error: settingsError } = await supabaseAdmin
       .from(TABLES.SETTINGS)
-      .upsert(settingsData, { onConflict: 'setting_key' })
+      .upsert(settingsData, { onConflict: 'key' })
     
     if (settingsError) throw settingsError
 
@@ -51,36 +48,12 @@ async function migrateData() {
 
     if (storesError) throw storesError
 
-    // 3. Migrate Accounts (with password hashing)
-    console.log('👤 Migrating accounts...')
-    const accountsData = await Promise.all(
-      Object.entries(currentData.accounts).map(async ([username, account]: [string, any]) => {
-        const hashedPassword = await bcrypt.hash(account.password, 10)
-        
-        return {
-          username,
-          password_hash: hashedPassword,
-          role: account.role,
-          scope: account.scope || null,
-          store_name: account.storeName || null,
-          managed_stores: account.managedStores || []
-        }
-      })
-    )
-
-    const { error: accountsError } = await supabaseAdmin
-      .from(TABLES.ACCOUNTS)
-      .upsert(accountsData, { onConflict: 'username' })
-
-    if (accountsError) throw accountsError
-
-    // 4. Migrate Clients
+    // 3. Migrate Clients
     console.log('👥 Migrating clients...')
     if (currentData.clients && currentData.clients.length > 0) {
       const clientsData = currentData.clients.map((client: any) => ({
         name: client.name,
         phone: client.phone,
-        email: client.email || null,
         payments_received: client.paymentsReceived || 0
       }))
 
@@ -91,7 +64,7 @@ async function migrateData() {
       if (clientsError) throw clientsError
     }
 
-    // 5. Migrate Inventory
+    // 4. Migrate Inventory
     console.log('📦 Migrating inventory...')
     const inventoryData = currentData.inventory.map((item: any) => ({
       product_name: item.productName,
@@ -104,8 +77,7 @@ async function migrateData() {
       cost_price: item.costPrice,
       selling_price: item.sellingPrice,
       quantity_available: item.quantityAvailable,
-      low_stock_warning: item.lowStockWarning || 5,
-      owner: item.owner || null
+      low_stock_warning: item.lowStockWarning || 5
     }))
 
     const { data: insertedInventory, error: inventoryError } = await supabaseAdmin
@@ -115,7 +87,7 @@ async function migrateData() {
 
     if (inventoryError) throw inventoryError
 
-    // 6. Migrate Purchases
+    // 5. Migrate Purchases
     console.log('💰 Migrating purchases...')
     const purchasesData = currentData.purchases.map((purchase: any, index: number) => {
       // Find corresponding inventory item
@@ -124,6 +96,7 @@ async function migrateData() {
       )
       
       return {
+        inventory_id: inventoryItem?.id || null,
         product_name: purchase.productName,
         category: purchase.category,
         brand: purchase.brand,
@@ -135,9 +108,7 @@ async function migrateData() {
         selling_price: purchase.sellingPrice,
         quantity: purchase.quantity,
         low_stock_warning: purchase.lowStockWarning || 5,
-        owner: purchase.owner || null,
-        date: purchase.date || new Date().toISOString(),
-        inventory_id: inventoryItem?.id || null
+        purchased_at: purchase.date || new Date().toISOString()
       }
     })
 
@@ -147,35 +118,41 @@ async function migrateData() {
 
     if (purchasesError) throw purchasesError
 
-    // 7. Migrate Orders
+    // 6. Migrate Orders
     console.log('📋 Migrating orders...')
-    const ordersData = currentData.orders.map((order: any) => {
+    const ordersData = currentData.orders
+      .map((order: any) => {
       // Find corresponding store and inventory
       const store = insertedStores?.find((s: any) => s.name === order.storeName)
       const inventoryItem = insertedInventory?.find((item: any) => 
         item.product_name === order.productName
       )
+
+      if (!store?.id) {
+        console.warn(`⚠️  Skipping order ${order.id}: store not found (${order.storeName})`)
+        return null
+      }
       
       return {
-        order_id: order.id,
+        order_code: order.id,
+        store_id: store?.id,
         product_name: order.productName,
         quantity: order.quantity,
         selling_price: order.sellingPrice,
         shipment_cost: order.shipmentCost || 0,
-        store_name: order.storeName,
         client_name: order.clientName,
         order_type: order.type,
-        date: order.date,
+        occurred_at: order.date,
         included_in_payout: order.includedInPayout || false,
         commission_percent: order.commissionPercent,
         cost_price: order.costPrice,
         commission_amount: order.commissionAmount,
         admin_take: order.adminTake,
         profit: order.profit,
-        store_id: store?.id || null,
         inventory_id: inventoryItem?.id || null
       }
     })
+      .filter(Boolean)
 
     const { error: ordersError } = await supabaseAdmin
       .from(TABLES.ORDERS)
@@ -183,7 +160,7 @@ async function migrateData() {
 
     if (ordersError) throw ordersError
 
-    // 8. Migrate Store Inventory
+    // 7. Migrate Store Inventory
     console.log('🏪📦 Migrating store inventory...')
     const storeInventoryData = []
     
@@ -203,16 +180,19 @@ async function migrateData() {
           inv.product_name === productName
         )
         
+        if (!store?.id) {
+          console.warn(`⚠️  Skipping store inventory for ${storeName}: store not found`)
+          continue
+        }
+
         storeInventoryData.push({
-          store_name: storeName,
+          store_id: store.id,
           product_name: productName,
           owner_supply_price: storeItem.ownerSupplyPrice,
           commission_percent: storeItem.commissionPercent,
           store_selling_price: storeItem.storeSellingPrice,
           quantity_assigned: storeItem.quantityAssigned,
           quantity_remaining: storeItem.quantityRemaining,
-          owner: storeItem.owner || null,
-          store_id: store?.id || null,
           inventory_id: inventoryItem?.id || null
         })
       }
@@ -226,16 +206,15 @@ async function migrateData() {
       if (storeInventoryError) throw storeInventoryError
     }
 
-    // 9. Migrate Expenses
+    // 8. Migrate Expenses
     console.log('💸 Migrating expenses...')
     if (currentData.expenses && currentData.expenses.length > 0) {
       const expensesData = currentData.expenses.map((expense: any) => ({
-        expense_id: expense.id,
+        expense_code: expense.id,
         title: expense.title,
         amount: expense.amount,
-        date: expense.date,
+        occurred_at: expense.date,
         category: expense.category || null,
-        description: expense.description || null
       }))
 
       const { error: expensesError } = await supabaseAdmin

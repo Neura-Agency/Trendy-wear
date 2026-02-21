@@ -21,7 +21,8 @@ export const supabaseAdmin = createClient(
 
 // Database table names
 export const TABLES = {
-  ACCOUNTS: 'accounts',
+  APP_USERS: 'app_users',
+  APP_USER_MANAGED_STORES: 'app_user_managed_stores',
   STORES: 'stores', 
   INVENTORY: 'inventory',
   PURCHASES: 'purchases',

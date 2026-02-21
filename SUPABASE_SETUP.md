@@ -17,8 +17,7 @@
 ## 3. Install Dependencies
 
 ```bash
-npm install @supabase/supabase-js bcryptjs
-npm install -D @types/bcryptjs
+npm install @supabase/supabase-js
 ```
 
 ## 4. Environment Variables
@@ -45,11 +44,17 @@ npx ts-node scripts/migrate-to-supabase.ts
 
 ## 6. Update API Routes
 
-Replace your existing API routes with Supabase versions:
+This repo is set up for **Supabase Auth (Option A)**.
 
-- `pages/api/auth.ts` → use `pages/api/auth-supabase.ts`
-- Update other API routes to use Supabase client
-- Remove dependency on `lib/dataStore.ts`
+- Authentication should be done with Supabase Auth (typically client-side via `supabase.auth.signInWithPassword(...)`).
+- App permissions come from `public.app_users` (role/store) linked to `auth.users(id)`.
+
+Next steps (recommended):
+
+- Keep `pages/api/auth.ts` as-is until you switch the UI login to Supabase Auth.
+- Create users in Supabase Auth.
+- Insert matching rows into `public.app_users`.
+- Then migrate each `pages/api/*` route from `lib/dataStore.ts` to Supabase.
 
 ## 7. Vercel Environment Variables
 
@@ -80,7 +85,7 @@ Your app should now work on Vercel with persistent data storage!
 
 ## Troubleshooting
 
-- **Login issues**: Check password hashing in migration script
+- **Login issues**: Supabase Auth uses email+password; if you want “username login”, you can map usernames to emails (e.g. `username@yourdomain`) consistently.
 - **API errors**: Verify environment variables are set correctly
 - **RLS policies**: Customize Row Level Security based on your needs
 - **Performance**: Add indexes for frequently queried columns
