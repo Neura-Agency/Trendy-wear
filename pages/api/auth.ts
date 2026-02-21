@@ -1,69 +1,43 @@
-import type { NextApiRequest, NextApiResponse } from 'next';
-import datastore from '../../lib/dataStore';
+import type { NextApiRequest, NextApiResponse } from 'next'
+import bcrypt from 'bcryptjs'
+import { supabaseAdmin, TABLES } from '../../lib/supabase'
+import { createSession } from '../../lib/api/session'
 
-export default function handler(req: NextApiRequest, res: NextApiResponse) {
-  if (req.method !== 'POST') return res.status(405).end();
-  
-  const { username, password } = req.body;
-  
-  // Use environment variables on Vercel, fallback to datastore locally
-  if (process.env.VERCEL || process.env.NODE_ENV === 'production') {
-    // Vercel-compatible authentication using environment variables
-    const accounts = {
-      'yahya': {
-        password: process.env.YAHYA_PASSWORD || 'yahya123',
-        role: 'admin',
-        scope: 'all'
-      },
-      'bilal': {
-        password: process.env.BILAL_PASSWORD || 'bilal123', 
-        role: 'admin',
-        managedStores: ['Vinted']
-      },
-      'trendy_shop': {
-        password: process.env.TRENDY_PASSWORD || 'shop123',
-        role: 'store',
-        storeName: 'Trendy Wear'
-      },
-      'grenz_shop': {
-        password: process.env.GRENZ_PASSWORD || 'shop123',
-        role: 'store', 
-        storeName: 'Grenz Wear'
-      },
-      'thrift_shop': {
-        password: process.env.THRIFT_PASSWORD || 'shop123',
-        role: 'store',
-        storeName: 'Thrift Wear'
-      },
-      'preloved_shop': {
-        password: process.env.PRELOVED_PASSWORD || 'shop123',
-        role: 'store',
-        storeName: 'Preloved Wear'
-      }
-    };
+export default async function handler(req: NextApiRequest, res: NextApiResponse) {
+  try {
+    if (req.method !== 'POST') return res.status(405).json({ error: 'Method not allowed' })
 
-    const account = accounts[username];
-    if (!account || account.password !== password) {
-      return res.status(401).json({ error: 'Invalid credentials' });
+    const { username, password } = (req.body ?? {}) as { username?: string; password?: string }
+    const u = String(username ?? '').trim()
+    const p = String(password ?? '')
+    if (!u || !p) return res.status(400).json({ error: 'username and password are required' })
+
+    const { data: account, error } = await supabaseAdmin
+      .from(TABLES.ACCOUNTS)
+      .select('id, username, password_hash, role, scope, store_id, managed_stores, is_active, stores(name)')
+      .eq('username', u)
+      .maybeSingle()
+
+    if (error) throw error
+    if (!account || account.is_active === false) {
+      return res.status(401).json({ error: 'Invalid credentials' })
     }
 
-    // Return user object
-    const user = {
-      role: account.role,
-      storeName: account.storeName || null,
-      username,
-      scope: account.scope || null,
-      managedStores: account.managedStores || []
-    };
+    const ok = await bcrypt.compare(p, account.password_hash)
+    if (!ok) return res.status(401).json({ error: 'Invalid credentials' })
 
-    return res.json(user);
+    await createSession(res, req, account.id)
+
+    return res.json({
+      role: account.role,
+      storeName: (account as any).stores?.name ?? null,
+      username: account.username,
+      scope: account.scope ?? null,
+      managedStores: (account.managed_stores as string[]) ?? []
+    })
+  } catch (e: any) {
+    console.error('auth api error:', e)
+    return res.status(500).json({ error: e?.message || 'Internal server error' })
   }
-  
-  // Local development - use datastore
-  const user = datastore.authenticate(username, password);
-  
-  if (!user) return res.status(401).json({ error: 'Invalid credentials' });
-  
-  res.json(user);
 }
 

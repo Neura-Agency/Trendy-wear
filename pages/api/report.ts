@@ -1,27 +1,70 @@
 import type { NextApiRequest, NextApiResponse } from 'next';
 import PDFDocument from 'pdfkit';
+import { supabaseAdmin, TABLES } from '../../lib/supabase'
+import { storeRowsToRecord } from '../../lib/api/supabaseHelpers'
+import { requireAdmin } from '../../lib/api/session'
 
-import datastore from '../../lib/dataStore';
+export default async function handler(req: NextApiRequest, res: NextApiResponse) {
+  const session = await requireAdmin(req, res)
+  if (!session) return
 
-export default function handler(req: NextApiRequest, res: NextApiResponse) {
   const now = new Date();
 
   // If POST, accept orders/expenses/stores from body (filtered report request)
-  let orders = [];
-  let expenses = [];
-  let stores = {};
+  let orders: any[] = [];
+  let expenses: any[] = [];
+  let stores: Record<string, any> = {};
   if (req.method === 'POST') {
     const body = req.body || {};
     orders = body.orders || [];
     expenses = body.expenses || [];
     stores = body.stores || {};
   } else if (req.method === 'GET') {
-    const data = datastore.getAll();
-    orders = data.orders || [];
-    expenses = data.expenses || [];
-    stores = data.stores || {};
+    try {
+      const [{ data: o, error: oErr }, { data: e, error: eErr }, { data: s, error: sErr }] = await Promise.all([
+        supabaseAdmin.from(TABLES.ORDERS).select('*, stores(name)').order('occurred_at', { ascending: true }),
+        supabaseAdmin.from(TABLES.EXPENSES).select('*').order('occurred_at', { ascending: true }),
+        supabaseAdmin.from(TABLES.STORES).select('id,name,commission,paid_amount,paid,created_at,paid_at').order('created_at', { ascending: true })
+      ])
+
+      if (oErr) throw oErr
+      if (eErr) throw eErr
+      if (sErr) throw sErr
+
+      orders = (o ?? []).map((r: any) => ({
+        id: r.id,
+        productName: r.product_name,
+        quantity: Number(r.quantity) || 0,
+        sellingPrice: Number(r.selling_price) || 0,
+        shipmentCost: Number(r.shipment_cost) || 0,
+        storeName: r.stores?.name ?? 'Direct',
+        clientName: r.client_name ?? '',
+        type: r.order_type ?? 'Sale',
+        date: r.occurred_at,
+        includedInPayout: r.included_in_payout !== false,
+        commissionPercent: Number(r.commission_percent) || 0,
+        costPrice: Number(r.cost_price) || 0,
+        commissionAmount: Number(r.commission_amount) || 0,
+        adminTake: Number(r.admin_take) || 0,
+        profit: Number(r.profit) || 0
+      }))
+
+      expenses = (e ?? []).map((r: any) => ({
+        id: r.expense_code ?? r.id,
+        title: r.title,
+        description: r.title,
+        amount: Number(r.amount) || 0,
+        date: r.occurred_at,
+        category: r.category
+      }))
+
+      stores = storeRowsToRecord((s ?? []) as any)
+    } catch (err: any) {
+      console.error('report api error:', err)
+      return res.status(500).json({ error: err?.message || 'Internal server error' })
+    }
   } else {
-    return res.status(405).end();
+    return res.status(405).json({ error: 'Method not allowed' })
   }
 
   const totalSales = orders.reduce((s, o) => s + (o.sellingPrice * o.quantity || 0), 0);

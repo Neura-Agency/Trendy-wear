@@ -18,12 +18,33 @@ export default function App({ Component, pageProps }: ExtendedAppProps) {
 
   useEffect(() => {
     setHydrated(true);
+
+    // Fast path: restore from localStorage to avoid a blank screen.
     try {
       const stored = localStorage.getItem("user");
       if (stored) setUser(JSON.parse(stored));
     } catch {
       // ignore bad localStorage
     }
+
+    // Source of truth: server session cookie.
+    ;(async () => {
+      try {
+        const res = await fetch('/api/me')
+        if (!res.ok) {
+          setUser(null)
+          try { localStorage.removeItem('user') } catch {}
+          return
+        }
+        const u = await res.json()
+        setUser(u)
+        try {
+          localStorage.setItem('user', JSON.stringify(u))
+        } catch {}
+      } catch {
+        // network errors: keep localStorage user if present
+      }
+    })()
   }, []);
 
   const onLogin = useCallback((u: User) => {
@@ -36,6 +57,9 @@ export default function App({ Component, pageProps }: ExtendedAppProps) {
   }, []);
 
   const onLogout = useCallback(() => {
+    // Best-effort server logout (HttpOnly cookie session).
+    fetch('/api/logout', { method: 'POST' }).catch(() => {})
+
     setUser(null);
     try {
       localStorage.removeItem("user");

@@ -70,6 +70,48 @@ create table if not exists public.app_user_managed_stores (
 );
 
 -- ===================================================================
+-- ACCOUNTS + SESSIONS (Custom username/password auth - Option C)
+-- ===================================================================
+-- This is a simple alternative to Supabase Auth.
+-- Passwords must be stored as bcrypt hashes (never plaintext).
+
+create table if not exists public.accounts (
+  id uuid primary key default gen_random_uuid(),
+  username text not null unique,
+  password_hash text not null,
+  role public.user_role not null,
+  scope text,
+  store_id uuid references public.stores(id) on delete set null,
+  managed_stores text[] not null default '{}'::text[],
+  is_active boolean not null default true,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now(),
+  constraint accounts_scope_check check (scope is null or scope = 'all')
+);
+
+create trigger trg_accounts_updated_at
+before update on public.accounts
+for each row execute function public.set_updated_at();
+
+create table if not exists public.sessions (
+  id uuid primary key default gen_random_uuid(),
+  account_id uuid not null references public.accounts(id) on delete cascade,
+  token_hash text not null unique,
+  created_at timestamptz not null default now(),
+  expires_at timestamptz not null,
+  revoked_at timestamptz,
+  user_agent text,
+  ip text
+);
+
+create index if not exists idx_sessions_account_id on public.sessions(account_id);
+create index if not exists idx_sessions_expires_at on public.sessions(expires_at);
+
+alter table public.accounts enable row level security;
+alter table public.sessions enable row level security;
+-- Intentionally no RLS policies: access only from server using service role.
+
+-- ===================================================================
 -- CLIENTS
 -- ===================================================================
 create table if not exists public.clients (
@@ -101,10 +143,15 @@ create table if not exists public.inventory (
   selling_price numeric(12,2) not null default 0.00,
   quantity_available int not null default 0,
   low_stock_warning int not null default 5,
+  -- Legacy field used by current UI filters (username)
+  owner text,
   owner_user_id uuid references public.app_users(id) on delete set null,
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now()
 );
+
+alter table public.inventory
+  add column if not exists owner text;
 
 create index if not exists idx_inventory_product_name on public.inventory(product_name);
 create index if not exists idx_inventory_owner_user_id on public.inventory(owner_user_id);
@@ -130,10 +177,15 @@ create table if not exists public.purchases (
   selling_price numeric(12,2) not null default 0.00,
   quantity int not null,
   low_stock_warning int not null default 5,
+  -- Legacy field used by current UI filters (username)
+  owner text,
   owner_user_id uuid references public.app_users(id) on delete set null,
   purchased_at timestamptz not null default now(),
   created_at timestamptz not null default now()
 );
+
+alter table public.purchases
+  add column if not exists owner text;
 
 create index if not exists idx_purchases_inventory_id on public.purchases(inventory_id);
 create index if not exists idx_purchases_purchased_at on public.purchases(purchased_at);
@@ -191,11 +243,16 @@ create table if not exists public.store_inventory (
   store_selling_price numeric(12,2) not null default 0.00,
   quantity_assigned int not null default 0,
   quantity_remaining int not null default 0,
+  -- Legacy field used by current UI filters (username)
+  owner text,
   owner_user_id uuid references public.app_users(id) on delete set null,
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now(),
   constraint uq_store_inventory unique (store_id, product_name)
 );
+
+alter table public.store_inventory
+  add column if not exists owner text;
 
 create index if not exists idx_store_inventory_store_id on public.store_inventory(store_id);
 create index if not exists idx_store_inventory_inventory_id on public.store_inventory(inventory_id);

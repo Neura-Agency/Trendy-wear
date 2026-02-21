@@ -23,6 +23,8 @@ export const supabaseAdmin = createClient(
 export const TABLES = {
   APP_USERS: 'app_users',
   APP_USER_MANAGED_STORES: 'app_user_managed_stores',
+  ACCOUNTS: 'accounts',
+  SESSIONS: 'sessions',
   STORES: 'stores', 
   INVENTORY: 'inventory',
   PURCHASES: 'purchases',
