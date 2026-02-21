@@ -1,11 +1,12 @@
 /** @type {import('next').NextConfig} */
+const path = require('path');
+
 const nextConfig = {
   reactStrictMode: true,
-  experimental: {
-    serverComponentsExternalPackages: ['@supabase/supabase-js'],
-  },
-  // Fix for multiple lockfiles warning
-  outputFileTracingRoot: '.',
+  // Updated configuration for Next.js 15.x
+  serverExternalPackages: ['@supabase/supabase-js', 'bcryptjs'],
+  // Fix for multiple lockfiles warning  
+  outputFileTracingRoot: path.join(__dirname),
 };
 
 module.exports = nextConfig;
