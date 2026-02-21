@@ -7,6 +7,10 @@ node_modules/
 /.next/
 /out/
 
+# environment variables
+.env*
+!.env.example
+
 # misc
 .DS_Store
 *.pem

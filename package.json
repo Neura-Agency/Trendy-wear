@@ -5,9 +5,13 @@
   "scripts": {
     "dev": "next dev -p 3000",
     "build": "next build",
-    "start": "next start -p 3000"
+    "start": "next start -p 3000",
+    "migrate": "npx ts-node scripts/migrate-to-supabase.ts",
+    "migrate:dev": "npm run migrate && npm run dev"
   },
   "dependencies": {
+    "@supabase/supabase-js": "^2.97.0",
+    "bcryptjs": "^3.0.3",
     "cors": "2.8.5",
     "next": "15.5.12",
     "pdfkit": "0.16.0",
@@ -15,6 +19,7 @@
     "react-dom": "18.2.0"
   },
   "devDependencies": {
+    "@types/bcryptjs": "^2.4.6",
     "@types/node": "^25.3.0",
     "@types/react": "^19.2.14",
     "@types/react-dom": "^19.2.3",
