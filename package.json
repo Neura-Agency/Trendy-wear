@@ -3,9 +3,9 @@
   "version": "0.1.0",
   "private": true,
   "scripts": {
-    "dev": "next dev -p 3000",
+    "dev": "next dev",
     "build": "next build",
-    "start": "next start -p 3000",
+    "start": "next start",
     "migrate": "npx ts-node scripts/migrate-to-supabase.ts",
     "create-account": "npx ts-node scripts/create-account.ts",
     "migrate:dev": "npm run migrate && npm run dev"
@@ -24,6 +24,7 @@
     "@types/node": "^25.3.0",
     "@types/react": "^19.2.14",
     "@types/react-dom": "^19.2.3",
+    "dotenv": "^17.3.1",
     "typescript": "^5.9.3"
   }
 }
