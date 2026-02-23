@@ -1,79 +1,183 @@
-import type { NextApiRequest, NextApiResponse } from 'next';
+import { NextApiRequest, NextApiResponse } from 'next'
 import { supabaseAdmin, TABLES } from '../../lib/supabase'
-import { serverEvents } from '../../lib/serverEvents'
-import { requireAdmin } from '../../lib/api/session'
+import { requireSession, toUserPayload } from '../../lib/api/session'
 
-const mapInventoryRow = (r: any) => ({
-  productName: r.product_name,
-  category: r.category,
-  brand: r.brand,
-  size: Array.isArray(r.size_options) ? r.size_options : (r.size_options ? [r.size_options] : []),
-  color: Array.isArray(r.color_options) ? r.color_options : (r.color_options ? [r.color_options] : []),
-  otherVariants: r.other_variants ?? {},
-  batchNumber: r.batch_number,
-  costPrice: Number(r.cost_price) || 0,
-  sellingPrice: Number(r.selling_price) || 0,
-  quantityAvailable: Number(r.quantity_available) || 0,
-  lowStockWarning: Number(r.low_stock_warning) || 5,
-  owner: r.owner ?? undefined
-})
+export const config = {
+  api: {
+    bodyParser: {
+      sizeLimit: '10mb'
+    }
+  }
+}
+
+const PRODUCT_IMAGES_BUCKET = process.env.SUPABASE_PRODUCT_IMAGES_BUCKET || 'Trendy Wear'
 
 export default async function handler(req: NextApiRequest, res: NextApiResponse) {
   try {
-    const session = await requireAdmin(req, res)
+    const session = await requireSession(req, res)
     if (!session) return
+    const user = toUserPayload(session)
 
-    if (req.method === 'GET') {
-      const { data, error } = await supabaseAdmin
-        .from(TABLES.INVENTORY)
-        .select('*')
-        .order('created_at', { ascending: true })
-      if (error) throw error
-      return res.json({ inventory: (data ?? []).map(mapInventoryRow) })
-    }
+    if (req.method === 'POST') {
+      const {
+        itemId,
+        quantity,
+        pricePerPiece,
+        picture,
+        productId,
+        newProduct
+      } = req.body
 
-    if (req.method === 'PUT') {
-      const { productName, batchNumber, ...fields } = req.body || {}
-      if (!productName || !batchNumber) {
-        return res.status(400).json({ error: 'productName and batchNumber are required.' })
+      let finalProductId = productId
+      let productImageUrl = null
+
+      // Handle image upload if picture exists
+      if (picture && picture.startsWith('data:image')) {
+        try {
+          // Extract base64 data
+          const base64Data = picture.split(',')[1]
+          const mimeType = picture.split(';')[0].split(':')[1]
+          const fileExt = mimeType.split('/')[1]
+          
+          // Convert base64 to buffer
+          const buffer = Buffer.from(base64Data, 'base64')
+          
+          // Generate unique filename
+          const fileName = `${Date.now()}-${Math.random().toString(36).substr(2, 9)}.${fileExt}`
+          
+          // Upload to Supabase storage bucket "Trendy Wear"
+          const { data: uploadData, error: uploadError } = await supabaseAdmin.storage
+            .from(PRODUCT_IMAGES_BUCKET)
+            .upload(fileName, buffer, {
+              contentType: mimeType,
+              upsert: false
+            })
+
+          if (uploadError) {
+            console.error('Upload error:', uploadError)
+            return res.status(500).json({ error: 'Failed to upload image' })
+          }
+
+          // Get public URL
+          const { data: urlData } = supabaseAdmin.storage
+            .from(PRODUCT_IMAGES_BUCKET)
+            .getPublicUrl(fileName)
+          
+          productImageUrl = urlData.publicUrl
+        } catch (err) {
+          console.error('Image processing error:', err)
+          return res.status(500).json({ error: 'Failed to process image' })
+        }
       }
 
-      const { data: inv, error: getErr } = await supabaseAdmin
-        .from(TABLES.INVENTORY)
-        .select('*')
-        .eq('batch_number', batchNumber)
-        .maybeSingle()
-      if (getErr) throw getErr
-      if (!inv) return res.status(404).json({ error: 'Item not found' })
+      // If creating a new product
+      if (newProduct) {
+        const { data: product, error: productError } = await supabaseAdmin
+          .from(TABLES.PRODUCTS)
+          .insert({
+            product_name: newProduct.productName,
+            brand_name: newProduct.brandName || null,
+            product_type: newProduct.productType,
+            price_per_piece: pricePerPiece,
+            colors: newProduct.colors || [],
+            sizes: newProduct.sizes || [],
+            product_image: productImageUrl
+          })
+          .select()
+          .single()
 
-      const patch: any = {}
-      if (fields.category !== undefined) patch.category = fields.category
-      if (fields.brand !== undefined) patch.brand = fields.brand
-      if (fields.costPrice !== undefined) patch.cost_price = Number(fields.costPrice) || 0
-      if (fields.sellingPrice !== undefined) patch.selling_price = Number(fields.sellingPrice) || 0
-      if (fields.quantityAvailable !== undefined) patch.quantity_available = Math.max(0, parseInt(fields.quantityAvailable, 10) || 0)
-      if (fields.lowStockWarning !== undefined) patch.low_stock_warning = Number(fields.lowStockWarning) || 5
-      if (fields.otherVariants !== undefined) patch.other_variants = fields.otherVariants
-      if (fields.size !== undefined) patch.size_options = Array.isArray(fields.size) ? fields.size : (fields.size ? [fields.size] : [])
-      if (fields.color !== undefined) patch.color_options = Array.isArray(fields.color) ? fields.color : (fields.color ? [fields.color] : [])
-      if (fields.owner !== undefined) patch.owner = fields.owner
+        if (productError) {
+          console.error('Product creation error:', productError)
+          return res.status(500).json({ error: 'Failed to create product' })
+        }
 
-      const { data: updated, error: updErr } = await supabaseAdmin
+        finalProductId = product.id
+      } else if (productImageUrl && finalProductId) {
+        // Update existing product with new image
+        await supabaseAdmin
+          .from(TABLES.PRODUCTS)
+          .update({ product_image: productImageUrl })
+          .eq('id', finalProductId)
+      }
+
+      // Insert into inventory
+      const { data: inventoryItem, error: inventoryError } = await supabaseAdmin
         .from(TABLES.INVENTORY)
-        .update(patch)
-        .eq('id', inv.id)
-        .select('*')
+        .insert({
+          product_id: finalProductId,
+          batch_number: itemId,
+          cost_price: pricePerPiece,
+          selling_price: 0, // Default, can be set later
+          quantity_available: quantity,
+          owner: user.username,
+          low_stock_warning: 5
+        })
+        .select()
         .single()
-      if (updErr) throw updErr
 
-      serverEvents.emit('change', { ts: Date.now(), type: 'inventory' })
-      return res.json(mapInventoryRow(updated))
+      if (inventoryError) {
+        console.error('Inventory creation error:', inventoryError)
+        return res.status(500).json({ error: 'Failed to create inventory item' })
+      }
+
+      return res.json({
+        success: true,
+        inventory: inventoryItem,
+        productId: finalProductId,
+        imageUrl: productImageUrl
+      })
+    }
+
+    if (req.method === 'GET') {
+      // Fetch inventory items
+      const { data: inventory, error } = await supabaseAdmin
+        .from(TABLES.INVENTORY)
+        .select(`
+          *,
+          products:product_id (
+            id,
+            product_name,
+            brand_name,
+            product_type,
+            product_image,
+            colors,
+            sizes
+          )
+        `)
+        .order('created_at', { ascending: false })
+
+      if (error) {
+        console.error('Fetch inventory error:', error)
+        return res.status(500).json({ error: 'Failed to fetch inventory' })
+      }
+
+      const formattedInventory = (inventory || []).map((row: any) => {
+        const p = row.products || {}
+        return {
+          id: row.id,
+          productId: row.product_id ?? null,
+          productName: p.product_name ?? '',
+          category: p.product_type ?? '',
+          brand: p.brand_name ?? '',
+          size: p.sizes ?? [],
+          color: p.colors ?? [],
+          otherVariants: {},
+          batchNumber: row.batch_number,
+          costPrice: Number(row.cost_price) || 0,
+          sellingPrice: Number(row.selling_price) || 0,
+          quantityAvailable: Number(row.quantity_available) || 0,
+          lowStockWarning: Number(row.low_stock_warning) || 5,
+          owner: row.owner ?? undefined
+        }
+      })
+
+      return res.json({ inventory: formattedInventory })
     }
 
     return res.status(405).json({ error: 'Method not allowed' })
-  } catch (e: any) {
-    console.error('inventory api error:', e)
-    return res.status(500).json({ error: e?.message || 'Internal server error' })
+  } catch (error: any) {
+    console.error('API error:', error)
+    return res.status(500).json({ error: error.message || 'Internal server error' })
   }
 }
 

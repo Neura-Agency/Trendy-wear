@@ -16,6 +16,19 @@ export interface Store {
   paidAt?: string;
 }
 
+export interface Product {
+  id: string;
+  productName: string;
+  brandName: string;
+  productType: string;
+  pricePerPiece: number;
+  colors: string[];
+  sizes: string[];
+  productImage?: string;
+  createdAt?: string;
+  updatedAt?: string;
+}
+
 export interface Order {
   id: string;
   productName: string;
@@ -36,6 +49,7 @@ export interface Order {
 
 export interface Purchase {
   id: string;
+  productId?: string;
   productName: string;
   category: string;
   brand: string;
@@ -52,6 +66,7 @@ export interface Purchase {
 }
 
 export interface InventoryItem {
+  productId?: string;
   productName: string;
   category: string;
   brand: string;
@@ -160,7 +175,7 @@ export interface SaleModalProps extends ModalProps {
 }
 
 export interface CreateStoreModalProps extends ModalProps {
-  onSave: (store: { name: string; username: string; password: string; commission: number }) => void;
+  onSave: (store: { name: string; partnerName: string; partnerContact: string; commission: number; storeId: string }) => void;
 }
 
 export interface ReportModalProps extends ModalProps {
@@ -170,6 +185,7 @@ export interface ReportModalProps extends ModalProps {
 export interface AddInventoryModalProps extends ModalProps {
   onSave: (inventory: any) => void;
   stores: string[];
+  products: Product[];
 }
 
 export interface AllotToStoreModalProps extends ModalProps {
@@ -179,7 +195,7 @@ export interface AllotToStoreModalProps extends ModalProps {
   storeCommissionByName: Record<string, number>;
   onSave: (payload: {
     storeName: string;
-    productName: string;
+    batchNumber: string;
     quantity: number;
     ownerSupplyPrice: number;
     commissionPercent: number;

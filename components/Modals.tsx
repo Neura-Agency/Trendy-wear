@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import Badge from './Badge';
-import { SaleModalProps, CreateStoreModalProps, ReportModalProps, AddInventoryModalProps, AllotToStoreModalProps, InventoryItem, Order, Store } from '../types';
+import { SaleModalProps, CreateStoreModalProps, ReportModalProps, AddInventoryModalProps, AllotToStoreModalProps, InventoryItem, Order, Product, Store } from '../types';
 
 type SaleInventoryItem = Pick<InventoryItem, 'productName' | 'quantityAvailable' | 'sellingPrice'>;
 
@@ -182,6 +182,7 @@ export function CreateStoreModal({ onSave, onClose }) {
     const [store, setStore] = useState({ 
         name: '', 
         partnerName: '', 
+        partnerContact: '',
         commission: 10,
         storeId: 'STR-' + Math.random().toString(36).substr(2, 6).toUpperCase()
     });
@@ -218,6 +219,15 @@ export function CreateStoreModal({ onSave, onClose }) {
                                 placeholder="e.g. Hamza Khan"
                                 value={store.partnerName}
                                 onChange={e => setStore({ ...store, partnerName: e.target.value })}
+                            />
+                        </div>
+
+                        <div className="input-group" style={{ marginBottom: 16 }}>
+                            <label>Partner Contact / Phone</label>
+                            <input
+                                placeholder="e.g. +92 300 1234567"
+                                value={store.partnerContact}
+                                onChange={e => setStore({ ...store, partnerContact: e.target.value })}
                             />
                         </div>
 
@@ -360,16 +370,27 @@ export function ReportModal({ data, onClose }) {
     );
 }
 
-export function AddInventoryModal({ onSave, onClose, stores }: AddInventoryModalProps) {
+export function AddInventoryModal({ onSave, onClose, stores, products }: AddInventoryModalProps) {
+    const [productMode, setProductMode] = useState<'select' | 'new'>(products?.length ? 'select' : 'new');
+    const [selectedProductId, setSelectedProductId] = useState<string>(products?.[0]?.id || '');
+
     const [item, setItem] = useState({
         itemId: 'ITEM-' + Math.random().toString(36).substr(2, 6).toUpperCase(),
-        name: '',
         quantity: 1,
-        brand: '',
         pricePerPiece: 0,
-        type: 'T-shirt',
-        customType: '',
         picture: '',
+    });
+
+    const [newProduct, setNewProduct] = useState<{
+        productName: string;
+        brandName: string;
+        productType: string;
+        customType: string;
+    }>({
+        productName: '',
+        brandName: '',
+        productType: 'T-shirt',
+        customType: ''
     });
 
     const [colors, setColors] = useState<string[]>([]);
@@ -380,6 +401,10 @@ export function AddInventoryModal({ onSave, onClose, stores }: AddInventoryModal
 
     const availableSizes = ['XS', 'S', 'M', 'L', 'XL', 'XXL'];
     const itemTypes = ['T-shirt', 'Jacket', 'Sweatshirt', 'Jeans', 'Hoodie', 'Other'];
+
+    const selectedProduct: Product | undefined = (products || []).find(p => p.id === selectedProductId);
+    const displayColors = productMode === 'new' ? colors : (selectedProduct?.colors || []);
+    const displaySizes = productMode === 'new' ? sizes : (selectedProduct?.sizes || []);
 
     const handleAddColor = () => {
         if (colorInput && !colors.includes(colorInput)) {
@@ -416,12 +441,27 @@ export function AddInventoryModal({ onSave, onClose, stores }: AddInventoryModal
 
     const handleSubmit = (e: React.FormEvent) => {
         e.preventDefault();
+
+        if (productMode === 'select' && !selectedProductId) return alert('Select a product');
+        if (productMode === 'new') {
+            const pn = newProduct.productName.trim();
+            if (!pn) return alert('Enter product name');
+        }
+
         onSave({
             ...item,
-            colors,
-            sizes,
+            productId: productMode === 'select' ? selectedProductId : undefined,
             allotedStores,
-            type: item.type === 'Other' ? item.customType : item.type
+            newProduct: productMode === 'new'
+                ? {
+                    productName: newProduct.productName.trim(),
+                    brandName: newProduct.brandName.trim(),
+                    productType: (newProduct.productType === 'Other' ? newProduct.customType : newProduct.productType).trim(),
+                    pricePerPiece: item.pricePerPiece,
+                    colors,
+                    sizes
+                }
+                : undefined
         });
         onClose();
     };
@@ -479,57 +519,120 @@ export function AddInventoryModal({ onSave, onClose, stores }: AddInventoryModal
                                 <input readOnly value={item.itemId} style={{ background: '#f8fafc', fontWeight: 700, color: 'var(--acc)' }} />
                             </div>
                             <div className="input-group">
-                                <label>Item Name</label>
-                                <input required placeholder="e.g. Summer Breeze Tee" value={item.name} onChange={e => setItem({ ...item, name: e.target.value })} />
+                                <label>Product</label>
+                                <div style={{ display: 'flex', gap: 8 }}>
+                                    <select
+                                        value={selectedProductId}
+                                        onChange={e => setSelectedProductId(e.target.value)}
+                                        disabled={productMode !== 'select'}
+                                        required={productMode === 'select'}
+                                        style={{ flex: 1 }}
+                                    >
+                                        <option value="">Choose...</option>
+                                        {(products || []).map(p => (
+                                            <option key={p.id} value={p.id}>
+                                                {p.productName}{p.brandName ? ` — ${p.brandName}` : ''}
+                                            </option>
+                                        ))}
+                                    </select>
+                                    <button
+                                        type="button"
+                                        className={`btn btn-sm ${productMode === 'new' ? 'btn-primary' : 'btn-glass'}`}
+                                        onClick={() => setProductMode(productMode === 'new' ? 'select' : 'new')}
+                                        style={{ whiteSpace: 'nowrap' }}
+                                    >
+                                        {productMode === 'new' ? 'Select Existing' : '+ New Product'}
+                                    </button>
+                                </div>
+                                {productMode === 'select' && !products?.length && (
+                                    <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 6 }}>
+                                        No products yet. Click “+ New Product”.
+                                    </div>
+                                )}
                             </div>
                         </div>
 
-                        <div className="form-grid-2" style={{ marginBottom: 20 }}>
-                            <div className="input-group">
-                                <label>Brand Name</label>
-                                <input required placeholder="e.g. Trendy Wear" value={item.brand} onChange={e => setItem({ ...item, brand: e.target.value })} />
+                        {productMode === 'new' && (
+                            <>
+                                <div className="form-grid-2" style={{ marginBottom: 20 }}>
+                                    <div className="input-group">
+                                        <label>Product Name</label>
+                                        <input
+                                            required
+                                            placeholder="e.g. Summer Breeze Tee"
+                                            value={newProduct.productName}
+                                            onChange={e => setNewProduct({ ...newProduct, productName: e.target.value })}
+                                        />
+                                    </div>
+                                    <div className="input-group">
+                                        <label>Brand Name</label>
+                                        <input
+                                            placeholder="e.g. Trendy Wear"
+                                            value={newProduct.brandName}
+                                            onChange={e => setNewProduct({ ...newProduct, brandName: e.target.value })}
+                                        />
+                                    </div>
+                                </div>
+
+                                <div className="input-group" style={{ marginBottom: 20 }}>
+                                    <label>Product Type</label>
+                                    <select value={newProduct.productType} onChange={e => setNewProduct({ ...newProduct, productType: e.target.value })}>
+                                        {itemTypes.map(t => <option key={t} value={t}>{t}</option>)}
+                                    </select>
+                                    {newProduct.productType === 'Other' && (
+                                        <input
+                                            style={{ marginTop: 8 }}
+                                            placeholder="Enter custom type..."
+                                            value={newProduct.customType}
+                                            onChange={e => setNewProduct({ ...newProduct, customType: e.target.value })}
+                                            required
+                                        />
+                                    )}
+                                </div>
+                            </>
+                        )}
+
+                        {productMode === 'select' && selectedProduct && (
+                            <div style={{ marginBottom: 20, padding: 12, border: '1px solid var(--border)', borderRadius: 10, background: 'var(--surface-2)' }}>
+                                <div style={{ fontSize: 12, fontWeight: 800 }}>{selectedProduct.productName}</div>
+                                <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 4 }}>
+                                    {selectedProduct.brandName ? `Brand: ${selectedProduct.brandName} · ` : ''}{selectedProduct.productType ? `Type: ${selectedProduct.productType}` : ''}
+                                </div>
                             </div>
+                        )}
+
+                        <div className="form-grid-2" style={{ marginBottom: 20 }}>
                             <div className="input-group">
                                 <label>Price Per Piece (Cost)</label>
                                 <input type="number" required placeholder="0.00" value={item.pricePerPiece} onChange={e => setItem({ ...item, pricePerPiece: parseFloat(e.target.value) })} />
                             </div>
-                        </div>
-
-                        <div className="form-grid-2" style={{ marginBottom: 20 }}>
                             <div className="input-group">
                                 <label>Total Quantity</label>
                                 <input type="number" required min="1" value={item.quantity} onChange={e => setItem({ ...item, quantity: parseInt(e.target.value) })} />
-                            </div>
-                            <div className="input-group">
-                                <label>Item Type</label>
-                                <select value={item.type} onChange={e => setItem({ ...item, type: e.target.value })}>
-                                    {itemTypes.map(t => <option key={t} value={t}>{t}</option>)}
-                                </select>
-                                {item.type === 'Other' && (
-                                    <input 
-                                        style={{ marginTop: 8 }} 
-                                        placeholder="Enter custom type..." 
-                                        value={item.customType} 
-                                        onChange={e => setItem({ ...item, customType: e.target.value })}
-                                        required
-                                    />
-                                )}
                             </div>
                         </div>
 
                         <div className="input-group" style={{ marginBottom: 20 }}>
                             <label>Colors</label>
-                            <div style={{ display: 'flex', gap: 8, marginBottom: 8 }}>
-                                <input 
-                                    placeholder="Add color (e.g. red, navy, #ffaa00)..." 
-                                    value={colorInput} 
-                                    onChange={e => setColorInput(e.target.value)} 
-                                    onKeyPress={e => e.key === 'Enter' && (e.preventDefault(), handleAddColor())}
-                                />
-                                <button type="button" className="btn btn-primary" onClick={handleAddColor}>Add</button>
-                            </div>
+                            {productMode === 'new' ? (
+                                <>
+                                    <div style={{ display: 'flex', gap: 8, marginBottom: 8 }}>
+                                        <input 
+                                            placeholder="Add color (e.g. red, navy, #ffaa00)..." 
+                                            value={colorInput} 
+                                            onChange={e => setColorInput(e.target.value)} 
+                                            onKeyPress={e => e.key === 'Enter' && (e.preventDefault(), handleAddColor())}
+                                        />
+                                        <button type="button" className="btn btn-primary" onClick={handleAddColor}>Add</button>
+                                    </div>
+                                </>
+                            ) : (
+                                <div style={{ fontSize: 11, color: 'var(--text-muted)', marginBottom: 8 }}>
+                                    Colors come from the product catalog.
+                                </div>
+                            )}
                             <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
-                                {colors.map(c => (
+                                {displayColors.map(c => (
                                     <div 
                                         key={c} 
                                         style={{ 
@@ -549,44 +652,65 @@ export function AddInventoryModal({ onSave, onClose, stores }: AddInventoryModal
                                     >
                                         <span style={{ width: 8, height: 8, borderRadius: '50%', background: c }}></span>
                                         {c}
-                                        <span style={{ cursor: 'pointer', opacity: 0.6 }} onClick={() => setColors(colors.filter(x => x !== c))}>×</span>
+                                        {productMode === 'new' && (
+                                            <span style={{ cursor: 'pointer', opacity: 0.6 }} onClick={() => setColors(colors.filter(x => x !== c))}>×</span>
+                                        )}
                                     </div>
                                 ))}
+                                {displayColors.length === 0 && (
+                                    <div style={{ fontSize: 11, color: 'var(--text-muted)' }}>No colors set.</div>
+                                )}
                             </div>
                         </div>
 
                         <div className="input-group" style={{ marginBottom: 20 }}>
                             <label>Sizes</label>
-                            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, marginBottom: 12 }}>
-                                {availableSizes.map(s => (
-                                    <button
-                                        key={s}
-                                        type="button"
-                                        className={`btn btn-sm ${sizes.includes(s) ? 'btn-primary' : 'btn-glass'}`}
-                                        style={{ minWidth: 44 }}
-                                        onClick={() => toggleSize(s)}
-                                    >
-                                        {s}
-                                    </button>
-                                ))}
-                            </div>
-                            <div style={{ display: 'flex', gap: 8 }}>
-                                <input 
-                                    placeholder="Add custom size (e.g. 3XL)..." 
-                                    value={customSize} 
-                                    onChange={e => setCustomSize(e.target.value)}
-                                    onKeyPress={e => e.key === 'Enter' && (e.preventDefault(), handleAddCustomSize())}
-                                />
-                                <button type="button" className="btn btn-sm" onClick={handleAddCustomSize} style={{ whiteSpace: 'nowrap' }}>+ Custom Size</button>
-                            </div>
-                            {sizes.some(s => !availableSizes.includes(s)) && (
-                                <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginTop: 8 }}>
-                                    {sizes.filter(s => !availableSizes.includes(s)).map(s => (
-                                        <Badge key={s} type="purple">
-                                            {s} <span style={{ cursor: 'pointer', marginLeft: 4 }} onClick={() => setSizes(sizes.filter(x => x !== s))}>×</span>
-                                        </Badge>
-                                    ))}
-                                </div>
+                            {productMode === 'new' ? (
+                                <>
+                                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, marginBottom: 12 }}>
+                                        {availableSizes.map(s => (
+                                            <button
+                                                key={s}
+                                                type="button"
+                                                className={`btn btn-sm ${sizes.includes(s) ? 'btn-primary' : 'btn-glass'}`}
+                                                style={{ minWidth: 44 }}
+                                                onClick={() => toggleSize(s)}
+                                            >
+                                                {s}
+                                            </button>
+                                        ))}
+                                    </div>
+                                    <div style={{ display: 'flex', gap: 8 }}>
+                                        <input 
+                                            placeholder="Add custom size (e.g. 3XL)..." 
+                                            value={customSize} 
+                                            onChange={e => setCustomSize(e.target.value)}
+                                            onKeyPress={e => e.key === 'Enter' && (e.preventDefault(), handleAddCustomSize())}
+                                        />
+                                        <button type="button" className="btn btn-sm" onClick={handleAddCustomSize} style={{ whiteSpace: 'nowrap' }}>+ Custom Size</button>
+                                    </div>
+                                    {sizes.some(s => !availableSizes.includes(s)) && (
+                                        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginTop: 8 }}>
+                                            {sizes.filter(s => !availableSizes.includes(s)).map(s => (
+                                                <Badge key={s} type="purple">
+                                                    {s} <span style={{ cursor: 'pointer', marginLeft: 4 }} onClick={() => setSizes(sizes.filter(x => x !== s))}>×</span>
+                                                </Badge>
+                                            ))}
+                                        </div>
+                                    )}
+                                </>
+                            ) : (
+                                <>
+                                    <div style={{ fontSize: 11, color: 'var(--text-muted)', marginBottom: 8 }}>
+                                        Sizes come from the product catalog.
+                                    </div>
+                                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
+                                        {displaySizes.map(s => (
+                                            <Badge key={s} type="gray">{s}</Badge>
+                                        ))}
+                                        {displaySizes.length === 0 && <div style={{ fontSize: 11, color: 'var(--text-muted)' }}>No sizes set.</div>}
+                                    </div>
+                                </>
                             )}
                         </div>
 
@@ -619,14 +743,15 @@ export function AddInventoryModal({ onSave, onClose, stores }: AddInventoryModal
 export function AllotToStoreModal({ onSave, onClose, stores, inventory, allotedQtyByProduct, storeCommissionByName }: AllotToStoreModalProps) {
     const [form, setForm] = useState({
         storeName: stores?.[0] || '',
-        productName: inventory?.[0]?.productName || '',
+        batchNumber: inventory?.[0]?.batchNumber || '',
         quantity: 1,
         ownerSupplyPrice: 0,
         commissionPercent: 0,
     });
 
-    const selectedInv = (inventory || []).find(i => i.productName === form.productName);
-    const allotedQty = allotedQtyByProduct?.[form.productName] || 0;
+    const selectedInv = (inventory || []).find(i => i.batchNumber === form.batchNumber);
+    const productName = selectedInv?.productName || '';
+    const allotedQty = allotedQtyByProduct?.[productName] || 0;
     const totalQty = Number(selectedInv?.quantityAvailable) || 0;
     const maxQty = Math.max(0, totalQty - allotedQty);
 
@@ -637,7 +762,7 @@ export function AllotToStoreModal({ onSave, onClose, stores, inventory, allotedQ
     }, [stores, form.storeName]);
 
     React.useEffect(() => {
-        const inv = (inventory || []).find(i => i.productName === form.productName);
+        const inv = (inventory || []).find(i => i.batchNumber === form.batchNumber);
         const cost = Number(inv?.costPrice) || 0;
         const commission = Number(storeCommissionByName?.[form.storeName]) || 0;
         setForm(prev => ({
@@ -646,19 +771,19 @@ export function AllotToStoreModal({ onSave, onClose, stores, inventory, allotedQ
             commissionPercent: prev.commissionPercent || commission,
         }));
         // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [form.productName, form.storeName]);
+    }, [form.batchNumber, form.storeName]);
 
     const handleSubmit = (e: React.FormEvent) => {
         e.preventDefault();
 
         if (!form.storeName) return alert('Select store');
-        if (!form.productName) return alert('Select item');
+        if (!form.batchNumber) return alert('Select item');
         if (!form.quantity || form.quantity < 1) return alert('Enter quantity');
         if (form.quantity > maxQty) return alert(`Quantity cannot be more than ${maxQty}`);
 
         onSave({
             storeName: form.storeName,
-            productName: form.productName,
+            batchNumber: form.batchNumber,
             quantity: Number(form.quantity),
             ownerSupplyPrice: Number(form.ownerSupplyPrice) || 0,
             commissionPercent: Number(form.commissionPercent) || 0,
@@ -689,9 +814,9 @@ export function AllotToStoreModal({ onSave, onClose, stores, inventory, allotedQ
 
                             <div className="input-group">
                                 <label>Item Name</label>
-                                <select value={form.productName} onChange={(e) => setForm({ ...form, productName: e.target.value })} required>
+                                <select value={form.batchNumber} onChange={(e) => setForm({ ...form, batchNumber: e.target.value })} required>
                                     {(inventory || []).map((it) => (
-                                        <option key={`${it.productName}-${it.batchNumber}`} value={it.productName}>
+                                        <option key={it.batchNumber} value={it.batchNumber}>
                                             {it.productName}
                                         </option>
                                     ))}

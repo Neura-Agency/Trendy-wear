@@ -1,13 +1,23 @@
 import type { NextApiRequest, NextApiResponse } from 'next';
 import { supabaseAdmin, TABLES } from '../../lib/supabase'
-import { serverEvents } from '../../lib/serverEvents'
-import {
-  getSettings,
-  getStoreByName,
-  storeRowsToRecord,
-  storeRowToAppStore
-} from '../../lib/api/supabaseHelpers'
-import { isAdmin, isSuperAdmin, requireSession } from '../../lib/api/session'
+import { requireSession, isSuperAdmin } from '../../lib/api/session'
+import bcrypt from 'bcryptjs'
+
+// Helper to generate store initials (e.g., "Trendy Wear Main" -> "TWM")
+function getStoreInitials(storeName: string): string {
+  return storeName
+    .trim()
+    .split(/\s+/)
+    .map(word => word[0]?.toUpperCase() || '')
+    .join('')
+    .slice(0, 3) // Max 3 initials
+}
+
+// Helper to generate simple password (e.g., "Owner123")
+function generatePassword(ownerName: string): string {
+  const name = ownerName.trim().split(/\s+/)[0] // First name
+  return `${name}123`
+}
 
 export default async function handler(req: NextApiRequest, res: NextApiResponse) {
   try {
@@ -15,134 +25,160 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     if (!session) return
 
     if (req.method === 'GET') {
-      const settings = await getSettings()
-      let q = supabaseAdmin
+      // Fetch stores with their owner and account info via store_owners relationship
+      const { data: stores, error: storesError } = await supabaseAdmin
         .from(TABLES.STORES)
-        .select('id,name,commission,paid_amount,paid,created_at,paid_at')
+        .select(`
+          id,
+          name,
+          commission,
+          store_owners (
+            id,
+            owner_name,
+            contact,
+            account
+          )
+        `)
         .order('created_at', { ascending: true })
 
-      if (session.role === 'store') {
-        if (session.storeId) q = q.eq('id', session.storeId)
-        else if (session.storeName) q = q.eq('name', session.storeName)
-        else return res.status(403).json({ error: 'Forbidden' })
-      } else if (session.role === 'admin' && session.scope !== 'all' && session.managedStores?.length) {
-        q = q.in('name', session.managedStores)
+      if (storesError) {
+        console.error('Error fetching stores:', storesError)
+        return res.status(500).json({ error: 'Failed to fetch stores' })
       }
 
-      const { data: stores, error } = await q
+      // Fetch accounts that are linked to store owners
+      const accountIds = stores
+        .map((s: any) => s.store_owners?.account)
+        .filter(Boolean)
 
-      if (error) throw error
+      const { data: accounts, error: accountsError } = await supabaseAdmin
+        .from(TABLES.ACCOUNTS)
+        .select('id, username, plain_password, role, scope, managed_stores')
+        .in('id', accountIds.length > 0 ? accountIds : ['00000000-0000-0000-0000-000000000000']) // Dummy UUID if no accounts
+        .order('created_at', { ascending: true })
+
+      if (accountsError) {
+        console.error('Error fetching accounts:', accountsError)
+        return res.status(500).json({ error: 'Failed to fetch accounts' })
+      }
+
+      // Build stores map
+      const storesMap: Record<string, any> = {}
+      stores.forEach((store: any) => {
+        storesMap[store.name] = {
+          name: store.name,
+          commission: Number(store.commission) || 0
+        }
+      })
+
+      // Build accounts map with store names
+      const accountsMap: Record<string, any> = {}
+      stores.forEach((store: any) => {
+        if (!store.store_owners?.account) return
+        
+        const account = accounts.find((a: any) => a.id === store.store_owners.account)
+        if (!account) return
+
+        accountsMap[account.username] = {
+          password: account.plain_password || '••••••••',
+          role: account.role,
+          scope: account.scope,
+          storeName: store.name,
+          managedStores: account.managed_stores || []
+        }
+      })
 
       return res.json({
-        stores: storeRowsToRecord((stores ?? []) as any),
-        settings,
-        accounts: {}
+        accounts: accountsMap,
+        stores: storesMap,
+        settings: { storeCommissionPercent: 10 }
       })
     }
 
     if (req.method === 'POST') {
-      if (!isAdmin(session)) return res.status(403).json({ error: 'Forbidden' })
-
-      const { action, storeName, commission } = req.body || {}
-      if (!storeName) return res.status(400).json({ error: 'storeName is required' })
-
-      if (session.scope !== 'all' && session.managedStores?.length) {
-        if (!session.managedStores.includes(String(storeName))) {
-          return res.status(403).json({ error: 'Forbidden' })
-        }
-        if (action === 'createStore' || action === 'create') {
-          return res.status(403).json({ error: 'Forbidden' })
-        }
+      if (!isSuperAdmin(session)) {
+        return res.status(403).json({ error: 'Only super admin can create stores' })
       }
 
-      const settings = await getSettings()
-      const comm = commission !== undefined && commission !== null ? Number(commission) : settings.defaultCommission
+      const { name, partnerName, partnerContact, commission } = req.body || {}
 
-      // Create store partner (UI currently sends action: 'create')
-      if (action === 'createStore' || action === 'create') {
-        if (!isSuperAdmin(session)) return res.status(403).json({ error: 'Forbidden' })
-        const existing = await getStoreByName(storeName)
-        if (existing) return res.status(400).json({ error: 'Store already exists' })
-
-        const { data: created, error } = await supabaseAdmin
-          .from(TABLES.STORES)
-          .insert({ name: storeName, commission: comm })
-          .select('id,name,commission,paid_amount,paid,created_at,paid_at')
-          .single()
-
-        if (error) throw error
-        serverEvents.emit('change', { ts: Date.now(), type: 'stores' })
-        return res.status(201).json({ storeName, commission: Number(created.commission) || 0 })
+      if (!name || !partnerName) {
+        return res.status(400).json({ error: 'Store name and partner name are required' })
       }
 
-      // Default: update commission (create if missing)
-      const existing = await getStoreByName(storeName)
-      if (!existing) {
-        if (!isSuperAdmin(session)) return res.status(403).json({ error: 'Forbidden' })
-        const { data: created, error } = await supabaseAdmin
-          .from(TABLES.STORES)
-          .insert({ name: storeName, commission: comm })
-          .select('id,name,commission,paid_amount,paid,created_at,paid_at')
-          .single()
+      // Step 1: Generate account credentials and create account first
+      const storeInitials = getStoreInitials(name)
+      const username = `${partnerName.trim().replace(/\s+/g, '')}${storeInitials}`.toLowerCase()
+      const plainPassword = generatePassword(partnerName)
+      const passwordHash = await bcrypt.hash(plainPassword, 10)
 
-        if (error) throw error
-        serverEvents.emit('change', { ts: Date.now(), type: 'stores' })
-        return res.json(storeRowToAppStore(created as any))
-      }
-
-      const { data: updated, error } = await supabaseAdmin
-        .from(TABLES.STORES)
-        .update({ commission: comm })
-        .eq('id', existing.id)
-        .select('id,name,commission,paid_amount,paid,created_at,paid_at')
+      const { data: account, error: accountError } = await supabaseAdmin
+        .from(TABLES.ACCOUNTS)
+        .insert({
+          username: username,
+          password_hash: passwordHash,
+          plain_password: plainPassword,
+          role: 'store',
+          managed_stores: [],
+          is_active: true
+        })
+        .select('id, username')
         .single()
 
-      if (error) throw error
-      serverEvents.emit('change', { ts: Date.now(), type: 'stores' })
-      return res.json(storeRowToAppStore(updated as any))
-    }
-
-    if (req.method === 'PATCH') {
-      if (!isAdmin(session)) return res.status(403).json({ error: 'Forbidden' })
-
-      const { storeName, amount } = req.body || {}
-      if (!storeName) return res.status(400).json({ error: 'storeName is required' })
-
-      if (session.scope !== 'all' && session.managedStores?.length && !session.managedStores.includes(String(storeName))) {
-        return res.status(403).json({ error: 'Forbidden' })
+      if (accountError) {
+        console.error('Error creating account:', accountError)
+        return res.status(500).json({ error: 'Failed to create account' })
       }
 
-      const existing = await getStoreByName(storeName)
-      if (!existing) return res.status(404).json({ error: 'Store not found' })
-
-      const paidAmount = Number(amount) || 0
-      const now = new Date().toISOString()
-
-      const { data: updated, error: updErr } = await supabaseAdmin
-        .from(TABLES.STORES)
-        .update({ paid: true, paid_amount: paidAmount, paid_at: now })
-        .eq('id', existing.id)
-        .select('id,name,commission,paid_amount,paid,created_at,paid_at')
+      // Step 2: Create store owner with account link
+      const { data: owner, error: ownerError } = await supabaseAdmin
+        .from(TABLES.STORE_OWNERS)
+        .insert({ 
+          owner_name: partnerName.trim(),
+          contact: partnerContact?.trim() || null,
+          account: account.id
+        })
+        .select('id')
         .single()
 
-      if (updErr) throw updErr
+      if (ownerError) {
+        console.error('Error creating store owner:', ownerError)
+        return res.status(500).json({ error: 'Failed to create store owner' })
+      }
 
-      // Archive included orders for this store
-      const { error: ordErr } = await supabaseAdmin
-        .from(TABLES.ORDERS)
-        .update({ included_in_payout: false })
-        .eq('store_id', existing.id)
-        .eq('included_in_payout', true)
+      // Step 3: Create store
+      const { data: store, error: storeError } = await supabaseAdmin
+        .from(TABLES.STORES)
+        .insert({
+          name: name.trim(),
+          owner_id: owner.id,
+          commission: Number(commission) || 10
+        })
+        .select('*')
+        .single()
 
-      if (ordErr) throw ordErr
+      if (storeError) {
+        console.error('Error creating store:', storeError)
+        return res.status(500).json({ error: 'Failed to create store' })
+      }
 
-      serverEvents.emit('change', { ts: Date.now(), type: 'payout' })
-      return res.json(storeRowToAppStore(updated as any))
+      return res.status(201).json({ 
+        success: true,
+        store: {
+          id: store.id,
+          name: store.name,
+          commission: store.commission
+        },
+        credentials: {
+          username: account.username,
+          password: plainPassword
+        }
+      })
     }
 
     return res.status(405).json({ error: 'Method not allowed' })
   } catch (e: any) {
-    console.error('store api error:', e)
+    console.error('Store API error:', e)
     return res.status(500).json({ error: e?.message || 'Internal server error' })
   }
 }

@@ -5,13 +5,23 @@ export type AppSettings = {
   lowStockThreshold: number
 }
 
+function isMissingTableError(error: any): boolean {
+  return Boolean(error && typeof error === 'object' && error.code === 'PGRST205')
+}
+
 export async function getSettings(): Promise<AppSettings> {
   const { data, error } = await supabaseAdmin
     .from(TABLES.SETTINGS)
     .select('key,value')
     .in('key', ['defaultCommission', 'lowStockThreshold'])
 
-  if (error) throw error
+  // If the settings table doesn't exist yet, keep the app usable with defaults.
+  if (error) {
+    if (isMissingTableError(error)) {
+      return { defaultCommission: 10, lowStockThreshold: 5 }
+    }
+    throw error
+  }
 
   const out: AppSettings = {
     defaultCommission: 10,

@@ -422,21 +422,23 @@ const [loading, setLoading] = useState<boolean>(true);
   const refresh = useCallback(async () => {
     setLoading(true);
     try {
-      const [ord, exp, sto, cli, sinv] = await Promise.all([
-        fetch("/api/orders").then((r) => r.json()),
-        fetch("/api/expenses").then((r) => r.json()),
-        fetch("/api/store").then((r) => r.json()),
-        fetch("/api/clients").then((r) => r.json()),
-        fetch("/api/storeInventory").then((r) => r.json()),
-      ]);
+      const storesRes = await fetch('/api/store')
+      const storesData = await storesRes.json()
+
+      const storeInvRes = await fetch('/api/storeInventory')
+      const storeInvData = await storeInvRes.json()
+
+      const invRes = await fetch('/api/inventory')
+      const invData = await invRes.json()
+
       setData({
-        orders: ord.orders || [],
-        stores: { ...sto.stores },
-        inventory: (await fetch("/api/purchases").then((r) => r.json())).inventory || [], // Fetch inventory separately
-        expenses: exp.expenses || [],
-        clients: cli.clients || [],
-        settings: sto.settings || {},
-        storeInventory: sinv.storeInventory || {},
+        orders: [],
+        stores: storesData?.stores || {},
+        inventory: invData?.inventory || [],
+        expenses: [],
+        clients: [],
+        settings: storesData?.settings || { storeCommissionPercent: 10 },
+        storeInventory: storeInvData?.storeInventory || {},
       });
     } catch (e) {
       console.error(e);
@@ -536,44 +538,53 @@ const [loading, setLoading] = useState<boolean>(true);
   const ordersCount = kpiOrders.length;
 
   const handleAddOrder = async (order: Partial<Order>) => {
-    await fetch("/api/orders", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(order),
-    });
+    // No-op: database removed
     refresh();
   };
 
-  const handleCreateStore = async (store: { name: string; partnerName: string; commission: number; storeId: string }) => {
-    await fetch("/api/store", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        action: 'create',
-        storeName: store.name,
-        partnerName: store.partnerName,
-        storeId: store.storeId,
-        commission: store.commission
-      }),
-    });
-    refresh();
+  const handleCreateStore = async (store: { name: string; partnerName: string; partnerContact: string; commission: number; storeId: string }) => {
+    try {
+      const response = await fetch('/api/store', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          name: store.name,
+          partnerName: store.partnerName,
+          partnerContact: store.partnerContact,
+          commission: store.commission
+        })
+      });
+
+      const result = await response.json();
+      
+      if (!response.ok) {
+        throw new Error(result.error || 'Failed to create store');
+      }
+
+      // Display credentials
+      const credentialsMessage = `Store partner created successfully!\n\n` +
+        `Shop Credentials:\n` +
+        `Username: ${result.credentials.username}\n` +
+        `Password: ${result.credentials.password}\n\n` +
+        `Please save these credentials!`;
+      
+      alert(credentialsMessage);
+      console.log('Shop Credentials:', result.credentials);
+      
+      refresh();
+    } catch (error: any) {
+      alert(error.message || 'Failed to create store');
+    }
   };
 
   const handleAddExpense = async (expense: Partial<Expense>) => {
-    await fetch('/api/expenses', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(expense),
-    });
+    // No-op: database removed
     refresh();
   };
 
   const handleMarkPaid = (storeName: string, amount: number) => {
-    fetch("/api/store", {
-      method: "PATCH",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ storeName, amount }),
-    }).then(() => refresh());
+    // No-op: database removed
+    refresh();
   };
 
   return (
@@ -650,11 +661,17 @@ const [loading, setLoading] = useState<boolean>(true);
           </div>
         </section>
 
-        {isAdmin && Object.keys(availableStores).length > 0 && (
+        {isAdmin && (
           <SectionCard 
             title="Store Partners" 
             icon="🏪"
-            action={<button className="btn btn-primary" onClick={() => setShowStoreModal(true)}>+ Create Store Partner</button>}
+            action={
+              isSuperAdmin ? (
+                <button className="btn btn-primary" onClick={() => setShowStoreModal(true)}>
+                  + Create Store Partner
+                </button>
+              ) : null
+            }
           >
             <StoresOverviewSection
               stores={availableStores}
@@ -664,11 +681,7 @@ const [loading, setLoading] = useState<boolean>(true);
               filter={kpiFilter}
               getFiltered={getFiltered}
               onMarkPaid={handleMarkPaid}
-              onCommissionChange={(name, v) => fetch("/api/store", {
-                method: "POST",
-                headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({ storeName: name, commission: v }),
-              }).then(() => refresh())}
+              onCommissionChange={(name, v) => { refresh(); }}
               onAssignItem={(name) => router.push(`/inventory?assign=${name}`)}
             />
           </SectionCard>
@@ -696,16 +709,8 @@ const [loading, setLoading] = useState<boolean>(true);
               orders={partnerOrders.slice(-20).reverse()}
               overallOrders={partnerAll}
               isAdmin={isAdmin}
-              onCommissionEdit={(id, v) => fetch("/api/orders", {
-                method: "PATCH",
-                headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({ id, commissionPercent: v }),
-              }).then(() => refresh())}
-              onTogglePayout={(id, inc) => fetch("/api/orders", {
-                method: "PATCH",
-                headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({ id, includedInPayout: inc }),
-              }).then(() => refresh())}
+              onCommissionEdit={(id, v) => { refresh(); }}
+              onTogglePayout={(id, inc) => { refresh(); }}
             />
           </SectionCard>
 

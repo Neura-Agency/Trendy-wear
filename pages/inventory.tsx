@@ -8,6 +8,7 @@ import {
   StoreInventoryItem, 
   Store, 
   Purchase,
+    Product,
   User 
 } from "../types";
 import { AddInventoryModal, AllotToStoreModal } from "../components/Modals";
@@ -63,11 +64,13 @@ export default function InventoryPage({ user, onLogin }: PageProps) {
         storeInventory: Record<string, Record<string, StoreInventoryItem>>;
         stores: Record<string, Store>;
         purchases: Purchase[];
+        products: Product[];
     }>({
         inventory: [],
         storeInventory: {},
         stores: {},
         purchases: [],
+        products: [],
     });
     // Track inventory ownership: each admin can only see/manage their own
     // Assume each inventory item has an 'owner' field (username)
@@ -79,16 +82,28 @@ export default function InventoryPage({ user, onLogin }: PageProps) {
     const refresh = useCallback(async () => {
         setLoading(true);
         try {
-            const [pur, sinv, sto] = await Promise.all([
-                fetch("/api/purchases").then((r) => r.json()),
-                fetch("/api/storeInventory").then((r) => r.json()),
-                fetch("/api/store").then((r) => r.json()),
-            ]);
+            // Fetch stores from API
+            const storesRes = await fetch('/api/store');
+            const storesData = await storesRes.json();
+            
+            // Fetch products from API
+            const productsRes = await fetch('/api/products');
+            const productsData = await productsRes.json();
+            
+            // Fetch inventory from API
+            const inventoryRes = await fetch('/api/inventory');
+            const inventoryData = await inventoryRes.json();
+
+            // Fetch store inventory from API
+            const storeInvRes = await fetch('/api/storeInventory');
+            const storeInvData = await storeInvRes.json();
+            
             setData({
-                inventory: pur.inventory || [],
-                purchases: pur.purchases || [],
-                storeInventory: sinv.storeInventory || {},
-                stores: sto.stores || {},
+                inventory: inventoryData.inventory || [],
+                purchases: [],
+                storeInventory: storeInvData.storeInventory || {},
+                stores: storesData.stores || {},
+                products: productsData.products || [],
             });
         } catch (e) {
             console.error(e);
@@ -111,47 +126,34 @@ export default function InventoryPage({ user, onLogin }: PageProps) {
     const isStoreAdmin = isAdmin && user.managedStores && user.managedStores.length > 0 && !isSuperAdmin;
 
 
-    const handleSaveInventory = async (item: any) => {
-        // Map common fields for compatibility with existing system
-        const purchase = {
-            productName: item.name,
-            category: item.type,
-            brand: item.brand,
-            costPrice: item.pricePerPiece,
-            quantity: item.quantity,
-            batchNumber: item.itemId, // Use Item ID as batch number for now
-            size: item.sizes,
-            color: item.colors,
-            otherVariants: {
-                allotedStores: item.allotedStores,
-                picture: item.picture
-            },
-            owner: user.username
-        };
+    const handleSaveInventory = async (payload: any) => {
+        try {
+            const response = await fetch('/api/inventory', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(payload)
+            });
 
-        await fetch("/api/purchases", {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify(purchase),
-        });
-        refresh();
+            const result = await response.json();
+
+            if (!response.ok) {
+                throw new Error(result.error || 'Failed to save inventory');
+            }
+
+            alert('✅ Inventory item added successfully!');
+            refresh();
+        } catch (e: any) {
+            alert(e?.message || 'Failed to save inventory')
+        }
     };
 
     const handleUpdateItem = async (productName: string, batchNumber: string, fields: any) => {
-        await fetch("/api/purchases", {
-            method: "PATCH",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ productName, batchNumber, ...fields }),
-        });
+        // No-op: database removed
         refresh();
     };
 
     const handleAdjustQuantity = async (productName: string, batchNumber: string, quantityDelta: number) => {
-        await fetch("/api/purchases", {
-            method: "PATCH",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ productName, batchNumber, quantityDelta }),
-        });
+        // No-op: database removed
         refresh();
     };
 
@@ -304,7 +306,9 @@ export default function InventoryPage({ user, onLogin }: PageProps) {
                                     {data.inventory.map((item, idx) => {
                                         const picture = (item as any)?.otherVariants?.picture as string | undefined;
                                         const pictureSrc = (typeof picture === 'string' && picture.trim().length > 0) ? picture : '/images/size_L.webp';
-                                        const allotedStores = (item as any)?.otherVariants?.allotedStores as string[] | undefined;
+                                        const allotedStores = Object.entries(data.storeInventory || {})
+                                            .filter(([, items]) => Boolean((items as any)?.[item.productName]))
+                                            .map(([storeName]) => storeName);
                                         const allotedQty = allotedQtyByProduct[item.productName] || 0;
                                         const availableQty = Math.max(0, (Number(item.quantityAvailable) || 0) - allotedQty);
 
@@ -444,6 +448,7 @@ export default function InventoryPage({ user, onLogin }: PageProps) {
                 {showAddInventoryModal && (
                     <AddInventoryModal 
                         stores={Object.keys(data.stores)} 
+                        products={data.products}
                         onSave={handleSaveInventory} 
                         onClose={() => setShowAddInventoryModal(false)} 
                     />
@@ -455,27 +460,26 @@ export default function InventoryPage({ user, onLogin }: PageProps) {
                         inventory={data.inventory}
                         allotedQtyByProduct={allotedQtyByProduct}
                         storeCommissionByName={storeCommissionByName}
-                        onSave={async ({ storeName, productName, quantity, ownerSupplyPrice, commissionPercent }) => {
-                            // Enforce max (total - alloted) === on-hand
-                            const selected = data.inventory.find(i => i.productName === productName);
-                            const alloted = allotedQtyByProduct[productName] || 0;
-                            const total = Number(selected?.quantityAvailable) || 0;
-                            const maxQty = Math.max(0, total - alloted);
-                            if (quantity > maxQty) return alert(`Quantity cannot be more than ${maxQty}`);
-
-                            await fetch('/api/storeInventory', {
-                                method: 'POST',
-                                headers: { 'Content-Type': 'application/json' },
-                                body: JSON.stringify({
-                                    storeName,
-                                    productName,
-                                    ownerSupplyPrice,
-                                    quantity,
-                                    commissionPercent,
-                                    owner: user.username,
+                        onSave={async ({ storeName, batchNumber, quantity, ownerSupplyPrice, commissionPercent }) => {
+                            try {
+                                const resp = await fetch('/api/storeInventory', {
+                                    method: 'POST',
+                                    headers: { 'Content-Type': 'application/json' },
+                                    body: JSON.stringify({
+                                        storeName,
+                                        batchNumber,
+                                        quantity,
+                                        ownerSupplyPrice,
+                                        commissionPercent,
+                                    })
                                 })
-                            });
-                            refresh();
+                                const json = await resp.json()
+                                if (!resp.ok) throw new Error(json?.error || 'Failed to save allotment')
+                                alert('✅ Allotment saved')
+                                refresh()
+                            } catch (e: any) {
+                                alert(e?.message || 'Failed to save allotment')
+                            }
                         }}
                         onClose={() => setShowAllotModal(false)}
                     />

@@ -11,8 +11,10 @@
 
 1. Go to your Supabase dashboard
 2. Navigate to **SQL Editor** in the left sidebar
-3. Copy and paste the contents of `supabase-schema.sql` 
-4. Click **Run** to execute the schema
+3. If this is a fresh project: copy/paste `supabase-schema.sql` and click **Run**
+4. If you already created tables earlier (legacy schema): run `supabase-rebuild-keep-accounts.sql` instead (it keeps `accounts` + `sessions`, but rebuilds business tables)
+
+If you see errors like `PGRST205` (“table not in schema cache”), go to **Settings → API → Reload schema**.
 
 ## 3. Install Dependencies
 
@@ -42,19 +44,13 @@ Run the migration script to transfer data from `data.json`:
 npx ts-node scripts/migrate-to-supabase.ts
 ```
 
-## 6. Update API Routes
+## 6. Auth Model (Important)
 
-This repo is set up for **Supabase Auth (Option A)**.
+This repo currently uses a **custom username/password login** stored in `public.accounts` + cookie sessions in `public.sessions`.
 
-- Authentication should be done with Supabase Auth (typically client-side via `supabase.auth.signInWithPassword(...)`).
-- App permissions come from `public.app_users` (role/store) linked to `auth.users(id)`.
-
-Next steps (recommended):
-
-- Keep `pages/api/auth.ts` as-is until you switch the UI login to Supabase Auth.
-- Create users in Supabase Auth.
-- Insert matching rows into `public.app_users`.
-- Then migrate each `pages/api/*` route from `lib/dataStore.ts` to Supabase.
+- UI login calls `POST /api/auth`
+- Session cookie is stored as `tw_session`
+- All data access goes through Next.js API routes using `SUPABASE_SERVICE_ROLE_KEY`
 
 ## 7. Vercel Environment Variables
 

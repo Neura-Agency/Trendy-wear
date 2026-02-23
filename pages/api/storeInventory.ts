@@ -1,189 +1,163 @@
-import type { NextApiRequest, NextApiResponse } from 'next';
+import type { NextApiRequest, NextApiResponse } from 'next'
 import { supabaseAdmin, TABLES } from '../../lib/supabase'
-import { serverEvents } from '../../lib/serverEvents'
-import {
-  ensureStore,
-  getAllotedQty,
-  getInventoryTotalQty,
-  getSettings
-} from '../../lib/api/supabaseHelpers'
-import { isAdmin, requireSession, getAllowedStoreIds, isSuperAdmin } from '../../lib/api/session'
+import { getAllowedStoreIds, requireAdmin, requireSession } from '../../lib/api/session'
+
+function num(v: any): number {
+  const n = Number(v)
+  return Number.isFinite(n) ? n : 0
+}
 
 export default async function handler(req: NextApiRequest, res: NextApiResponse) {
   try {
-    const session = await requireSession(req, res)
+    const session = req.method === 'GET' ? await requireSession(req, res) : await requireAdmin(req, res)
     if (!session) return
 
     if (req.method === 'GET') {
-      let q = supabaseAdmin
+      const allowedStoreIds = await getAllowedStoreIds(session)
+
+      let query = supabaseAdmin
         .from(TABLES.STORE_INVENTORY)
-        .select(
-          'product_name,owner_supply_price,commission_percent,store_selling_price,quantity_assigned,quantity_remaining,owner,store_id,stores(name)'
-        )
-        .order('created_at', { ascending: true })
+        .select(`
+          id,
+          store_id,
+          product_id,
+          inventory_id,
+          owner_supply_price,
+          commission_percent,
+          store_selling_price,
+          quantity_assigned,
+          quantity_remaining,
+          stores:store_id ( name ),
+          products:product_id ( product_name )
+        `)
+        .order('created_at', { ascending: false })
 
-      if (session.role === 'store') {
-        if (!session.storeId) return res.status(403).json({ error: 'Forbidden' })
-        q = q.eq('store_id', session.storeId)
-      } else {
-        const allowed = await getAllowedStoreIds(session)
-        if (allowed && allowed.length === 0) return res.json({ storeInventory: {} })
-        if (allowed) q = q.in('store_id', allowed)
+      if (Array.isArray(allowedStoreIds)) {
+        query = query.in('store_id', allowedStoreIds.length ? allowedStoreIds : ['00000000-0000-0000-0000-000000000000'])
       }
 
-      const { data, error } = await q
+      const { data, error } = await query
+      if (error) {
+        console.error('storeInventory GET error:', error)
+        return res.status(500).json({ error: 'Failed to fetch store inventory' })
+      }
 
-      if (error) throw error
+      const storeInventory: Record<string, Record<string, any>> = {}
 
-      const out: Record<string, Record<string, any>> = {}
-      for (const r of data ?? []) {
-        const storeName = (r as any).stores?.name
-        if (!storeName) continue
-        if (!out[storeName]) out[storeName] = {}
-        out[storeName][r.product_name] = {
-          productName: r.product_name,
-          ownerSupplyPrice: Number(r.owner_supply_price) || 0,
-          commissionPercent: Number(r.commission_percent) || 0,
-          storeSellingPrice: Number(r.store_selling_price) || 0,
-          quantityAssigned: Number(r.quantity_assigned) || 0,
-          quantityRemaining: Number(r.quantity_remaining) || 0,
-          owner: r.owner ?? undefined
+      ;(data || []).forEach((row: any) => {
+        const storeName = row.stores?.name
+        const productName = row.products?.product_name
+        if (!storeName || !productName) return
+
+        if (!storeInventory[storeName]) storeInventory[storeName] = {}
+
+        const existing = storeInventory[storeName][productName]
+        const qtyAssigned = num(row.quantity_assigned)
+        const qtyRemaining = num(row.quantity_remaining)
+
+        if (!existing) {
+          storeInventory[storeName][productName] = {
+            productName,
+            ownerSupplyPrice: num(row.owner_supply_price),
+            commissionPercent: num(row.commission_percent),
+            storeSellingPrice: num(row.store_selling_price),
+            quantityAssigned: qtyAssigned,
+            quantityRemaining: qtyRemaining
+          }
+        } else {
+          existing.quantityAssigned = num(existing.quantityAssigned) + qtyAssigned
+          existing.quantityRemaining = num(existing.quantityRemaining) + qtyRemaining
+          // Keep latest price/commission (most recent row is first due to ordering)
         }
-      }
+      })
 
-      return res.json({ storeInventory: out })
+      return res.json({ storeInventory })
     }
 
     if (req.method === 'POST') {
-      if (!isAdmin(session)) return res.status(403).json({ error: 'Forbidden' })
+      const { storeName, batchNumber, quantity, ownerSupplyPrice, commissionPercent } = req.body || {}
 
-      const { storeName, productName, ownerSupplyPrice, quantity, commissionPercent, owner } = req.body || {}
-      if (!storeName || !productName || ownerSupplyPrice === undefined || quantity === undefined) {
-        return res
-          .status(400)
-          .json({ error: 'storeName, productName, ownerSupplyPrice and quantity are required.' })
+      if (!storeName || !batchNumber) {
+        return res.status(400).json({ error: 'storeName and batchNumber are required' })
       }
 
-      if (session.scope !== 'all' && session.managedStores?.length && !session.managedStores.includes(String(storeName))) {
-        return res.status(403).json({ error: 'Forbidden' })
+      const qty = num(quantity)
+      if (!qty || qty < 1) {
+        return res.status(400).json({ error: 'quantity must be >= 1' })
       }
 
-      const settings = await getSettings()
-      const store = await ensureStore(storeName, settings.defaultCommission)
-
-      const qty = Math.max(0, parseInt(quantity, 10) || 0)
-      const supply = Number(ownerSupplyPrice) || 0
-      const comm =
-        commissionPercent !== undefined && commissionPercent !== null
-          ? Number(commissionPercent)
-          : Number(store.commission) || settings.defaultCommission
-
-      const totalQty = await getInventoryTotalQty(productName)
-      const alreadyAlloted = await getAllotedQty(productName)
-      const availableToAllot = Math.max(0, totalQty - alreadyAlloted)
-      if (qty > availableToAllot) {
-        return res.status(400).json({ error: `Quantity cannot be more than ${availableToAllot}` })
-      }
-
-      const { data: existing, error: exErr } = await supabaseAdmin
-        .from(TABLES.STORE_INVENTORY)
-        .select('*')
-        .eq('store_id', store.id)
-        .eq('product_name', productName)
+      const { data: store, error: storeErr } = await supabaseAdmin
+        .from(TABLES.STORES)
+        .select('id, name')
+        .eq('name', String(storeName))
         .maybeSingle()
 
-      if (exErr) throw exErr
-
-      let row: any
-      if (existing) {
-        const { data: updated, error: upErr } = await supabaseAdmin
-          .from(TABLES.STORE_INVENTORY)
-          .update({
-            owner_supply_price: supply,
-            commission_percent: comm,
-            quantity_assigned: (Number(existing.quantity_assigned) || 0) + qty,
-            quantity_remaining: (Number(existing.quantity_remaining) || 0) + qty,
-            owner: owner ?? existing.owner ?? null
-          })
-          .eq('id', existing.id)
-          .select('*')
-          .single()
-
-        if (upErr) throw upErr
-        row = updated
-      } else {
-        const { data: inserted, error: insErr } = await supabaseAdmin
-          .from(TABLES.STORE_INVENTORY)
-          .insert({
-            store_id: store.id,
-            product_name: productName,
-            owner_supply_price: supply,
-            commission_percent: comm,
-            store_selling_price: supply,
-            quantity_assigned: qty,
-            quantity_remaining: qty,
-            owner: owner ?? null
-          })
-          .select('*')
-          .single()
-
-        if (insErr) throw insErr
-        row = inserted
+      if (storeErr) {
+        console.error('store lookup error:', storeErr)
+        return res.status(500).json({ error: 'Failed to lookup store' })
       }
+      if (!store) return res.status(404).json({ error: 'Store not found' })
 
-      serverEvents.emit('change', { ts: Date.now(), type: 'store_inventory' })
-      return res.json({
-        productName: row.product_name,
-        ownerSupplyPrice: Number(row.owner_supply_price) || 0,
-        commissionPercent: Number(row.commission_percent) || 0,
-        storeSellingPrice: Number(row.store_selling_price) || 0,
-        quantityAssigned: Number(row.quantity_assigned) || 0,
-        quantityRemaining: Number(row.quantity_remaining) || 0,
-        owner: row.owner ?? undefined
-      })
-    }
-
-    if (req.method === 'PATCH') {
-      if (!isAdmin(session)) return res.status(403).json({ error: 'Forbidden' })
-
-      const { storeName, productName, storeSellingPrice } = req.body || {}
-      if (!storeName || !productName || storeSellingPrice === undefined) {
-        return res.status(400).json({ error: 'storeName, productName and storeSellingPrice are required.' })
-      }
-
-      if (session.scope !== 'all' && session.managedStores?.length && !session.managedStores.includes(String(storeName))) {
-        return res.status(403).json({ error: 'Forbidden' })
-      }
-
-      const settings = await getSettings()
-      const store = await ensureStore(storeName, settings.defaultCommission)
-
-      const { data: updated, error } = await supabaseAdmin
-        .from(TABLES.STORE_INVENTORY)
-        .update({ store_selling_price: Number(storeSellingPrice) || 0 })
-        .eq('store_id', store.id)
-        .eq('product_name', productName)
-        .select('*')
+      const { data: inv, error: invErr } = await supabaseAdmin
+        .from(TABLES.INVENTORY)
+        .select('id, product_id, quantity_available')
+        .eq('batch_number', String(batchNumber))
         .maybeSingle()
 
-      if (error) throw error
-      if (!updated) return res.status(404).json({ error: 'Item not found in store inventory.' })
+      if (invErr) {
+        console.error('inventory lookup error:', invErr)
+        return res.status(500).json({ error: 'Failed to lookup inventory batch' })
+      }
+      if (!inv) return res.status(404).json({ error: 'Inventory batch not found' })
+      if (!inv.product_id) return res.status(400).json({ error: 'Inventory batch is missing product_id' })
 
-      serverEvents.emit('change', { ts: Date.now(), type: 'store_inventory' })
-      return res.json({
-        productName: updated.product_name,
-        ownerSupplyPrice: Number(updated.owner_supply_price) || 0,
-        commissionPercent: Number(updated.commission_percent) || 0,
-        storeSellingPrice: Number(updated.store_selling_price) || 0,
-        quantityAssigned: Number(updated.quantity_assigned) || 0,
-        quantityRemaining: Number(updated.quantity_remaining) || 0,
-        owner: updated.owner ?? undefined
-      })
+      // Server-side availability guard (per batch)
+      const { data: assignedRows, error: assignedErr } = await supabaseAdmin
+        .from(TABLES.STORE_INVENTORY)
+        .select('quantity_assigned')
+        .eq('inventory_id', inv.id)
+
+      if (assignedErr) {
+        console.error('assigned sum error:', assignedErr)
+        return res.status(500).json({ error: 'Failed to validate available quantity' })
+      }
+
+      const alreadyAssigned = (assignedRows || []).reduce((acc: number, r: any) => acc + num(r.quantity_assigned), 0)
+      const total = num(inv.quantity_available)
+      const remaining = Math.max(0, total - alreadyAssigned)
+      if (qty > remaining) {
+        return res.status(400).json({ error: `Quantity exceeds available stock (${remaining}) for this batch` })
+      }
+
+      const supply = num(ownerSupplyPrice)
+      const commission = num(commissionPercent)
+
+      const { data: inserted, error: insertErr } = await supabaseAdmin
+        .from(TABLES.STORE_INVENTORY)
+        .insert({
+          store_id: store.id,
+          product_id: inv.product_id,
+          inventory_id: inv.id,
+          owner_supply_price: supply,
+          commission_percent: commission,
+          store_selling_price: supply,
+          quantity_assigned: qty,
+          quantity_remaining: qty
+        })
+        .select('id')
+        .single()
+
+      if (insertErr) {
+        console.error('storeInventory insert error:', insertErr)
+        return res.status(500).json({ error: 'Failed to save allotment' })
+      }
+
+      return res.status(201).json({ success: true, id: inserted?.id })
     }
 
     return res.status(405).json({ error: 'Method not allowed' })
   } catch (e: any) {
-    console.error('storeInventory api error:', e)
+    console.error('storeInventory API error:', e)
     return res.status(500).json({ error: e?.message || 'Internal server error' })
   }
 }

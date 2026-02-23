@@ -12,9 +12,13 @@ export default function ShopCredentials({ user, onLogin }: PageProps) {
         try {
             const res = await fetch("/api/store");
             const d = await res.json();
-            setData(d);
+            setData({
+                accounts: d.accounts || {},
+                stores: d.stores || {}
+            });
         } catch (e) {
             console.error(e);
+            setData({ accounts: {}, stores: {} });
         } finally {
             setLoading(false);
         }
@@ -38,8 +42,7 @@ export default function ShopCredentials({ user, onLogin }: PageProps) {
     const isSuperAdmin = user.scope === 'all';
 
     // Filter credentials based on admin scope
-    const filteredAccounts = Object.entries(data.accounts).filter(([username, acc]) => {
-        if (acc.role !== 'store') return false; // Only show store accounts
+    const filteredAccounts = Object.entries(data.accounts || {}).filter(([username, acc]) => {
         if (isSuperAdmin) return true; // Yahya sees all
         if (user.managedStores?.includes(acc.storeName)) return true; // Bilal sees his managed stores
         return false;
@@ -67,12 +70,13 @@ export default function ShopCredentials({ user, onLogin }: PageProps) {
                                     <th>Store Name</th>
                                     <th>Username (User ID)</th>
                                     <th>Password</th>
+                                    <th>Role</th>
                                     <th>Status</th>
                                 </tr>
                             </thead>
                             <tbody>
                                 {filteredAccounts.length === 0 ? (
-                                    <tr><td colSpan={4} style={{ textAlign: 'center', padding: 40 }} className="text-muted">No managed store accounts found.</td></tr>
+                                    <tr><td colSpan={5} style={{ textAlign: 'center', padding: 40 }} className="text-muted">No managed store accounts found.</td></tr>
                                 ) : (
                                     filteredAccounts.map(([username, acc]) => (
                                         <tr key={username}>
@@ -82,6 +86,9 @@ export default function ShopCredentials({ user, onLogin }: PageProps) {
                                             </td>
                                             <td>
                                                 <code className="credential-code primary">{acc.password}</code>
+                                            </td>
+                                            <td>
+                                                <Badge type={acc.role === 'admin' ? 'blue' : 'purple'}>{acc.role}</Badge>
                                             </td>
                                             <td><Badge type="green">Active</Badge></td>
                                         </tr>

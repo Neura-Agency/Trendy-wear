@@ -1,31 +1,45 @@
--- Trendy Wear ERP (Supabase) — Schema for current app
+-- Trendy Wear ERP (Supabase)
+-- One-time rebuild script to fix legacy/mismatched tables while KEEPING public.accounts + public.sessions.
 --
--- This schema is designed to match the existing Next.js UI + API routes in this repo.
--- Auth model in this repo (current): username/password stored in public.accounts + cookie sessions in public.sessions.
+-- Use when you see errors like:
+-- - PGRST205: Could not find the table 'public.expenses' in the schema cache
+-- - 42703: column stores.id does not exist
 --
--- Core business tables (your requested model):
--- - store_owners, stores, products, inventory, store_inventory, orders
---
--- Support tables required by current screens/APIs:
--- - purchases (warehouse entry history)
--- - expenses (dashboard + PDF report)
--- - clients (clients section)
--- - settings (defaultCommission + lowStockThreshold)
--- - audit_logs (optional, used by /api/reset)
---
--- Notes on RLS:
--- - API routes use SUPABASE_SERVICE_ROLE_KEY (service role) and therefore bypass RLS.
--- - We enable RLS on business tables but do not create policies here (client-side access denied by default).
+-- WARNING:
+-- - This DROPS and recreates business tables (stores/inventory/orders/etc).
+-- - It preserves ONLY login data in public.accounts and public.sessions.
+-- - If you have important sales/inventory data already in Supabase, STOP and ask for a migration script instead.
 
-create extension if not exists pgcrypto;
+begin;
 
--- 1) Enums
+-- 0) Detach accounts from stores (if previously linked)
+alter table if exists public.accounts drop constraint if exists accounts_store_id_fk;
+update public.accounts set store_id = null;
+
+-- 1) Drop business/support tables (safe order; CASCADE cleans dependent objects)
+drop table if exists public.audit_logs cascade;
+drop table if exists public.expenses cascade;
+drop table if exists public.purchases cascade;
+drop table if exists public.orders cascade;
+drop table if exists public.store_inventory cascade;
+drop table if exists public.inventory cascade;
+drop table if exists public.products cascade;
+drop table if exists public.clients cascade;
+drop table if exists public.settings cascade;
+drop table if exists public.stores cascade;
+drop table if exists public.store_owners cascade;
+
+-- 2) Helpers
+do $$ begin
+  create extension if not exists pgcrypto;
+exception when insufficient_privilege then null;
+end $$;
+
 do $$ begin
   create type public.user_role as enum ('admin', 'store');
 exception when duplicate_object then null;
 end $$;
 
--- 2) updated_at helper
 create or replace function public.set_updated_at()
 returns trigger
 language plpgsql
@@ -36,54 +50,8 @@ begin
 end;
 $$;
 
--- =========================================================
--- AUTH TABLES (KEEP THESE)
--- =========================================================
--- Accounts + sessions are used by pages/api/auth.ts + lib/api/session.ts
-
-create table if not exists public.accounts (
-  id uuid primary key default gen_random_uuid(),
-  username text not null unique,
-  password_hash text not null,
-  role public.user_role not null,
-  scope text,
-  store_id uuid,
-  managed_stores text[] not null default '{}'::text[],
-  is_active boolean not null default true,
-  created_at timestamptz not null default now(),
-  updated_at timestamptz not null default now(),
-  constraint accounts_scope_check check (scope is null or scope = 'all')
-);
-
-drop trigger if exists trg_accounts_updated_at on public.accounts;
-create trigger trg_accounts_updated_at
-before update on public.accounts
-for each row execute function public.set_updated_at();
-
-create table if not exists public.sessions (
-  id uuid primary key default gen_random_uuid(),
-  account_id uuid not null references public.accounts(id) on delete cascade,
-  token_hash text not null unique,
-  created_at timestamptz not null default now(),
-  expires_at timestamptz not null,
-  revoked_at timestamptz,
-  user_agent text,
-  ip text
-);
-
-create index if not exists idx_sessions_account_id on public.sessions(account_id);
-create index if not exists idx_sessions_expires_at on public.sessions(expires_at);
-
-alter table public.accounts enable row level security;
-alter table public.sessions enable row level security;
--- Intentionally no policies: API uses service role.
-
--- =========================================================
--- CORE BUSINESS TABLES (6)
--- =========================================================
-
--- 1) Store owners
-create table if not exists public.store_owners (
+-- 3) Core tables
+create table public.store_owners (
   id uuid primary key default gen_random_uuid(),
   owner_name text not null,
   contact text,
@@ -97,8 +65,7 @@ create trigger trg_store_owners_updated_at
 before update on public.store_owners
 for each row execute function public.set_updated_at();
 
--- 2) Stores
-create table if not exists public.stores (
+create table public.stores (
   id uuid primary key default gen_random_uuid(),
   name text not null unique,
   store_code text,
@@ -113,15 +80,12 @@ create table if not exists public.stores (
   updated_at timestamptz not null default now()
 );
 
-create index if not exists idx_stores_paid on public.stores(paid);
-create index if not exists idx_stores_owner_id on public.stores(owner_id);
-
 drop trigger if exists trg_stores_updated_at on public.stores;
 create trigger trg_stores_updated_at
 before update on public.stores
 for each row execute function public.set_updated_at();
 
--- Link accounts.store_id to stores
+-- Relink accounts.store_id -> stores.id (accounts table must already have store_id uuid)
 do $$ begin
   alter table public.accounts
     add constraint accounts_store_id_fk
@@ -130,8 +94,7 @@ do $$ begin
 exception when duplicate_object then null;
 end $$;
 
--- 3) Products
-create table if not exists public.products (
+create table public.products (
   id uuid primary key default gen_random_uuid(),
   product_name text not null,
   brand_name text,
@@ -150,10 +113,7 @@ create trigger trg_products_updated_at
 before update on public.products
 for each row execute function public.set_updated_at();
 
-create index if not exists idx_products_name on public.products(product_name);
-
--- 4) Inventory (warehouse batches) — matches pages/api/purchases.ts
-create table if not exists public.inventory (
+create table public.inventory (
   id uuid primary key default gen_random_uuid(),
   product_id uuid references public.products(id) on delete set null,
 
@@ -177,16 +137,12 @@ create table if not exists public.inventory (
   updated_at timestamptz not null default now()
 );
 
-create index if not exists idx_inventory_product_name on public.inventory(product_name);
-create index if not exists idx_inventory_product_id on public.inventory(product_id);
-
 drop trigger if exists trg_inventory_updated_at on public.inventory;
 create trigger trg_inventory_updated_at
 before update on public.inventory
 for each row execute function public.set_updated_at();
 
--- 5) Store inventory (allotted lots) — matches pages/api/storeInventory.ts
-create table if not exists public.store_inventory (
+create table public.store_inventory (
   id uuid primary key default gen_random_uuid(),
   store_id uuid not null references public.stores(id) on delete cascade,
 
@@ -208,17 +164,12 @@ create table if not exists public.store_inventory (
   constraint uq_store_inventory unique (store_id, product_name)
 );
 
-create index if not exists idx_store_inventory_store_id on public.store_inventory(store_id);
-create index if not exists idx_store_inventory_product_name on public.store_inventory(product_name);
-create index if not exists idx_store_inventory_product_id on public.store_inventory(product_id);
-
 drop trigger if exists trg_store_inventory_updated_at on public.store_inventory;
 create trigger trg_store_inventory_updated_at
 before update on public.store_inventory
 for each row execute function public.set_updated_at();
 
--- 6) Orders (sales) — matches pages/api/orders.ts and PDF report
-create table if not exists public.orders (
+create table public.orders (
   id uuid primary key default gen_random_uuid(),
   order_code text not null unique,
 
@@ -249,21 +200,13 @@ create table if not exists public.orders (
   updated_at timestamptz not null default now()
 );
 
-create index if not exists idx_orders_store_id on public.orders(store_id);
-create index if not exists idx_orders_occurred_at on public.orders(occurred_at);
-create index if not exists idx_orders_included_in_payout on public.orders(included_in_payout);
-
 drop trigger if exists trg_orders_updated_at on public.orders;
 create trigger trg_orders_updated_at
 before update on public.orders
 for each row execute function public.set_updated_at();
 
--- =========================================================
--- SUPPORT TABLES (required by current app)
--- =========================================================
-
--- Clients (used by pages/api/clients.ts)
-create table if not exists public.clients (
+-- 4) Support tables
+create table public.clients (
   id uuid primary key default gen_random_uuid(),
   name text not null,
   phone text,
@@ -277,7 +220,6 @@ create trigger trg_clients_updated_at
 before update on public.clients
 for each row execute function public.set_updated_at();
 
--- Add FK now that clients exists
 do $$ begin
   alter table public.orders
     add constraint orders_client_id_fk
@@ -286,8 +228,7 @@ do $$ begin
 exception when duplicate_object then null;
 end $$;
 
--- Purchases (used by pages/api/purchases.ts)
-create table if not exists public.purchases (
+create table public.purchases (
   id uuid primary key default gen_random_uuid(),
   inventory_id uuid references public.inventory(id) on delete restrict,
   product_id uuid references public.products(id) on delete set null,
@@ -310,11 +251,7 @@ create table if not exists public.purchases (
   created_at timestamptz not null default now()
 );
 
-create index if not exists idx_purchases_inventory_id on public.purchases(inventory_id);
-create index if not exists idx_purchases_purchased_at on public.purchases(purchased_at);
-
--- Expenses (used by pages/api/expenses.ts and PDF report)
-create table if not exists public.expenses (
+create table public.expenses (
   id uuid primary key default gen_random_uuid(),
   expense_code text unique,
   title text not null,
@@ -326,16 +263,12 @@ create table if not exists public.expenses (
   updated_at timestamptz not null default now()
 );
 
-create index if not exists idx_expenses_occurred_at on public.expenses(occurred_at);
-create index if not exists idx_expenses_category on public.expenses(category);
-
 drop trigger if exists trg_expenses_updated_at on public.expenses;
 create trigger trg_expenses_updated_at
 before update on public.expenses
 for each row execute function public.set_updated_at();
 
--- Settings (used by lib/api/supabaseHelpers.ts)
-create table if not exists public.settings (
+create table public.settings (
   key text primary key,
   value jsonb not null,
   updated_at timestamptz not null default now()
@@ -347,8 +280,7 @@ values
   ('lowStockThreshold', to_jsonb(5))
 on conflict (key) do nothing;
 
--- Optional audit log table (used only by /api/reset cleanup in this repo)
-create table if not exists public.audit_logs (
+create table public.audit_logs (
   id uuid primary key default gen_random_uuid(),
   table_name text not null,
   record_id uuid,
@@ -359,9 +291,7 @@ create table if not exists public.audit_logs (
   changed_at timestamptz not null default now()
 );
 
--- =========================================================
--- RLS: lock down business tables by default
--- =========================================================
+-- 5) RLS enabled, policies intentionally omitted (API uses service role)
 alter table public.store_owners enable row level security;
 alter table public.stores enable row level security;
 alter table public.products enable row level security;
@@ -374,4 +304,8 @@ alter table public.expenses enable row level security;
 alter table public.settings enable row level security;
 alter table public.audit_logs enable row level security;
 
--- No policies added: access via server using SUPABASE_SERVICE_ROLE_KEY.
+commit;
+
+-- If you still see PGRST205 for a minute or two, reload PostgREST schema cache:
+-- In Supabase Dashboard: Settings -> API -> "Reload schema"
+-- Or try: notify pgrst, 'reload schema';
