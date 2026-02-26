@@ -83,6 +83,432 @@ function TableFilter({ value, onChange }: TableFilterProps) {
     </div>
   );
 }
+
+// ─── GROUPED BAR CHART (SVG) ──────────────────────────────────────────────
+interface GBCSeries {
+  label: string;
+  color: string;
+  values: number[]; // one value per group
+}
+interface GroupedBarChartProps {
+  title: string;
+  groups: string[];       // X axis labels (months)
+  series: GBCSeries[];    // one series per product/store
+  max: number;
+  yLabel?: string;
+  formatValue?: (v: number) => string;
+}
+
+function GroupedBarChart({ title, groups, series, max, yLabel = '', formatValue = String }: GroupedBarChartProps) {
+  const [hovered, setHovered] = useState<{ gi: number; si: number; bx: number; by: number } | null>(null);
+
+  const W = 720, H = 270;
+  const PAD = { top: 24, right: 16, bottom: 48, left: 46 };
+  const chartW = W - PAD.left - PAD.right;
+  const chartH = H - PAD.top - PAD.bottom;
+
+  const nGroups = groups.length;
+  const nSeries = series.length;
+  const groupW = chartW / nGroups;
+  const barGap = 1.5;
+  const groupPad = groupW * 0.16;
+  const barW = Math.max(5, (groupW - groupPad * 2 - barGap * (nSeries - 1)) / Math.max(1, nSeries));
+
+  const yTicks = [0, 0.25, 0.5, 0.75, 1].map(f => ({ frac: f, val: Math.round(max * f) }));
+
+  const tipSeries = hovered ? series[hovered.si] : null;
+  const tipVal    = hovered ? (series[hovered.si]?.values[hovered.gi] ?? 0) : 0;
+  const tipLabel  = hovered ? `${tipSeries?.label}: ${formatValue(tipVal)}` : '';
+  const tipW      = Math.min(tipLabel.length * 6.5 + 28, 210);
+  const tipX      = hovered ? Math.min(Math.max(hovered.bx, PAD.left + tipW / 2 + 4), W - tipW / 2 - 4) : 0;
+  const tipY      = hovered ? Math.max(hovered.by - 52, PAD.top) : 0;
+
+  return (
+    <div style={{ width: '100%' }}>
+      <div style={{ width: '100%', overflowX: 'auto' }}>
+        <svg
+          viewBox={`0 0 ${W} ${H}`}
+          width="100%"
+          style={{ display: 'block', minWidth: 360, fontFamily: 'Inter, system-ui, sans-serif' }}
+          aria-label={title}
+        >
+          <defs>
+            {series.map((s, i) => (
+              <linearGradient key={i} id={`gbcG${i}`} x1="0" y1="0" x2="0" y2="1">
+                <stop offset="0%"   stopColor={s.color} stopOpacity={0.95} />
+                <stop offset="100%" stopColor={s.color} stopOpacity={0.4}  />
+              </linearGradient>
+            ))}
+            <clipPath id="gbcClip">
+              <rect x={PAD.left} y={PAD.top} width={chartW} height={chartH} />
+            </clipPath>
+          </defs>
+
+          {/* Chart area bg */}
+          <rect x={PAD.left} y={PAD.top} width={chartW} height={chartH} rx={6} fill="rgba(148,163,184,0.05)" />
+
+          {/* Y-axis grid */}
+          {yTicks.map(({ frac, val }) => {
+            const y = PAD.top + chartH * (1 - frac);
+            return (
+              <g key={frac}>
+                <line
+                  x1={PAD.left} x2={PAD.left + chartW} y1={y} y2={y}
+                  stroke={frac === 0 ? '#94a3b8' : '#cbd5e1'}
+                  strokeWidth={frac === 0 ? 1.5 : 0.8}
+                  strokeDasharray={frac === 0 ? undefined : '4 5'}
+                  opacity={frac === 0 ? 1 : 0.65}
+                />
+                {frac > 0 && (
+                  <text x={PAD.left - 8} y={y + 4} textAnchor="end" fontSize={10} fontWeight={600} fill="#94a3b8">
+                    {val >= 1000000 ? (val / 1000000).toFixed(1) + 'M'
+                      : val >= 1000 ? (val / 1000).toFixed(0) + 'k'
+                      : val}
+                  </text>
+                )}
+              </g>
+            );
+          })}
+
+          {/* Bars (clipped) */}
+          <g clipPath="url(#gbcClip)">
+            {groups.map((grp, gi) => {
+              const groupX  = PAD.left + gi * groupW + groupPad;
+              const groupCX = groupX + (nSeries * barW + (nSeries - 1) * barGap) / 2;
+              return (
+                <g key={gi}>
+                  {gi > 0 && (
+                    <line
+                      x1={PAD.left + gi * groupW} x2={PAD.left + gi * groupW}
+                      y1={PAD.top} y2={PAD.top + chartH}
+                      stroke="#e2e8f0" strokeWidth={0.8} opacity={0.45}
+                    />
+                  )}
+                  {series.map((s, si) => {
+                    const val  = s.values[gi] || 0;
+                    const barH = max > 0 ? (val / max) * chartH : 0;
+                    const bx   = groupX + si * (barW + barGap);
+                    const by   = PAD.top + chartH - barH;
+                    const isHov = hovered?.gi === gi && hovered?.si === si;
+                    return (
+                      <g key={si}>
+                        {barH > 2 && (
+                          <rect x={bx + 1} y={by + 2} width={barW} height={Math.max(barH - 2, 1)}
+                            rx={3} fill="rgba(0,0,0,0.09)" />
+                        )}
+                        <rect
+                          x={bx} y={by} width={barW} height={Math.max(barH, 1)}
+                          rx={3}
+                          fill={`url(#gbcG${si})`}
+                          opacity={hovered ? (isHov ? 1 : 0.25) : 0.88}
+                          style={{ cursor: 'pointer', transition: 'opacity 0.18s' }}
+                          onMouseEnter={() => setHovered({ gi, si, bx: groupCX, by })}
+                          onMouseLeave={() => setHovered(null)}
+                        />
+                        {barH > 6 && (
+                          <rect
+                            x={bx + 1} y={by} width={barW - 2} height={Math.min(barH * 0.32, 11)}
+                            rx={3} fill="rgba(255,255,255,0.30)"
+                            style={{ pointerEvents: 'none' }}
+                          />
+                        )}
+                      </g>
+                    );
+                  })}
+                </g>
+              );
+            })}
+          </g>
+
+          {/* X-axis labels */}
+          {groups.map((grp, gi) => {
+            const groupX  = PAD.left + gi * groupW + groupPad;
+            const groupCX = groupX + (nSeries * barW + (nSeries - 1) * barGap) / 2;
+            return (
+              <text key={gi}
+                x={groupCX} y={PAD.top + chartH + 16}
+                textAnchor="middle" fontSize={9.5} fontWeight={700} fill="#64748b" letterSpacing="0.04em"
+              >
+                {grp.toUpperCase()}
+              </text>
+            );
+          })}
+
+          {/* Floating tooltip */}
+          {hovered && tipVal > 0 && (
+            <g style={{ pointerEvents: 'none' }}>
+              <rect
+                x={tipX - tipW / 2} y={tipY}
+                width={tipW} height={30} rx={8}
+                fill={tipSeries?.color ?? '#6366f1'} opacity={0.97}
+                filter="drop-shadow(0 3px 8px rgba(0,0,0,0.22))"
+              />
+              <text
+                x={tipX} y={tipY + 19}
+                textAnchor="middle" fontSize={11} fontWeight={800} fill="white"
+              >
+                {tipLabel}
+              </text>
+              <polygon
+                points={`${tipX - 6},${tipY + 30} ${tipX + 6},${tipY + 30} ${tipX},${tipY + 39}`}
+                fill={tipSeries?.color ?? '#6366f1'} opacity={0.97}
+              />
+            </g>
+          )}
+        </svg>
+      </div>
+
+      {/* Pill legend */}
+      <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px 10px', marginTop: 14, justifyContent: 'center' }}>
+        {series.map((s, i) => (
+          <div key={i} style={{
+            display: 'flex', alignItems: 'center', gap: 6,
+            background: s.color + '18',
+            border: `1.5px solid ${s.color}45`,
+            borderRadius: 20, padding: '4px 12px',
+          }}>
+            <span style={{
+              width: 8, height: 8, borderRadius: '50%',
+              background: s.color, flexShrink: 0,
+              boxShadow: `0 0 6px ${s.color}80`,
+            }} />
+            <span style={{ fontSize: 11, fontWeight: 700, color: '#475569', whiteSpace: 'nowrap' }}>
+              {s.label}
+            </span>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+// ─── STACKED GROUPED BAR CHART (per-month × per-store, each bar = revenue+profit stacked)
+interface SBCSeries {
+  label: string;
+  color: string;
+  revenues: number[];  // one per group (month)
+  profits:  number[];  // one per group (month)
+}
+interface StackedBarChartProps {
+  groups: string[];       // X-axis labels (months)
+  series: SBCSeries[];    // one per store
+  formatValue?: (v: number) => string;
+}
+
+function StackedBarChart({ groups, series, formatValue = String }: StackedBarChartProps) {
+  const [hovered, setHovered] = useState<{ gi: number; si: number; cx: number; topY: number } | null>(null);
+
+  const W = 720, H = 290;
+  const PAD = { top: 40, right: 16, bottom: 52, left: 52 };
+  const chartW = W - PAD.left - PAD.right;
+  const chartH = H - PAD.top - PAD.bottom;
+
+  const nGroups = groups.length;
+  const nSeries = series.length;
+  const groupW  = chartW / nGroups;
+  const barGap  = 1.2;
+  const groupPad = groupW * 0.13;
+  const barW = Math.max(4, (groupW - groupPad * 2 - barGap * (nSeries - 1)) / Math.max(1, nSeries));
+
+  const maxVal = Math.max(1, ...series.flatMap(s => s.revenues));
+  const yTicks = [0, 0.25, 0.5, 0.75, 1].map(f => ({ frac: f, val: Math.round(maxVal * f) }));
+
+  // Tooltip data
+  const tipS    = hovered ? series[hovered.si] : null;
+  const tipRev  = hovered ? (tipS?.revenues[hovered.gi] ?? 0) : 0;
+  const tipProf = hovered ? (tipS?.profits[hovered.gi]  ?? 0) : 0;
+  const tipLabel = hovered ? `${tipS?.label}  Rev: ${formatValue(tipRev)} · P: ${formatValue(tipProf)}` : '';
+  const tipW    = Math.min(tipLabel.length * 6 + 24, 240);
+  const tipCX   = hovered ? Math.min(Math.max(hovered.cx, PAD.left + tipW / 2 + 4), W - tipW / 2 - 4) : 0;
+  const tipY    = hovered ? Math.max(hovered.topY - 50, PAD.top) : 0;
+
+  return (
+    <div style={{ width: '100%' }}>
+      <div style={{ width: '100%', overflowX: 'auto' }}>
+        <svg
+          viewBox={`0 0 ${W} ${H}`}
+          width="100%"
+          style={{ display: 'block', minWidth: 380, fontFamily: 'Inter, system-ui, sans-serif' }}
+        >
+          <defs>
+            {series.map((s, i) => [
+              <linearGradient key={`sr${i}`} id={`sbcR${i}`} x1="0" y1="0" x2="0" y2="1">
+                <stop offset="0%"   stopColor={s.color} stopOpacity={0.40} />
+                <stop offset="100%" stopColor={s.color} stopOpacity={0.15} />
+              </linearGradient>,
+              <linearGradient key={`sp${i}`} id={`sbcP${i}`} x1="0" y1="0" x2="0" y2="1">
+                <stop offset="0%"   stopColor={s.color} stopOpacity={1}    />
+                <stop offset="100%" stopColor={s.color} stopOpacity={0.68} />
+              </linearGradient>,
+            ])}
+            <clipPath id="sbcClip">
+              <rect x={PAD.left} y={PAD.top} width={chartW} height={chartH} />
+            </clipPath>
+          </defs>
+
+          {/* Chart bg */}
+          <rect x={PAD.left} y={PAD.top} width={chartW} height={chartH} rx={6} fill="rgba(148,163,184,0.05)" />
+
+          {/* Y grid */}
+          {yTicks.map(({ frac, val }) => {
+            const y = PAD.top + chartH * (1 - frac);
+            return (
+              <g key={frac}>
+                <line
+                  x1={PAD.left} x2={PAD.left + chartW} y1={y} y2={y}
+                  stroke={frac === 0 ? '#94a3b8' : '#cbd5e1'}
+                  strokeWidth={frac === 0 ? 1.5 : 0.8}
+                  strokeDasharray={frac === 0 ? undefined : '4 5'}
+                  opacity={frac === 0 ? 1 : 0.6}
+                />
+                {frac > 0 && (
+                  <text x={PAD.left - 8} y={y + 4} textAnchor="end" fontSize={10} fontWeight={600} fill="#94a3b8">
+                    {val >= 1000000 ? (val / 1000000).toFixed(1) + 'M'
+                      : val >= 1000 ? (val / 1000).toFixed(0) + 'k' : val}
+                  </text>
+                )}
+              </g>
+            );
+          })}
+
+          {/* Grouped+Stacked Bars */}
+          <g clipPath="url(#sbcClip)">
+            {groups.map((grp, gi) => {
+              const gx  = PAD.left + gi * groupW + groupPad;
+              const gcx = gx + (nSeries * barW + (nSeries - 1) * barGap) / 2;
+              return (
+                <g key={gi}>
+                  {gi > 0 && (
+                    <line
+                      x1={PAD.left + gi * groupW} x2={PAD.left + gi * groupW}
+                      y1={PAD.top} y2={PAD.top + chartH}
+                      stroke="#e2e8f0" strokeWidth={0.8} opacity={0.45}
+                    />
+                  )}
+                  {series.map((s, si) => {
+                    const rev    = s.revenues[gi] || 0;
+                    const profit = Math.max(0, s.profits[gi] || 0);
+                    const revH    = maxVal > 0 ? (rev    / maxVal) * chartH : 0;
+                    const profitH = maxVal > 0 ? (profit / maxVal) * chartH : 0;
+                    const costH   = revH - profitH;
+                    const bx      = gx + si * (barW + barGap);
+                    const topY    = PAD.top + chartH - revH;
+                    const profitY = PAD.top + chartH - profitH;
+                    const cx      = bx + barW / 2;
+                    const isHov   = hovered?.gi === gi && hovered?.si === si;
+
+                    return (
+                      <g key={si}
+                        onMouseEnter={() => setHovered({ gi, si, cx: gcx, topY })}
+                        onMouseLeave={() => setHovered(null)}
+                        style={{ cursor: 'pointer' }}
+                      >
+                        {/* Drop shadow */}
+                        {revH > 2 && (
+                          <rect x={bx + 1} y={topY + 2} width={barW} height={revH}
+                            rx={3} fill="rgba(0,0,0,0.09)" />
+                        )}
+                        {/* Revenue (bottom muted portion) */}
+                        <rect
+                          x={bx} y={topY} width={barW} height={Math.max(revH, 1)}
+                          rx={3}
+                          fill={`url(#sbcR${si})`}
+                          opacity={hovered ? (isHov ? 1 : 0.22) : 0.85}
+                          style={{ transition: 'opacity 0.18s' }}
+                        />
+                        {/* Profit (top vivid portion) */}
+                        {profitH > 0 && (
+                          <rect
+                            x={bx} y={profitY} width={barW} height={profitH}
+                            rx={3}
+                            fill={`url(#sbcP${si})`}
+                            opacity={hovered ? (isHov ? 1 : 0.22) : 0.88}
+                            style={{ transition: 'opacity 0.18s' }}
+                          />
+                        )}
+                        {/* Divider between profit / cost */}
+                        {profitH > 2 && costH > 2 && (
+                          <line
+                            x1={bx + 1} x2={bx + barW - 1} y1={profitY} y2={profitY}
+                            stroke="rgba(255,255,255,0.55)" strokeWidth={1}
+                            style={{ pointerEvents: 'none' }}
+                          />
+                        )}
+                        {/* Glass highlight */}
+                        {revH > 6 && (
+                          <rect
+                            x={bx + 1} y={topY} width={barW - 2} height={Math.min(revH * 0.28, 10)}
+                            rx={3} fill="rgba(255,255,255,0.25)"
+                            style={{ pointerEvents: 'none' }}
+                          />
+                        )}
+                      </g>
+                    );
+                  })}
+                </g>
+              );
+            })}
+          </g>
+
+          {/* X-axis month labels */}
+          {groups.map((grp, gi) => {
+            const gx  = PAD.left + gi * groupW + groupPad;
+            const gcx = gx + (nSeries * barW + (nSeries - 1) * barGap) / 2;
+            return (
+              <text key={gi}
+                x={gcx} y={PAD.top + chartH + 16}
+                textAnchor="middle" fontSize={9.5} fontWeight={700} fill="#64748b" letterSpacing="0.04em"
+              >
+                {grp.toUpperCase()}
+              </text>
+            );
+          })}
+
+          {/* Floating tooltip */}
+          {hovered && tipRev > 0 && (
+            <g style={{ pointerEvents: 'none' }}>
+              <rect
+                x={tipCX - tipW / 2} y={tipY}
+                width={tipW} height={28} rx={7}
+                fill={tipS?.color ?? '#6366f1'} opacity={0.97}
+                filter="drop-shadow(0 3px 8px rgba(0,0,0,0.22))"
+              />
+              <text
+                x={tipCX} y={tipY + 18}
+                textAnchor="middle" fontSize={10} fontWeight={800} fill="white"
+              >
+                {tipLabel}
+              </text>
+              <polygon
+                points={`${tipCX - 6},${tipY + 28} ${tipCX + 6},${tipY + 28} ${tipCX},${tipY + 36}`}
+                fill={tipS?.color ?? '#6366f1'} opacity={0.97}
+              />
+            </g>
+          )}
+        </svg>
+      </div>
+
+      {/* Store pill legend */}
+      <div style={{ display: 'flex', flexWrap: 'wrap', gap: '5px 9px', marginTop: 12, justifyContent: 'center' }}>
+        {series.map((s, i) => (
+          <div key={i} style={{
+            display: 'flex', alignItems: 'center', gap: 5,
+            background: s.color + '18', border: `1.5px solid ${s.color}45`,
+            borderRadius: 20, padding: '3px 11px',
+          }}>
+            <span style={{ width: 8, height: 8, borderRadius: '50%', background: s.color, flexShrink: 0, boxShadow: `0 0 5px ${s.color}80` }} />
+            <span style={{ fontSize: 10.5, fontWeight: 700, color: '#475569', whiteSpace: 'nowrap' }}>{s.label}</span>
+          </div>
+        ))}
+        <div style={{ width: '100%', textAlign: 'center', marginTop: 4 }}>
+          <span style={{ fontSize: 10, color: '#94a3b8', fontWeight: 600 }}>▓ Revenue (bottom) &nbsp; █ Profit (top)</span>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+
 // Premium Inline Editor for Commission/Values
 function InlineCommEdit({ value, onSave }) {
   const [editing, setEditing] = useState(false);
@@ -537,6 +963,176 @@ const [loading, setLoading] = useState<boolean>(true);
   const lowStock = data.inventory.filter(i => i.quantityAvailable <= (i.lowStockWarning || 5)).length;
   const ordersCount = kpiOrders.length;
 
+  const totalExpenses = totalCostPrice + totalShipping + totalShopCut + totalAdminTake;
+  const totalProfit = totalGross - totalExpenses;
+  const totalStockQty = data.inventory.reduce((s, i) => s + (i.quantityAvailable || 0), 0);
+  const storesCount = isSuperAdmin
+    ? Object.keys(data.stores || {}).length
+    : isAdmin
+      ? Object.keys(availableStores || {}).length
+      : 1;
+
+  // Graphs (last 12 months, role-scoped)
+  const graphNow = new Date();
+  const graphStart = new Date(Date.UTC(graphNow.getUTCFullYear(), graphNow.getUTCMonth() - 11, 1));
+
+  const monthKeys = Array.from({ length: 12 }, (_, idx) => {
+    const d = new Date(Date.UTC(graphNow.getUTCFullYear(), graphNow.getUTCMonth() - 11 + idx, 1));
+    const key = `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, '0')}`;
+    const label = d.toLocaleString(undefined, { month: 'short' });
+    return { key, label };
+  });
+
+  const monthlyQtyByKey: Record<string, number> = {};
+  const monthlyRevenueByKey: Record<string, number> = {};
+  const monthlyProfitByKey: Record<string, number> = {};
+  const productQty: Record<string, number> = {};
+  const storeProfit: Record<string, number> = {};
+  const storeRevenue: Record<string, number> = {};
+  // Per-product-per-month qty
+  const productMonthQty: Record<string, Record<string, number>> = {};
+  // Per-store-per-month revenue + profit
+  const storeMonthRevenue: Record<string, Record<string, number>> = {};
+  const storeMonthProfit: Record<string, Record<string, number>> = {};
+
+  dashboardOrders.forEach((o) => {
+    const d = new Date(o.date);
+    if (Number.isNaN(d.getTime())) return;
+    if (d < graphStart || d > graphNow) return;
+
+    const monthKey = `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, '0')}`;
+    const qty = Number(o.quantity) || 0;
+    monthlyQtyByKey[monthKey] = (monthlyQtyByKey[monthKey] || 0) + qty;
+
+    const revenue = (Number(o.sellingPrice) || 0) * qty;
+    const profit = Number(o.profit) || 0;
+    monthlyRevenueByKey[monthKey] = (monthlyRevenueByKey[monthKey] || 0) + revenue;
+    monthlyProfitByKey[monthKey] = (monthlyProfitByKey[monthKey] || 0) + profit;
+
+    const productName = String(o.productName || '').trim() || 'Unknown';
+    productQty[productName] = (productQty[productName] || 0) + qty;
+    if (!productMonthQty[productName]) productMonthQty[productName] = {};
+    productMonthQty[productName][monthKey] = (productMonthQty[productName][monthKey] || 0) + qty;
+
+    const storeName = String(o.storeName || '').trim();
+    if (storeName && storeName !== 'Direct') {
+      storeProfit[storeName] = (storeProfit[storeName] || 0) + profit;
+      storeRevenue[storeName] = (storeRevenue[storeName] || 0) + revenue;
+      if (!storeMonthRevenue[storeName]) storeMonthRevenue[storeName] = {};
+      if (!storeMonthProfit[storeName]) storeMonthProfit[storeName] = {};
+      storeMonthRevenue[storeName][monthKey] = (storeMonthRevenue[storeName][monthKey] || 0) + revenue;
+      storeMonthProfit[storeName][monthKey] = (storeMonthProfit[storeName][monthKey] || 0) + profit;
+    }
+  });
+
+  const monthlySeries = monthKeys.map((m) => ({ label: m.label, value: monthlyQtyByKey[m.key] || 0 }));
+  const monthlyMax = Math.max(1, ...monthlySeries.map((p) => p.value));
+
+  const topProducts = Object.entries(productQty)
+    .sort((a, b) => b[1] - a[1])
+    .slice(0, 6)
+    .map(([label, value]) => ({ label, value }));
+  const bestProductLabel = topProducts[0]?.label ?? null;
+
+  const storeSeries = Object.entries(storeRevenue)
+    .sort((a, b) => b[1] - a[1])
+    .slice(0, 6)
+    .map(([label, revenue]) => ({
+      label,
+      revenue,
+      profit: storeProfit[label] || 0
+    }));
+  const storeRevenueMax = Math.max(1, ...storeSeries.map((s) => s.revenue));
+  const bestStoreLabel = Object.entries(storeProfit)
+    .sort((a, b) => b[1] - a[1])[0]?.[0] ?? null;
+
+  const monthlyRevenueSeries = monthKeys.map((m) => ({
+    label: m.label,
+    revenue: monthlyRevenueByKey[m.key] || 0,
+    profit: monthlyProfitByKey[m.key] || 0
+  }));
+  const monthlyRevenueMax = Math.max(1, ...monthlyRevenueSeries.map((p) => p.revenue));
+
+  // ── Grouped-bar chart palette ────────────────────────────────────
+  const CHART_COLORS = [
+    '#6366f1', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6', '#06b6d4',
+    '#f97316', '#84cc16', '#ec4899', '#14b8a6',
+  ];
+
+  // Product grouped-bar data: topProducts as series, monthKeys as groups
+  const productSeriesData = topProducts.map((p, i) => ({
+    label: p.label,
+    color: CHART_COLORS[i % CHART_COLORS.length],
+    values: monthKeys.map(m => productMonthQty[p.label]?.[m.key] || 0),
+  }));
+  const productChartMax = Math.max(1, ...productSeriesData.flatMap(s => s.values));
+
+  // Store grouped-bar data: top stores as series (revenue), monthKeys as groups
+  const storeNames = storeSeries.map(s => s.label);
+  const storeSeriesData = storeNames.map((name, i) => ({
+    label: name,
+    colorRev: CHART_COLORS[i % CHART_COLORS.length],
+    colorProfit: CHART_COLORS[i % CHART_COLORS.length] + 'aa',
+    valuesRev: monthKeys.map(m => storeMonthRevenue[name]?.[m.key] || 0),
+    valuesProfit: monthKeys.map(m => storeMonthProfit[name]?.[m.key] || 0),
+  }));
+  const storeChartMax = Math.max(1, ...storeSeriesData.flatMap(s => s.valuesRev));
+
+  // ── Demo fallback data (shown when no real orders exist) ──────────
+  const isProductEmpty = productSeriesData.length === 0;
+  const isStoreEmpty = storeSeriesData.length === 0;
+
+  const DEMO_PRODUCTS = ['Kurta', 'Shalwar Kameez', 'Lawn Suit', 'Dupatta', 'Shawl', 'Jacket'];
+  const DEMO_STORES  = ['Al-Noor Store', 'City Boutique', 'Style Hub', 'Fashion Point', 'Elegance', 'Trendy Plus'];
+
+  // Seeded random-ish pattern that looks like real sales (peaks in mid-year)
+  const demoSeed = (product: number, month: number) => {
+    const base = [18,22,30,42,55,70,65,58,45,35,28,20][month] ?? 30;
+    const prod  = [1, 0.7, 0.85, 0.5, 0.6, 0.4][product] ?? 0.5;
+    const jitter = ((product * 7 + month * 13) % 17) - 8;
+    return Math.max(0, Math.round((base + jitter) * prod));
+  };
+  const demoRevSeed = (store: number, month: number) => {
+    const base = [22000,28000,38000,50000,65000,80000,74000,68000,52000,42000,33000,25000][month] ?? 40000;
+    const s    = [1, 0.75, 0.88, 0.55, 0.65, 0.45][store] ?? 0.6;
+    const jitter = ((store * 11 + month * 19) % 20000) - 10000;
+    return Math.max(0, Math.round((base + jitter) * s));
+  };
+
+  const demoProductSeries = DEMO_PRODUCTS.map((label, i) => ({
+    label,
+    color: CHART_COLORS[i % CHART_COLORS.length],
+    values: monthKeys.map((_, mi) => demoSeed(i, mi)),
+  }));
+  const demoProductMax = Math.max(1, ...demoProductSeries.flatMap(s => s.values));
+
+  const demoStoreSeries = DEMO_STORES.map((label, i) => ({
+    label,
+    color: CHART_COLORS[i % CHART_COLORS.length],
+    values: monthKeys.map((_, mi) => demoRevSeed(i, mi)),
+  }));
+  const demoStoreMax = Math.max(1, ...demoStoreSeries.flatMap(s => s.values));
+
+  const finalProductSeries = isProductEmpty ? demoProductSeries : productSeriesData;
+  const finalProductMax    = isProductEmpty ? demoProductMax    : productChartMax;
+  const finalStoreSeries   = isStoreEmpty   ? demoStoreSeries   : storeSeriesData.map(s => ({ label: s.label, color: s.colorRev, values: s.valuesRev }));
+  const finalStoreMax      = isStoreEmpty   ? demoStoreMax      : storeChartMax;
+
+  // Stacked+grouped per-store-per-month data (for StackedBarChart)
+  const stackedStoreSeries: SBCSeries[] = isStoreEmpty
+    ? DEMO_STORES.map((label, i) => ({
+        label,
+        color: CHART_COLORS[i % CHART_COLORS.length],
+        revenues: monthKeys.map((_, mi) => demoRevSeed(i, mi)),
+        profits:  monthKeys.map((_, mi) => { const r = ([0.28, 0.25, 0.30, 0.23, 0.27, 0.22] as number[])[i] ?? 0.25; return Math.round(demoRevSeed(i, mi) * r); }),
+      }))
+    : storeSeriesData.map((s, i) => ({
+        label: s.label,
+        color: CHART_COLORS[i % CHART_COLORS.length],
+        revenues: s.valuesRev,
+        profits:  s.valuesProfit,
+      }));
+
   const handleAddOrder = async (order: Partial<Order>) => {
     // No-op: database removed
     refresh();
@@ -590,41 +1186,7 @@ const [loading, setLoading] = useState<boolean>(true);
   return (
     <>
       <div className="home-dashboard">
-        <header className="page-header">
-          <div className="header-content">
-            <div className="header-titles">
-              <h1 className="main-title">Main Hub</h1>
-              <p className="subtitle">Welcome back, <span className="highlight">{user.username}</span></p>
-            </div>
-            
-            <div className="header-actions">
-              <button className="btn btn-secondary" onClick={() => {
-                let ordersForReport = kpiOrders;
-                let storesForReport = data.stores || {};
-                if (!isSuperAdmin) {
-                  if (isAdmin) {
-                    const managed = user.managedStores || [];
-                    const filteredStores = {};
-                    managed.forEach(name => { if (data.stores[name]) filteredStores[name] = data.stores[name]; });
-                    storesForReport = filteredStores;
-                    ordersForReport = kpiOrders.filter(o => managed.includes(o.storeName));
-                  } else if (user.role === 'store') {
-                    storesForReport = { [user.storeName]: data.stores[user.storeName] };
-                    ordersForReport = kpiOrders.filter(o => o.storeName === user.storeName);
-                  }
-                }
-                setReportData({ ...data, orders: ordersForReport, stores: storesForReport });
-                setShowReport(true);
-              }}>
-                <span style={{ marginRight: '8px' }}>📄</span> Generate Report
-              </button>
-              <TableFilter value={kpiFilter} onChange={setKpiFilter} />
-            </div>
-          </div>
-          
-        </header>
-
-        <section className="kpi-grid">
+        <section className="kpi-grid" style={{ marginBottom: 16 }}>
           <div className="kpi-card purple">
             <div className="kpi-icon">💵</div>
             <div className="kpi-label">Payout</div>
@@ -633,33 +1195,98 @@ const [loading, setLoading] = useState<boolean>(true);
           </div>
 
           <div className="kpi-card gray">
-            <div className="kpi-icon">📦</div>
-            <div className="kpi-label">Base Cost</div>
-            <div className="kpi-value negative">-{Rs(totalCostPrice)}</div>
-            <div className="kpi-trend">Product Expenses</div>
-          </div>
-
-          <div className="kpi-card red">
-            <div className="kpi-icon">🚚</div>
-            <div className="kpi-label">Shipping Cost</div>
-            <div className="kpi-value negative">-{Rs(totalShipping)}</div>
-            <div className="kpi-trend">Logistics Cost</div>
-          </div>
-
-          <div className="kpi-card orange">
-            <div className="kpi-icon">🤝</div>
-            <div className="kpi-label">Store Charges</div>
-            <div className="kpi-value negative">-{Rs(totalShopCut)}</div>
-            <div className="kpi-trend">Partner Fees</div>
+            <div className="kpi-icon">💸</div>
+            <div className="kpi-label">Expenses</div>
+            <div className="kpi-value negative">-{Rs(totalExpenses)}</div>
+            <div className="kpi-trend">Total costs (base + shipping + cuts)</div>
           </div>
 
           <div className="kpi-card blue">
-            <div className="kpi-icon">🏦</div>
-            <div className="kpi-label">Partner's Cut</div>
-            <div className="kpi-value negative">-{Rs(totalAdminTake)}</div>
-            <div className="kpi-trend">Admin Allocation</div>
+            <div className="kpi-icon">📈</div>
+            <div className="kpi-label">Profit</div>
+            <div className={`kpi-value ${totalProfit < 0 ? 'negative' : ''}`}>
+              {totalProfit < 0 ? `-${Rs(Math.abs(totalProfit))}` : Rs(totalProfit)}
+            </div>
+            <div className="kpi-trend">Net profit</div>
+          </div>
+
+          <div className="kpi-card orange">
+            <div className="kpi-icon">📦</div>
+            <div className="kpi-label">Stock</div>
+            <div className="kpi-value">{totalStockQty.toLocaleString()}</div>
+            <div className="kpi-trend">Units available in warehouse</div>
+          </div>
+
+          <div className="kpi-card blue">
+            <div className="kpi-icon">🏪</div>
+            <div className="kpi-label">Stores</div>
+            <div className="kpi-value">{storesCount.toLocaleString()}</div>
+            <div className="kpi-trend">Active partners</div>
           </div>
         </section>
+
+        {/* ── CHARTS: right under the KPI cards ── */}
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 24, marginBottom: 24 }}>
+          {/* ── PRODUCT PERFORMANCE: SVG Grouped Bar Chart ── */}
+          <SectionCard title="Product Performance" icon="📊" defaultOpen>
+            {isProductEmpty && (
+              <div style={{ marginBottom: 8 }}>
+                <span style={{ background: '#fef3c7', color: '#92400e', fontSize: 10, fontWeight: 800, padding: '2px 8px', borderRadius: 20, textTransform: 'uppercase', letterSpacing: '0.05em' }}>
+                  📊 Demo data · will update with real orders
+                </span>
+              </div>
+            )}
+            <GroupedBarChart
+              title="Units sold per product by month"
+              groups={monthKeys.map(m => m.label)}
+              series={finalProductSeries}
+              max={finalProductMax}
+              yLabel="Units"
+              formatValue={(v) => v.toString()}
+            />
+          </SectionCard>
+
+          {/* ── STORE PERFORMANCE: Stacked Bar Chart ── */}
+          <SectionCard title="Store Performance" icon="🏪" defaultOpen>
+            {isStoreEmpty && (
+              <div style={{ marginBottom: 8 }}>
+                <span style={{ background: '#fef3c7', color: '#92400e', fontSize: 10, fontWeight: 800, padding: '2px 8px', borderRadius: 20, textTransform: 'uppercase', letterSpacing: '0.05em' }}>
+                  📊 Demo data · will update with real orders
+                </span>
+              </div>
+            )}
+            <StackedBarChart
+              groups={monthKeys.map(m => m.label)}
+              series={stackedStoreSeries}
+              formatValue={(v) => 'Rs ' + (v >= 1000 ? (v / 1000).toFixed(0) + 'k' : v.toLocaleString())}
+            />
+          </SectionCard>
+        </div>
+
+        {/* ── Filter / Generate Report bar ── */}
+        <div className="header-actions" style={{ justifyContent: 'flex-end', marginBottom: 32 }}>
+          <button className="btn btn-secondary" onClick={() => {
+            let ordersForReport = kpiOrders;
+            let storesForReport = data.stores || {};
+            if (!isSuperAdmin) {
+              if (isAdmin) {
+                const managed = user.managedStores || [];
+                const filteredStores = {};
+                managed.forEach(name => { if (data.stores[name]) filteredStores[name] = data.stores[name]; });
+                storesForReport = filteredStores;
+                ordersForReport = kpiOrders.filter(o => managed.includes(o.storeName));
+              } else if (user.role === 'store') {
+                storesForReport = { [user.storeName]: data.stores[user.storeName] };
+                ordersForReport = kpiOrders.filter(o => o.storeName === user.storeName);
+              }
+            }
+            setReportData({ ...data, orders: ordersForReport, stores: storesForReport });
+            setShowReport(true);
+          }}>
+            <span style={{ marginRight: '8px' }}>📄</span> Generate Report
+          </button>
+          <TableFilter value={kpiFilter} onChange={setKpiFilter} />
+        </div>
 
         {isAdmin && (
           <SectionCard 

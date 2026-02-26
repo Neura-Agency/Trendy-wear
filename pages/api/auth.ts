@@ -12,13 +12,16 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     const p = String(password ?? '')
     if (!u || !p) return res.status(400).json({ error: 'username and password are required' })
 
-    const { data: account, error } = await supabaseAdmin
+    const usernameCandidates = Array.from(new Set([u, u.toLowerCase()]))
+
+    const { data: accounts, error } = await supabaseAdmin
       .from(TABLES.ACCOUNTS)
       .select('id, username, password_hash, role, scope, store_id, managed_stores, is_active, stores(name)')
-      .eq('username', u)
-      .maybeSingle()
+      .in('username', usernameCandidates)
 
     if (error) throw error
+
+    const account = (accounts ?? []).find((a: any) => a.username === u) ?? (accounts ?? [])[0]
     if (!account || account.is_active === false) {
       return res.status(401).json({ error: 'Invalid credentials' })
     }

@@ -8,6 +8,7 @@
     "start": "next start",
     "migrate": "npx ts-node scripts/migrate-to-supabase.ts",
     "create-account": "npx ts-node scripts/create-account.ts",
+    "reset-password": "npx ts-node scripts/reset-password.ts",
     "migrate:dev": "npm run migrate && npm run dev"
   },
   "dependencies": {
