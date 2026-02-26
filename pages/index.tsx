@@ -288,6 +288,7 @@ interface SBCSeries {
   color: string;
   revenues: number[];  // one per group (month)
   profits:  number[];  // one per group (month)
+  sales:    number[];  // one per group (month)
 }
 interface StackedBarChartProps {
   groups: string[];       // X-axis labels (months)
@@ -314,13 +315,15 @@ function StackedBarChart({ groups, series, formatValue = String }: StackedBarCha
   const yTicks = [0, 0.25, 0.5, 0.75, 1].map(f => ({ frac: f, val: Math.round(maxVal * f) }));
 
   // Tooltip data
-  const tipS    = hovered ? series[hovered.si] : null;
-  const tipRev  = hovered ? (tipS?.revenues[hovered.gi] ?? 0) : 0;
-  const tipProf = hovered ? (tipS?.profits[hovered.gi]  ?? 0) : 0;
-  const tipLabel = hovered ? `${tipS?.label}  Rev: ${formatValue(tipRev)} · P: ${formatValue(tipProf)}` : '';
-  const tipW    = Math.min(tipLabel.length * 6 + 24, 240);
+  const tipS     = hovered ? series[hovered.si] : null;
+  const tipRev   = hovered ? (tipS?.revenues[hovered.gi] ?? 0) : 0;
+  const tipProf  = hovered ? (tipS?.profits[hovered.gi]  ?? 0) : 0;
+  const tipSales = hovered ? (tipS?.sales[hovered.gi]    ?? 0) : 0;
+  
+  const tipW    = 170;
+  const tipH    = 90;
   const tipCX   = hovered ? Math.min(Math.max(hovered.cx, PAD.left + tipW / 2 + 4), W - tipW / 2 - 4) : 0;
-  const tipY    = hovered ? Math.max(hovered.topY - 50, PAD.top) : 0;
+  const tipY    = hovered ? Math.max(hovered.topY - tipH - 12, 10) : 0;
 
   return (
     <div style={{ width: '100%' }}>
@@ -481,19 +484,34 @@ function StackedBarChart({ groups, series, formatValue = String }: StackedBarCha
             <g style={{ pointerEvents: 'none' }}>
               <rect
                 x={tipCX - tipW / 2} y={tipY}
-                width={tipW} height={28} rx={7}
-                fill={tipS?.color ?? '#6366f1'} opacity={0.97}
-                filter="drop-shadow(0 3px 8px rgba(0,0,0,0.22))"
+                width={tipW} height={tipH} rx={12}
+                fill="white"
+                filter="drop-shadow(0 8px 24px rgba(0,0,0,0.18))"
+                stroke={tipS?.color} strokeWidth={1.5}
               />
-              <text
-                x={tipCX} y={tipY + 18}
-                textAnchor="middle" fontSize={10} fontWeight={800} fill="white"
-              >
-                {tipLabel}
+              
+              {/* Header: Store Name */}
+              <text x={tipCX} y={tipY + 20} textAnchor="middle" fontSize={11} fontWeight={900} fill="#1e293b" letterSpacing="0.02em">
+                {tipS?.label.toUpperCase()}
               </text>
+              <line x1={tipCX - 65} x2={tipCX + 65} y1={tipY + 28} y2={tipY + 28} stroke="#f1f5f9" strokeWidth={1} />
+              
+              {/* Row 1: REVENUE */}
+              <text x={tipCX - 68} y={tipY + 46} fontSize={9} fontWeight={700} fill="#94a3b8">REVENUE</text>
+              <text x={tipCX + 68} y={tipY + 46} textAnchor="end" fontSize={11} fontWeight={800} fill="#1e293b">{formatValue(tipRev)}</text>
+              
+              {/* Row 2: PROFIT */}
+              <text x={tipCX - 68} y={tipY + 62} fontSize={9} fontWeight={700} fill="#94a3b8">NET PROFIT</text>
+              <text x={tipCX + 68} y={tipY + 62} textAnchor="end" fontSize={11} fontWeight={800} fill="#10b981">{formatValue(tipProf)}</text>
+
+              {/* Row 3: SALES */}
+              <text x={tipCX - 68} y={tipY + 78} fontSize={9} fontWeight={700} fill="#94a3b8">TOTAL SALES</text>
+              <text x={tipCX + 68} y={tipY + 78} textAnchor="end" fontSize={11} fontWeight={800} fill="#6366f1">{tipSales} Items</text>
+
+              {/* Pointer */}
               <polygon
-                points={`${tipCX - 6},${tipY + 28} ${tipCX + 6},${tipY + 28} ${tipCX},${tipY + 36}`}
-                fill={tipS?.color ?? '#6366f1'} opacity={0.97}
+                points={`${tipCX - 8},${tipY + tipH} ${tipCX + 8},${tipY + tipH} ${tipCX},${tipY + tipH + 8}`}
+                fill="white"
               />
             </g>
           )}
@@ -574,7 +592,7 @@ function InlineCommEdit({ value, onSave }) {
 }
 
 // ─── STORES OVERVIEW SECTION (Reworked for Table View) ───────────────
-function StoresOverviewSection({ stores, orders, storeInventory, filter, getFiltered, onMarkPaid, onCommissionChange, onAssignItem, inventory }) {
+function StoresOverviewSection({ stores, orders, storeInventory, filter, getFiltered, onMarkPaid, onCommissionChange, onAssignItem, inventory, isAdmin }) {
   const storeNames = Object.keys(stores);
   const [selected, setSelected] = useState(storeNames[0] || "");
 
@@ -600,14 +618,16 @@ function StoresOverviewSection({ stores, orders, storeInventory, filter, getFilt
 
   return (
     <div className="store-selector-view">
-      <div style={{ marginBottom: 24 }}>
-        <CustomSelect
-          label="Select Store Partner"
-          value={selected}
-          options={storeNames}
-          onChange={setSelected}
-        />
-      </div>
+      {storeNames.length > 1 && (
+        <div style={{ marginBottom: 24 }}>
+          <CustomSelect
+            label="Select Store Partner"
+            value={selected}
+            options={storeNames}
+            onChange={setSelected}
+          />
+        </div>
+      )}
 
       <div className="table-wrap">
         <table>
@@ -660,16 +680,18 @@ function StoresOverviewSection({ stores, orders, storeInventory, filter, getFilt
         </table>
       </div>
 
-      <div style={{ display: 'flex', gap: 12, marginTop: 24 }}>
-        {sOrders.reduce((acc, o) => acc + (o.commissionAmount || 0), 0) > 0 && !s.paid && (
-          <button className="btn btn-primary" style={{ flex: 1, height: 48, background: 'var(--success)', borderColor: 'var(--success)' }} onClick={() => onMarkPaid(name, sOrders.reduce((acc, o) => acc + (o.commissionAmount || 0), 0))}>
-            Confirm & Mark as Fully Paid
+      {isAdmin && (
+        <div style={{ display: 'flex', gap: 12, marginTop: 24 }}>
+          {sOrders.reduce((acc, o) => acc + (o.commissionAmount || 0), 0) > 0 && !s.paid && (
+            <button className="btn btn-primary" style={{ flex: 1, height: 48, background: 'var(--success)', borderColor: 'var(--success)' }} onClick={() => onMarkPaid(name, sOrders.reduce((acc, o) => acc + (o.commissionAmount || 0), 0))}>
+              Confirm & Mark as Fully Paid
+            </button>
+          )}
+          <button className="btn btn-primary" style={{ flex: 1, height: 48 }} onClick={() => onAssignItem(name)}>
+            Stock Management (Send Goods)
           </button>
-        )}
-        <button className="btn btn-primary" style={{ flex: 1, height: 48 }} onClick={() => onAssignItem(name)}>
-          Stock Management (Send Goods)
-        </button>
-      </div>
+        </div>
+      )}
     </div>
   );
 }
@@ -956,6 +978,9 @@ const [loading, setLoading] = useState<boolean>(true);
       });
       return filtered;
     }
+    if (user.role === 'store') {
+      return data.stores[user.storeName] ? { [user.storeName]: data.stores[user.storeName] } : {};
+    }
     return {};
   })();
 
@@ -975,9 +1000,13 @@ const [loading, setLoading] = useState<boolean>(true);
   const lowStock = data.inventory.filter(i => i.quantityAvailable <= (i.lowStockWarning || 5)).length;
   const ordersCount = kpiOrders.length;
 
-  const totalExpenses = totalCostPrice + totalShipping + totalShopCut + totalAdminTake;
-  const totalProfit = totalGross - totalExpenses;
-  const totalStockQty = data.inventory.reduce((s, i) => s + (i.quantityAvailable || 0), 0);
+  const adminExpenses = totalCostPrice + totalShipping + totalShopCut + totalAdminTake;
+  const totalExpenses = isAdmin ? adminExpenses : 0;
+  const totalProfit = totalGross - adminExpenses;
+  const totalProfitValue = isAdmin ? totalProfit : totalShopCut;
+  const totalStockQty = isAdmin
+    ? data.inventory.reduce((s, i) => s + (i.quantityAvailable || 0), 0)
+    : Object.values(data.storeInventory[user.storeName] || {}).reduce((s, si: any) => s + (Number(si.quantityRemaining) || 0), 0);
   const storesCount = isSuperAdmin
     ? Object.keys(data.stores || {}).length
     : isAdmin
@@ -1006,6 +1035,7 @@ const [loading, setLoading] = useState<boolean>(true);
   // Per-store-per-month revenue + profit
   const storeMonthRevenue: Record<string, Record<string, number>> = {};
   const storeMonthProfit: Record<string, Record<string, number>> = {};
+  const storeMonthQty: Record<string, Record<string, number>> = {};
 
   dashboardOrders.forEach((o) => {
     const d = new Date(o.date);
@@ -1032,8 +1062,10 @@ const [loading, setLoading] = useState<boolean>(true);
       storeRevenue[storeName] = (storeRevenue[storeName] || 0) + revenue;
       if (!storeMonthRevenue[storeName]) storeMonthRevenue[storeName] = {};
       if (!storeMonthProfit[storeName]) storeMonthProfit[storeName] = {};
+      if (!storeMonthQty[storeName]) storeMonthQty[storeName] = {};
       storeMonthRevenue[storeName][monthKey] = (storeMonthRevenue[storeName][monthKey] || 0) + revenue;
       storeMonthProfit[storeName][monthKey] = (storeMonthProfit[storeName][monthKey] || 0) + profit;
+      storeMonthQty[storeName][monthKey] = (storeMonthQty[storeName][monthKey] || 0) + qty;
     }
   });
 
@@ -1087,6 +1119,7 @@ const [loading, setLoading] = useState<boolean>(true);
     colorProfit: CHART_COLORS[i % CHART_COLORS.length] + 'aa',
     valuesRev: monthKeys.map(m => storeMonthRevenue[name]?.[m.key] || 0),
     valuesProfit: monthKeys.map(m => storeMonthProfit[name]?.[m.key] || 0),
+    valuesQty: monthKeys.map(m => storeMonthQty[name]?.[m.key] || 0),
   }));
   const storeChartMax = Math.max(1, ...storeSeriesData.flatMap(s => s.valuesRev));
 
@@ -1137,12 +1170,14 @@ const [loading, setLoading] = useState<boolean>(true);
         color: CHART_COLORS[i % CHART_COLORS.length],
         revenues: monthKeys.map((_, mi) => demoRevSeed(i, mi)),
         profits:  monthKeys.map((_, mi) => { const r = ([0.28, 0.25, 0.30, 0.23, 0.27, 0.22] as number[])[i] ?? 0.25; return Math.round(demoRevSeed(i, mi) * r); }),
+        sales:    monthKeys.map((_, mi) => demoSeed(i, mi)),
       }))
     : storeSeriesData.map((s, i) => ({
         label: s.label,
         color: CHART_COLORS[i % CHART_COLORS.length],
         revenues: s.valuesRev,
         profits:  s.valuesProfit,
+        sales:    s.valuesQty,
       }));
 
   const handleAddOrder = async (order: Partial<Order>) => {
@@ -1201,9 +1236,9 @@ const [loading, setLoading] = useState<boolean>(true);
         <section className="kpi-grid" style={{ marginBottom: 16 }}>
           <div className="kpi-card purple">
             <div className="kpi-icon">💵</div>
-            <div className="kpi-label">Payout</div>
-            <div className="kpi-value">{Rs(totalNetAmt)}</div>
-            <div className="kpi-trend">Overall Earnings</div>
+            <div className="kpi-label">{isAdmin ? "Payout" : "My Payout"}</div>
+            <div className="kpi-value">{Rs(isAdmin ? totalNetAmt : totalShopCut)}</div>
+            <div className="kpi-trend">{isAdmin ? "Overall Earnings" : "My Total Earnings"}</div>
           </div>
 
           <div className="kpi-card gray">
@@ -1215,65 +1250,69 @@ const [loading, setLoading] = useState<boolean>(true);
 
           <div className="kpi-card blue">
             <div className="kpi-icon">📈</div>
-            <div className="kpi-label">Profit</div>
-            <div className={`kpi-value ${totalProfit < 0 ? 'negative' : ''}`}>
-              {totalProfit < 0 ? `-${Rs(Math.abs(totalProfit))}` : Rs(totalProfit)}
+            <div className="kpi-label">{isAdmin ? "Profit" : "Earnings"}</div>
+            <div className={`kpi-value ${totalProfitValue < 0 ? 'negative' : ''}`}>
+              {totalProfitValue < 0 ? `-${Rs(Math.abs(totalProfitValue))}` : Rs(totalProfitValue)}
             </div>
-            <div className="kpi-trend">Net profit</div>
+            <div className="kpi-trend">{isAdmin ? "Net profit" : "Shop Revenue Cut"}</div>
           </div>
 
           <div className="kpi-card orange">
             <div className="kpi-icon">📦</div>
-            <div className="kpi-label">Stock</div>
+            <div className="kpi-label">{isAdmin ? "Stock" : "Shop Stock"}</div>
             <div className="kpi-value">{totalStockQty.toLocaleString()}</div>
-            <div className="kpi-trend">Units available in warehouse</div>
+            <div className="kpi-trend">{isAdmin ? "Units available in warehouse" : "Units available in my shop"}</div>
           </div>
 
-          <div className="kpi-card blue">
-            <div className="kpi-icon">🏪</div>
-            <div className="kpi-label">Stores</div>
-            <div className="kpi-value">{storesCount.toLocaleString()}</div>
-            <div className="kpi-trend">Active partners</div>
-          </div>
+          {isAdmin && (
+            <div className="kpi-card blue">
+              <div className="kpi-icon">🏪</div>
+              <div className="kpi-label">Stores</div>
+              <div className="kpi-value">{storesCount.toLocaleString()}</div>
+              <div className="kpi-trend">Active partners</div>
+            </div>
+          )}
         </section>
 
         {/* ── CHARTS: right under the KPI cards ── */}
-        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 24, marginBottom: 24 }}>
-          {/* ── PRODUCT PERFORMANCE: SVG Grouped Bar Chart ── */}
-          <SectionCard title="Product Performance" icon="📊" defaultOpen>
-            {isProductEmpty && (
-              <div style={{ marginBottom: 8 }}>
-                <span style={{ background: '#fef3c7', color: '#92400e', fontSize: 10, fontWeight: 800, padding: '2px 8px', borderRadius: 20, textTransform: 'uppercase', letterSpacing: '0.05em' }}>
-                  📊 Demo data · will update with real orders
-                </span>
-              </div>
-            )}
-            <GroupedBarChart
-              title="Units sold per product by month"
-              groups={monthKeys.map(m => m.label)}
-              series={finalProductSeries}
-              max={finalProductMax}
-              yLabel="Units"
-              formatValue={(v) => v.toString()}
-            />
-          </SectionCard>
+        {isAdmin && (
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 24, marginBottom: 24 }}>
+            {/* ── PRODUCT PERFORMANCE: SVG Grouped Bar Chart ── */}
+            <SectionCard title="Product Performance" icon="📊" defaultOpen>
+              {isProductEmpty && (
+                <div style={{ marginBottom: 8 }}>
+                  <span style={{ background: '#fef3c7', color: '#92400e', fontSize: 10, fontWeight: 800, padding: '2px 8px', borderRadius: 20, textTransform: 'uppercase', letterSpacing: '0.05em' }}>
+                    📊 Demo data · will update with real orders
+                  </span>
+                </div>
+              )}
+              <GroupedBarChart
+                title="Units sold per product by month"
+                groups={monthKeys.map(m => m.label)}
+                series={finalProductSeries}
+                max={finalProductMax}
+                yLabel="Units"
+                formatValue={(v) => v.toString()}
+              />
+            </SectionCard>
 
-          {/* ── STORE PERFORMANCE: Stacked Bar Chart ── */}
-          <SectionCard title="Store Performance" icon="🏪" defaultOpen>
-            {isStoreEmpty && (
-              <div style={{ marginBottom: 8 }}>
-                <span style={{ background: '#fef3c7', color: '#92400e', fontSize: 10, fontWeight: 800, padding: '2px 8px', borderRadius: 20, textTransform: 'uppercase', letterSpacing: '0.05em' }}>
-                  📊 Demo data · will update with real orders
-                </span>
-              </div>
-            )}
-            <StackedBarChart
-              groups={monthKeys.map(m => m.label)}
-              series={stackedStoreSeries}
-              formatValue={(v) => 'Rs ' + (v >= 1000 ? (v / 1000).toFixed(0) + 'k' : v.toLocaleString())}
-            />
-          </SectionCard>
-        </div>
+            {/* ── STORE PERFORMANCE: Stacked Bar Chart ── */}
+            <SectionCard title="Store Performance" icon="🏪" defaultOpen>
+              {isStoreEmpty && (
+                <div style={{ marginBottom: 8 }}>
+                  <span style={{ background: '#fef3c7', color: '#92400e', fontSize: 10, fontWeight: 800, padding: '2px 8px', borderRadius: 20, textTransform: 'uppercase', letterSpacing: '0.05em' }}>
+                    📊 Demo data · will update with real orders
+                  </span>
+                </div>
+              )}
+              <StackedBarChart
+                groups={monthKeys.map(m => m.label)}
+                series={stackedStoreSeries}
+                formatValue={(v) => 'Rs ' + (v >= 1000 ? (v / 1000).toFixed(0) + 'k' : v.toLocaleString())}
+              />
+            </SectionCard>
+          </div>
+        )}
 
         {/* ── Filter / Generate Report bar ── */}
         <div className="header-actions" style={{ justifyContent: 'flex-end', marginBottom: 32 }}>
@@ -1300,9 +1339,9 @@ const [loading, setLoading] = useState<boolean>(true);
           <TableFilter value={kpiFilter} onChange={setKpiFilter} />
         </div>
 
-        {isAdmin && (
+        {(isAdmin || user.role === 'store') && (
           <SectionCard 
-            title="Store Partners" 
+            title={isAdmin ? "Store Partners" : "My Store Performance"} 
             icon="🏪"
             action={
               isSuperAdmin ? (
@@ -1322,6 +1361,7 @@ const [loading, setLoading] = useState<boolean>(true);
               onMarkPaid={handleMarkPaid}
               onCommissionChange={(name, v) => { refresh(); }}
               onAssignItem={(name) => router.push(`/inventory?assign=${name}`)}
+              isAdmin={isAdmin}
             />
           </SectionCard>
         )}
