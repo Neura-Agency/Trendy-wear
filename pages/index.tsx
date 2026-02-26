@@ -341,6 +341,10 @@ function StackedBarChart({ groups, series, formatValue = String }: StackedBarCha
                 <stop offset="100%" stopColor={s.color} stopOpacity={0.68} />
               </linearGradient>,
             ])}
+            {/* Dashed pattern for revenue portion */}
+            <pattern id="sbcDash" x="0" y="0" width="8" height="3" patternUnits="userSpaceOnUse">
+              <line x1="0" y1="0.5" x2="8" y2="0.5" stroke="white" strokeWidth="1" opacity="0.5" />
+            </pattern>
             <clipPath id="sbcClip">
               <rect x={PAD.left} y={PAD.top} width={chartW} height={chartH} />
             </clipPath>
@@ -415,6 +419,14 @@ function StackedBarChart({ groups, series, formatValue = String }: StackedBarCha
                           fill={`url(#sbcR${si})`}
                           opacity={hovered ? (isHov ? 1 : 0.22) : 0.85}
                           style={{ transition: 'opacity 0.18s' }}
+                        />
+                        {/* Revenue Dash Overlay */}
+                        <rect
+                          x={bx} y={topY} width={barW} height={Math.max(revH, 1)}
+                          rx={3}
+                          fill="url(#sbcDash)"
+                          opacity={hovered ? (isHov ? 0.6 : 0.1) : 0.45}
+                          style={{ transition: 'opacity 0.18s', pointerEvents: 'none' }}
                         />
                         {/* Profit (top vivid portion) */}
                         {profitH > 0 && (
@@ -501,7 +513,7 @@ function StackedBarChart({ groups, series, formatValue = String }: StackedBarCha
           </div>
         ))}
         <div style={{ width: '100%', textAlign: 'center', marginTop: 4 }}>
-          <span style={{ fontSize: 10, color: '#94a3b8', fontWeight: 600 }}>▓ Revenue (bottom) &nbsp; █ Profit (top)</span>
+          <span style={{ fontSize: 10, color: '#94a3b8', fontWeight: 600 }}>▓ Revenue (dashed) &nbsp; █ Profit (solid bottom)</span>
         </div>
       </div>
     </div>
