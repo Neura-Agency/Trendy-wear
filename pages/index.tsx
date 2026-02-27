@@ -606,15 +606,13 @@ function StoresOverviewSection({ stores, orders, storeInventory, filter, getFilt
   const s = stores[name];
   if (!s) return null;
 
-  const getCategory = (prodName) => inventory.find(i => i.productName === prodName)?.category || 'Other';
-
   const filteredOrders = getFiltered(orders, filter);
-  const sOrders = filteredOrders.filter(o => o.storeName === name && o.includedInPayout !== false && o.type !== 'Gift');
+  const sOrders = filteredOrders.filter(o => o.storeName === name);
 
-  const categories = Array.from(new Set([
-    ...sOrders.map(o => getCategory(o.productName)),
-    ...Object.values(storeInventory[name] || {}).map(si => getCategory((si as StoreInventoryItem).productName))
-  ]));
+  const products = Array.from(new Set([
+    ...sOrders.map(o => o.productName),
+    ...Object.values(storeInventory[name] || {}).map(si => (si as StoreInventoryItem).productName)
+  ])).filter(Boolean);
 
   return (
     <div className="store-selector-view">
@@ -633,40 +631,40 @@ function StoresOverviewSection({ stores, orders, storeInventory, filter, getFilt
         <table>
           <thead>
             <tr>
-              <th>Product Catagory</th>
+              <th>Product</th>
               <th>Payout</th>
               <th>Items Sold</th>
               <th>Leftover Inventory</th>
-              <th>Expenses</th>
-              <th>Partner's Cut</th>
-              <th>Profit</th>
+              {isAdmin && <th>Expenses</th>}
+              {isAdmin && <th>Partner's Cut</th>}
+              {isAdmin && <th>Profit</th>}
               <th style={{ textAlign: 'right' }}>Payment Status</th>
             </tr>
           </thead>
           <tbody>
-            {categories.length === 0 ? (
+            {products.length === 0 ? (
               <tr><td colSpan={8} style={{ textAlign: 'center', padding: 30 }}>No inventory or sales for this partner.</td></tr>
             ) : (
-              categories.map(cat => {
-                const catOrders = sOrders.filter(o => getCategory(o.productName) === cat);
-                const catInventory = Object.values(storeInventory[name] || {}).filter(si => getCategory((si as StoreInventoryItem).productName) === cat);
-                
-                const payout = catOrders.reduce((acc, o) => acc + (o.sellingPrice * o.quantity - o.shipmentCost), 0);
-                const itemsSold = catOrders.reduce((acc, o) => acc + o.quantity, 0);
+              products.map(productName => {
+                const catOrders = sOrders.filter(o => o.productName === productName);
+                const catInventory = Object.values(storeInventory[name] || {}).filter(si => (si as StoreInventoryItem).productName === productName);
+
+                const payout = catOrders.reduce((acc, o) => acc + (o.commissionAmount || 0), 0);
+                const itemsSold = catInventory.reduce((acc: number, si) => acc + (((si as StoreInventoryItem).quantityAssigned || 0) - ((si as StoreInventoryItem).quantityRemaining || 0)), 0) as number;
                 const leftover = catInventory.reduce((acc: number, si) => acc + ((si as StoreInventoryItem).quantityRemaining as number), 0) as number;
                 const expenses = catOrders.reduce((acc, o) => acc + (o.shipmentCost || 0), 0);
                 const partnerCut = catOrders.reduce((acc, o) => acc + (o.commissionAmount || 0), 0);
                 const profit = catOrders.reduce((acc, o) => acc + (o.profit || 0), 0);
 
                 return (
-                  <tr key={cat}>
-                    <td className="font-bold">{cat}</td>
+                  <tr key={productName}>
+                    <td className="font-bold">{productName}</td>
                     <td className="font-bold" style={{ color: 'var(--success)' }}>{Rs(payout)}</td>
                     <td>{itemsSold}</td>
                     <td className="font-bold" style={{ color: (leftover as number) > 0 ? 'inherit' : 'var(--danger)' }}>{leftover as number}</td>
-                    <td style={{ color: 'var(--danger)' }}>{Rs(expenses)}</td>
-                    <td style={{ fontWeight: 600 }}>{Rs(partnerCut)}</td>
-                    <td className="font-bold" style={{ color: 'var(--acc)' }}>{Rs(profit)}</td>
+                    {isAdmin && <td style={{ color: 'var(--danger)' }}>{Rs(expenses)}</td>}
+                    {isAdmin && <td style={{ fontWeight: 600 }}>{Rs(partnerCut)}</td>}
+                    {isAdmin && <td className="font-bold" style={{ color: 'var(--acc)' }}>{Rs(profit)}</td>}
                     <td style={{ textAlign: 'right' }}>
                       <Badge type={s.paid ? 'green' : 'blue'}>
                         {s.paid ? 'Paid' : 'Balance'}
@@ -697,7 +695,9 @@ function StoresOverviewSection({ stores, orders, storeInventory, filter, getFilt
 }
 
 // ─── ORDERS SECTION ──────────────────────────────────────────────────
-function OrdersSection({ orders, overallOrders = [], isAdmin, onCommissionEdit, onTogglePayout }) {
+function OrdersSection({ orders, overallOrders = [], isAdmin, canDelete, onCommissionEdit, onTogglePayout, onEdit, onDelete }) {
+  const [editing, setEditing] = useState<any>(null);
+
   const filteredQty = orders.reduce((s, o) => s + (o.quantity || 0), 0);
   const filteredGross = orders.reduce((s, o) => s + ((o.sellingPrice || 0) * (o.quantity || 0)), 0);
   const filteredShipping = orders.reduce((s, o) => s + (o.shipmentCost || 0), 0);
@@ -710,6 +710,70 @@ function OrdersSection({ orders, overallOrders = [], isAdmin, onCommissionEdit, 
 
   return (
     <div>
+      {/* ── Edit modal ── */}
+      {editing && (
+        <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.45)', zIndex: 1200, display: 'flex', alignItems: 'flex-start', justifyContent: 'center', padding: '88px 16px 16px', overflowY: 'auto' }}>
+          <div style={{ background: 'var(--surface)', borderRadius: 16, padding: 32, width: '100%', maxWidth: 480, boxShadow: '0 8px 40px rgba(0,0,0,0.25)' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 24 }}>
+              <h2 style={{ margin: 0, fontSize: '1.2rem', fontWeight: 800 }}>Edit Sale</h2>
+              <button className="btn btn-glass" style={{ width: 32, height: 32, padding: 0 }} onClick={() => setEditing(null)}>✕</button>
+            </div>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+              <label style={{ fontWeight: 600, fontSize: '0.85rem' }}>
+                Product
+                <div style={{ marginTop: 4, padding: '8px 12px', background: 'var(--surface-2)', borderRadius: 8, border: '1px solid var(--border)', color: 'var(--text-muted)' }}>{editing.productName}</div>
+              </label>
+              <label style={{ fontWeight: 600, fontSize: '0.85rem' }}>
+                Quantity Sold
+                <input type="text" inputMode="numeric" className="form-input" style={{ marginTop: 4, display: 'block', width: '100%' }}
+                  value={editing.quantity}
+                  onChange={e => setEditing(prev => ({ ...prev, quantity: e.target.value }))}
+                />
+              </label>
+              <label style={{ fontWeight: 600, fontSize: '0.85rem' }}>
+                Selling Price (Rs)
+                <input type="text" inputMode="numeric" className="form-input" style={{ marginTop: 4, display: 'block', width: '100%' }}
+                  value={editing.sellingPrice}
+                  onChange={e => setEditing(prev => ({ ...prev, sellingPrice: e.target.value }))}
+                />
+              </label>
+              <label style={{ fontWeight: 600, fontSize: '0.85rem' }}>
+                Shipment Cost (Rs)
+                <input type="text" inputMode="numeric" className="form-input" style={{ marginTop: 4, display: 'block', width: '100%' }}
+                  value={editing.shipmentCost}
+                  onChange={e => setEditing(prev => ({ ...prev, shipmentCost: e.target.value }))}
+                />
+              </label>
+              <label style={{ fontWeight: 600, fontSize: '0.85rem' }}>
+                Customer Name
+                <input type="text" className="form-input" style={{ marginTop: 4, display: 'block', width: '100%' }}
+                  value={editing.clientName}
+                  onChange={e => setEditing(prev => ({ ...prev, clientName: e.target.value }))}
+                />
+              </label>
+              <label style={{ fontWeight: 600, fontSize: '0.85rem' }}>
+                Date of Sale
+                <input type="date" className="form-input" style={{ marginTop: 4, display: 'block', width: '100%' }}
+                  value={editing.date ? editing.date.slice(0, 10) : ''}
+                  max={new Date().toISOString().slice(0, 10)}
+                  onChange={e => setEditing(prev => ({ ...prev, date: e.target.value }))}
+                />
+              </label>
+            </div>
+            <div style={{ display: 'flex', gap: 10, marginTop: 24 }}>
+              {canDelete && (
+                <button className="btn" style={{ flex: '0 0 auto', background: 'var(--danger)', borderColor: 'var(--danger)', color: '#fff', fontWeight: 700, padding: '0 20px', height: 44 }}
+                  onClick={() => { if (confirm('Delete this sale? This cannot be undone.')) { onDelete(editing.id); setEditing(null); } }}
+                >🗑 Delete</button>
+              )}
+              <button className="btn btn-glass" style={{ flex: 1, height: 44 }} onClick={() => setEditing(null)}>Cancel</button>
+              <button className="btn btn-primary" style={{ flex: 1, height: 44, fontWeight: 700 }}
+                onClick={() => { onEdit({ ...editing, quantity: Number(editing.quantity), sellingPrice: Number(editing.sellingPrice), shipmentCost: Number(editing.shipmentCost) }); setEditing(null); }}
+              >Save Changes</button>
+            </div>
+          </div>
+        </div>
+      )}
       <div className="table-wrap">
         <table>
         <thead>
@@ -724,7 +788,7 @@ function OrdersSection({ orders, overallOrders = [], isAdmin, onCommissionEdit, 
             <th>Store Percentage</th>
             {isAdmin && (
               <>
-                <th>Platform Fee</th>
+                <th>After Partner's Cut</th>
                 <th>Cost Price</th>
                 <th>Profit</th>
               </>
@@ -738,7 +802,9 @@ function OrdersSection({ orders, overallOrders = [], isAdmin, onCommissionEdit, 
             const netAmount = gross - shipment;
             const totalCost = (o.costPrice || 0) * o.quantity;
             return (
-              <tr key={idx}>
+              <tr key={idx} style={{ cursor: 'pointer' }}
+                onClick={() => setEditing({ ...o })}
+              >
                 <td className="text-muted" style={{ fontSize: '0.75rem' }}>{new Date(o.date).toLocaleDateString()}</td>
                 <td className="font-bold" style={{ color: 'var(--pri-700)' }}>{o.storeName}</td>
                 <td className="font-bold">{o.productName}</td>
@@ -779,38 +845,6 @@ function OrdersSection({ orders, overallOrders = [], isAdmin, onCommissionEdit, 
           All partners totals: Items: {overallQty} — Gross: {Rs(overallGross)} — Profit: {Rs(overallProfit)}
         </div>
       </div>
-    </div>
-  );
-}
-
-function DirectSalesSection({ orders }) {
-  return (
-    <div className="table-wrap">
-      <table>
-        <thead>
-          <tr>
-            <th>Date</th>
-            <th>Item Name</th>
-            <th>Quantity</th>
-            <th>Sale Price</th>
-            <th>Total Recv.</th>
-            <th style={{ textAlign: 'right' }}>Net Profit</th>
-          </tr>
-        </thead>
-        <tbody>
-          {orders.map((o, idx) => (
-            <tr key={idx}>
-              <td className="text-muted">{new Date(o.date).toLocaleDateString()}</td>
-              <td className="font-bold">{o.productName}</td>
-              <td>{o.quantity}</td>
-              <td>{Rs(o.sellingPrice)}</td>
-              <td className="font-bold">{Rs(o.sellingPrice * o.quantity)}</td>
-              <td style={{ textAlign: 'right', fontWeight: 800, color: 'var(--success)' }}>{Rs(o.profit)}</td>
-            </tr>
-          ))}
-          {orders.length === 0 && <tr><td colSpan={6} style={{ textAlign: 'center', padding: 30 }}>No direct warehouse sales yet.</td></tr>}
-        </tbody>
-      </table>
     </div>
   );
 }
@@ -880,7 +914,6 @@ const [loading, setLoading] = useState<boolean>(true);
   const [reportData, setReportData] = useState<any>(null);
   const [partnerFilter, setPartnerFilter] = useState<string>('All');
   const [partnerStore, setPartnerStore] = useState<string>('All');
-  const [directFilter, setDirectFilter] = useState<string>('All');
   const [kpiFilter, setKpiFilter] = useState<string>('All');
 
   const refresh = useCallback(async () => {
@@ -995,7 +1028,6 @@ const [loading, setLoading] = useState<boolean>(true);
   const kpiOrders = getFiltered(dashboardOrders, kpiFilter);
   const partnerAll = getFiltered(dashboardOrders.filter(o => o.storeName !== 'Direct'), partnerFilter);
   const partnerOrders = partnerAll.filter(o => partnerStore === 'All' ? true : o.storeName === partnerStore);
-  const directOrders = getFiltered(dashboardOrders.filter(o => o.storeName === 'Direct'), directFilter);
 
   // Stats calculation
   const totalGross = kpiOrders.reduce((s, o) => s + (o.sellingPrice * o.quantity || 0), 0);
@@ -1011,7 +1043,7 @@ const [loading, setLoading] = useState<boolean>(true);
   const adminExpenses = totalCostPrice + totalShipping + totalShopCut + totalAdminTake;
   const totalExpenses = isAdmin ? adminExpenses : 0;
   const totalProfit = totalGross - adminExpenses;
-  const totalProfitValue = isAdmin ? totalProfit : totalShopCut;
+  const totalProfitValue = isAdmin ? totalNetProfit : totalShopCut;
   const totalStockQty = (() => {
     if (isSuperAdmin) {
       return data.inventory.reduce((s, i) => s + (i.quantityAvailable || 0), 0)
@@ -1307,7 +1339,7 @@ const [loading, setLoading] = useState<boolean>(true);
           <div className="kpi-card purple">
             <div className="kpi-icon">💵</div>
             <div className="kpi-label">{isAdmin ? "Payout" : "My Payout"}</div>
-            <div className="kpi-value">{Rs(isAdmin ? totalNetAmt : totalShopCut)}</div>
+            <div className="kpi-value">{Rs(isAdmin ? totalAdminTake : totalShopCut)}</div>
             <div className="kpi-trend">{isAdmin ? "Overall Earnings" : "My Total Earnings"}</div>
           </div>
 
@@ -1441,7 +1473,7 @@ const [loading, setLoading] = useState<boolean>(true);
               orders={data.orders}
               storeInventory={data.storeInventory}
               inventory={data.inventory}
-              filter={kpiFilter}
+              filter="All"
               getFiltered={getFiltered}
               onMarkPaid={handleMarkPaid}
               onCommissionChange={(name, v) => { refresh(); }}
@@ -1473,22 +1505,57 @@ const [loading, setLoading] = useState<boolean>(true);
               orders={partnerOrders.slice(-20).reverse()}
               overallOrders={partnerAll}
               isAdmin={isAdmin}
-              onCommissionEdit={(id, v) => { refresh(); }}
+              onCommissionEdit={async (id, v) => {
+                try {
+                  const res = await fetch('/api/orders', {
+                    method: 'PATCH',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ id, commissionPercent: v }),
+                  });
+                  const result = await res.json();
+                  if (!res.ok) alert(result.error || 'Failed to update commission');
+                } catch (e: any) {
+                  alert(e?.message || 'Failed to update commission');
+                } finally {
+                  refresh();
+                }
+              }}
               onTogglePayout={(id, inc) => { refresh(); }}
+              canDelete={isStoreManager || user.role === 'store'}
+              onEdit={async (order: any) => {
+                try {
+                  const res = await fetch('/api/orders', {
+                    method: 'PUT',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                      id: order.id,
+                      quantity: order.quantity,
+                      sellingPrice: order.sellingPrice,
+                      shipmentCost: order.shipmentCost,
+                      clientName: order.clientName,
+                      occurredAt: order.date,
+                    }),
+                  });
+                  const result = await res.json();
+                  if (!res.ok) alert(result.error || 'Failed to update sale');
+                  else refresh();
+                } catch (e: any) { alert(e?.message || 'Failed to update sale'); }
+              }}
+              onDelete={async (id: string) => {
+                try {
+                  const res = await fetch('/api/orders', {
+                    method: 'DELETE',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ id }),
+                  });
+                  const result = await res.json();
+                  if (!res.ok) alert(result.error || 'Failed to delete sale');
+                  else refresh();
+                } catch (e: any) { alert(e?.message || 'Failed to delete sale'); }
+              }}
             />
           </SectionCard>
 
-          {isSuperAdmin && (
-            <SectionCard
-              title="Direct Warehouse Sales"
-              icon="🏠"
-              action={<TableFilter value={directFilter} onChange={setDirectFilter} />}
-            >
-              <DirectSalesSection
-                orders={directOrders.slice(-20).reverse()}
-              />
-            </SectionCard>
-          )}
         </div>
 
         {isAdmin && (

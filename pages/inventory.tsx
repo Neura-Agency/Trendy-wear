@@ -160,16 +160,14 @@ export default function InventoryPage({ user, onLogin }: PageProps) {
     // Flatten store inventory for the table
     const stockProvided = [];
     Object.entries(data.storeInventory).forEach(([storeName, items]) => {
-        // Only allow superadmin to see all, store admin to see managed stores, store user to see their own
         const canSee = isSuperAdmin || (isStoreAdmin && user.managedStores.includes(storeName)) || (!isAdmin && user.storeName === storeName);
-        if (canSee) {
-            Object.values(items).forEach((item) => {
-                // Only show items provided by this admin (or all for superadmin)
-                if (isSuperAdmin || item.owner === user.username) {
-                    stockProvided.push({ ...item, storeName });
-                }
-            });
-        }
+        if (!canSee) return;
+        Object.values(items).forEach((item) => {
+            // Admins only see items they own; store users see all items assigned to their store
+            if (!isAdmin || isSuperAdmin || item.owner === user.username) {
+                stockProvided.push({ ...item, storeName });
+            }
+        });
     });
 
     const allotedQtyByProduct: Record<string, number> = {};

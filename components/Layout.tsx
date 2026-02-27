@@ -9,6 +9,7 @@ interface NavItem {
   label: string;
   path: string;
   adminOnly?: boolean;
+  superAdminOnly?: boolean;
 }
 
 export default function Layout({ children, user, onLogout }: LayoutProps) {
@@ -35,11 +36,20 @@ export default function Layout({ children, user, onLogout }: LayoutProps) {
       path: "/credentials",
       adminOnly: true,
     },
+    {
+      id: "direct-sales",
+      icon: "🏠",
+      label: "Direct Sales",
+      path: "/direct-sales",
+      superAdminOnly: true,
+    },
   ];
 
-  const filteredNavItems = navItems.filter(
-    (item) => !item.adminOnly || user?.role === "admin",
-  );
+  const filteredNavItems = navItems.filter((item) => {
+    if (item.superAdminOnly) return user?.role === "admin" && user?.scope === "all";
+    if (item.adminOnly) return user?.role === "admin";
+    return true;
+  });
 
   return (
     <div className="page-wrap">

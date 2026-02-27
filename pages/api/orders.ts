@@ -233,6 +233,127 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       })
     }
 
+    // ────────────────────────────────────────────────────────────────────────
+    // PATCH — update commission % and recalculate all financial fields
+    // ────────────────────────────────────────────────────────────────────────
+    if (req.method === 'PATCH') {
+      if (!isSuperAdmin(session)) {
+        return res.status(403).json({ error: 'Admin only' })
+      }
+
+      const { id, commissionPercent } = req.body
+      if (!id || commissionPercent === undefined) {
+        return res.status(400).json({ error: 'id and commissionPercent are required' })
+      }
+
+      const newPct = num(commissionPercent)
+
+      // Fetch the existing order to recalculate from source values
+      const { data: existing, error: fetchErr } = await supabaseAdmin
+        .from(TABLES.ORDERS)
+        .select('selling_price, quantity, shipment_cost, cost_price')
+        .eq('id', id)
+        .single()
+
+      if (fetchErr || !existing) {
+        return res.status(404).json({ error: 'Order not found' })
+      }
+
+      const grossAmount     = num(existing.selling_price) * num(existing.quantity)
+      const totalDeductions = num(existing.shipment_cost)
+      const costPrice       = num(existing.cost_price) * num(existing.quantity)
+      const commissionAmount = Math.round(grossAmount * newPct) / 100
+      const adminTake        = grossAmount - commissionAmount - totalDeductions
+      const profit           = adminTake - costPrice
+
+      const { error: updateErr } = await supabaseAdmin
+        .from(TABLES.ORDERS)
+        .update({
+          commission_percent: newPct,
+          commission_amount:  commissionAmount,
+          admin_take:         adminTake,
+          profit:             profit,
+        })
+        .eq('id', id)
+
+      if (updateErr) {
+        console.error('orders PATCH error:', updateErr)
+        return res.status(500).json({ error: 'Failed to update order' })
+      }
+
+      return res.json({ success: true, commissionAmount, adminTake, profit })
+    }
+
+    // ────────────────────────────────────────────────────────────────────────
+    // PUT — full order edit (recalculates all financials)
+    // ────────────────────────────────────────────────────────────────────────
+    if (req.method === 'PUT') {
+      const { id, quantity, sellingPrice, shipmentCost, extraCharges, clientName, occurredAt } = req.body
+      if (!id) return res.status(400).json({ error: 'id is required' })
+
+      // Fetch existing to keep cost_price + commission_percent
+      const { data: existing, error: fetchErr } = await supabaseAdmin
+        .from(TABLES.ORDERS)
+        .select('cost_price, commission_percent')
+        .eq('id', id)
+        .single()
+
+      if (fetchErr || !existing) return res.status(404).json({ error: 'Order not found' })
+
+      const qty            = num(quantity)
+      const price          = num(sellingPrice)
+      const ship           = num(shipmentCost)
+      const extra          = num(extraCharges)
+      const grossAmount    = price * qty
+      const totalDeductions = ship + extra
+      const costPrice      = num(existing.cost_price) * qty
+      const commPct        = num(existing.commission_percent)
+      const commissionAmount = Math.round(grossAmount * commPct) / 100
+      const adminTake      = grossAmount - commissionAmount - totalDeductions
+      const profit         = adminTake - costPrice
+
+      const { error: updateErr } = await supabaseAdmin
+        .from(TABLES.ORDERS)
+        .update({
+          quantity:           qty,
+          selling_price:      price,
+          shipment_cost:      ship,
+          client_name:        clientName ?? '',
+          occurred_at:        occurredAt,
+          commission_amount:  commissionAmount,
+          admin_take:         adminTake,
+          profit:             profit,
+        })
+        .eq('id', id)
+
+      if (updateErr) {
+        console.error('orders PUT error:', updateErr)
+        return res.status(500).json({ error: 'Failed to update order' })
+      }
+
+      return res.json({ success: true })
+    }
+
+    // ────────────────────────────────────────────────────────────────────────
+    // DELETE — remove a sale record
+    // ────────────────────────────────────────────────────────────────────────
+    if (req.method === 'DELETE') {
+      const { id } = req.body
+      if (!id) return res.status(400).json({ error: 'id is required' })
+
+      const { error: delErr } = await supabaseAdmin
+        .from(TABLES.ORDERS)
+        .delete()
+        .eq('id', id)
+
+      if (delErr) {
+        console.error('orders DELETE error:', delErr)
+        return res.status(500).json({ error: 'Failed to delete order' })
+      }
+
+      return res.json({ success: true })
+    }
+
     return res.status(405).json({ error: 'Method not allowed' })
   } catch (e: any) {
     console.error('orders API error:', e)
