@@ -504,7 +504,7 @@ export function AddInventoryModal({ onSave, onClose, stores, products }: AddInve
         <div className="modal-overlay">
             <div className="modal-box" style={{ maxWidth: '600px', width: '95%' }}>
                 <div className="modal-head" style={{ padding: '16px 20px' }}>
-                    <h3 style={{ fontSize: '18px', fontWeight: 800 }}>📦 Add Warehouse Inventory</h3>
+                    <h3 style={{ fontSize: '18px', fontWeight: 800 }}>Add Warehouse Inventory</h3>
                     <button className="btn btn-sm" onClick={onClose} style={{ border: 'none', fontSize: '18px' }}>✕</button>
                 </div>
                 <div className="modal-body" style={{ padding: '24px' }}>
@@ -533,7 +533,7 @@ export function AddInventoryModal({ onSave, onClose, stores, products }: AddInve
                                     <img src={item.picture} alt="Preview" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
                                 ) : (
                                     <>
-                                        <span style={{ fontSize: '24px' }}>📸</span>
+                                        <span style={{ fontSize: '24px', color: 'var(--text-faint)' }}><svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d="M14.5 4h-5L7 7H4a2 2 0 0 0-2 2v9a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2V9a2 2 0 0 0-2-2h-3l-2.5-3z"/><circle cx="12" cy="13" r="3"/></svg></span>
                                     </>
                                 )}
                                 <input 
@@ -831,7 +831,7 @@ export function AllotToStoreModal({ onSave, onClose, stores, inventory, allotedQ
         <div className="modal-overlay">
             <div className="modal-box" style={{ maxWidth: '560px', width: '95%' }}>
                 <div className="modal-head" style={{ padding: '16px 20px' }}>
-                    <h3 style={{ fontSize: '18px', fontWeight: 800 }}>🏪 Alot to Store</h3>
+                    <h3 style={{ fontSize: '18px', fontWeight: 800 }}>Alot to Store</h3>
                     <button className="btn btn-sm" onClick={onClose} style={{ border: 'none', fontSize: '18px' }}>✕</button>
                 </div>
                 <div className="modal-body" style={{ padding: '22px 20px' }}>

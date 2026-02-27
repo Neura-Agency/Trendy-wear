@@ -13,6 +13,15 @@ import {
 } from "../types";
 import { AddInventoryModal, AllotToStoreModal } from "../components/Modals";
 
+// ── SVG Icon Components (mono-color, inherits currentColor) ──
+const IC = {
+  warehouse: <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d="M6 22V4a2 2 0 0 1 2-2h8a2 2 0 0 1 2 2v18Z"/><path d="M6 12H4a2 2 0 0 0-2 2v6a2 2 0 0 0 2 2h2"/><path d="M18 9h2a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2h-2"/><path d="M10 6h4"/><path d="M10 10h4"/><path d="M10 14h4"/><path d="M10 18h4"/></svg>,
+  store: <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d="m2 7 4.41-4.41A2 2 0 0 1 7.83 2h8.34a2 2 0 0 1 1.42.59L22 7"/><path d="M4 12v8a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-8"/><path d="M15 22v-4a2 2 0 0 0-2-2h-2a2 2 0 0 0-2 2v4"/><path d="M2 7h20"/><path d="M22 7v3a2 2 0 0 1-2 2 2.7 2.7 0 0 1-1.59-.63.7.7 0 0 0-.82 0A2.7 2.7 0 0 1 16 12a2.7 2.7 0 0 1-1.59-.63.7.7 0 0 0-.82 0A2.7 2.7 0 0 1 12 12a2.7 2.7 0 0 1-1.59-.63.7.7 0 0 0-.82 0A2.7 2.7 0 0 1 8 12a2.7 2.7 0 0 1-1.59-.63.7.7 0 0 0-.82 0A2.7 2.7 0 0 1 4 12a2 2 0 0 1-2-2V7"/></svg>,
+  alert: <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3Z"/><path d="M12 9v4"/><path d="M12 17h.01"/></svg>,
+  stock: <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d="M21 8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16Z"/><path d="m3.3 7 8.7 5 8.7-5"/><path d="M12 22V12"/></svg>,
+  dress: <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d="M6 3h12l-4 9h4l-8 9 2-6H6l4-9H6Z"/></svg>,
+};
+
 const Rs = (n: number) => "Rs " + (Number(n) || 0).toLocaleString();
 
 // Premium Quantity Editor for Warehouse
@@ -234,19 +243,19 @@ export default function InventoryPage({ user, onLogin }: PageProps) {
                     {isAdmin ? (
                         <>
                             <div className="kpi-card blue">
-                                <div className="kpi-icon">🏢</div>
+                                <div className="kpi-icon">{IC.warehouse}</div>
                                 <div className="kpi-label">Warehouse Goods</div>
                                 <div className="kpi-value">{totalItemsInWarehouse}</div>
                                 <div className="kpi-trend">Total Units</div>
                             </div>
                             <div className="kpi-card purple">
-                                <div className="kpi-icon">🏪</div>
+                                <div className="kpi-icon">{IC.store}</div>
                                 <div className="kpi-label">Items at Shops</div>
                                 <div className="kpi-value">{totalItemsInStores}</div>
                                 <div className="kpi-trend">Active Distribution</div>
                             </div>
                             <div className="kpi-card red">
-                                <div className="kpi-icon">🚨</div>
+                                <div className="kpi-icon">{IC.alert}</div>
                                 <div className="kpi-label">Alerts</div>
                                 <div className="kpi-value">{data.inventory.filter(i => i.quantityAvailable <= (i.lowStockWarning || 5)).length}</div>
                                 <div className="kpi-trend">Needs Restock</div>
@@ -254,7 +263,7 @@ export default function InventoryPage({ user, onLogin }: PageProps) {
                         </>
                     ) : (
                         <div className="kpi-card blue">
-                            <div className="kpi-icon">📦</div>
+                            <div className="kpi-icon">{IC.stock}</div>
                             <div className="kpi-label">Shop Stock</div>
                             <div className="kpi-value">
                                 {stockProvided.filter(s => s.storeName === user.storeName).reduce((acc, it) => acc + it.quantityRemaining, 0)}
@@ -263,7 +272,7 @@ export default function InventoryPage({ user, onLogin }: PageProps) {
                         </div>
                     )}
                     <div className="kpi-card green">
-                        <div className="kpi-icon">👗</div>
+                        <div className="kpi-icon">{IC.dress}</div>
                         <div className="kpi-label">Available Types</div>
                         <div className="kpi-value">
                             {isAdmin ? data.inventory.length : stockProvided.filter(s => s.storeName === user.storeName).length}
@@ -282,7 +291,7 @@ export default function InventoryPage({ user, onLogin }: PageProps) {
                 {isSuperAdmin && (
                     <SectionCard 
                         title="Warehouse Inventory" 
-                        icon="🏢"
+                        icon={IC.warehouse}
                         action={<button className="btn btn-primary" onClick={() => setShowAddInventoryModal(true)}>+ Add Inventory</button>}
                     >
                         <div className="table-wrap">
@@ -396,7 +405,7 @@ export default function InventoryPage({ user, onLogin }: PageProps) {
 
                 <SectionCard
                     title={isAdmin ? "Partner Store's Inventory" : "Supplied Stock from Owner"}
-                    icon="🏪"
+                    icon={IC.store}
                     action={isAdmin ? (
                         <button className="btn btn-primary" onClick={() => setShowAllotModal(true)}>+ Alot to Stores</button>
                     ) : undefined}

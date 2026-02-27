@@ -21,24 +21,30 @@ export default function Layout({ children, user, onLogout }: LayoutProps) {
     setShowMenu(false);
   }, [currentPath]);
 
+  // Clean mono-color SVG icons (currentColor inherits nav text color)
+  const iconDashboard = <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="3" width="7" height="9" rx="1"/><rect x="14" y="3" width="7" height="5" rx="1"/><rect x="14" y="12" width="7" height="9" rx="1"/><rect x="3" y="16" width="7" height="5" rx="1"/></svg>;
+  const iconInventory = <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d="M21 8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16Z"/><path d="m3.3 7 8.7 5 8.7-5"/><path d="M12 22V12"/></svg>;
+  const iconCredentials = <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><circle cx="7.5" cy="15.5" r="5.5"/><path d="m11.5 11.5 4-4"/><path d="m15 8 2.5 2.5"/><path d="m18 5 2.5 2.5"/></svg>;
+  const iconDirectSales = <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d="M6 2 3 6v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V6l-3-4Z"/><path d="M3 6h18"/><path d="M16 10a4 4 0 0 1-8 0"/></svg>;
+
   const navItems: NavItem[] = [
-    { id: "home", icon: "📊", label: "Main Dashboard", path: "/" },
+    { id: "home", icon: iconDashboard as any, label: "Main Dashboard", path: "/" },
     {
       id: "inventory",
-      icon: "📦",
+      icon: iconInventory as any,
       label: "Stock & Inventory",
       path: "/inventory",
     },
     {
       id: "credentials",
-      icon: "🔑",
+      icon: iconCredentials as any,
       label: "Shop Credentials",
       path: "/credentials",
       adminOnly: true,
     },
     {
       id: "direct-sales",
-      icon: "🏠",
+      icon: iconDirectSales as any,
       label: "Direct Sales",
       path: "/direct-sales",
       superAdminOnly: true,
@@ -55,13 +61,7 @@ export default function Layout({ children, user, onLogout }: LayoutProps) {
     <div className="page-wrap">
       {/* ── TOP BAR ── */}
       <header className="topbar">
-        <div className="topbar-brand">
-          <img
-            src="/logo.jpg"
-            alt="Logo"
-            className="brand-logo"
-          />
-        </div>
+        <div style={{ width: 1 }} />
         <div className="topbar-right">
           <div className="topbar-user" onClick={() => setShowMenu((v) => !v)}>
             <div className="user-avatar">
@@ -84,7 +84,8 @@ export default function Layout({ children, user, onLogout }: LayoutProps) {
             </div>
             <div className="menu-divider"></div>
             <button className="menu-item logout" onClick={onLogout}>
-              <span style={{ marginRight: '8px' }}>🚪</span> Logout
+              <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ marginRight: 8 }}><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" x2="9" y1="12" y2="12"/></svg>
+              Logout
             </button>
           </div>
         </div>
@@ -93,17 +94,20 @@ export default function Layout({ children, user, onLogout }: LayoutProps) {
       <div className="page-body">
         {/* ── SIDEBAR ── */}
         <nav className="sidebar">
+          <div className="sidebar-brand">
+            <img src="/logo.jpg" alt="Trendy Wear" className="brand-logo" />
+          </div>
           <div
             style={{
-              padding: "24px 24px 8px 24px",
-              fontSize: "11px",
-              fontWeight: 800,
-              color: "rgba(255,255,255,0.4)",
+              padding: "20px 20px 8px 20px",
+              fontSize: "10px",
+              fontWeight: 700,
+              color: "rgba(255,255,255,0.3)",
               textTransform: "uppercase",
-              letterSpacing: "1px",
+              letterSpacing: "1.5px",
             }}
           >
-            Navigation Menu
+            Menu
           </div>
           <div className="nav-items-container">
             {filteredNavItems.map((item) => (
@@ -113,15 +117,7 @@ export default function Layout({ children, user, onLogout }: LayoutProps) {
                 className={`nav-item ${currentPath === item.path ? "active" : ""}`}
                 style={{ textDecoration: "none" }}
               >
-                <span
-                  className="nav-icon"
-                  style={{
-                    filter:
-                      currentPath === item.path
-                        ? "none"
-                        : "grayscale(1) opacity(0.7)",
-                  }}
-                >
+                <span className="nav-icon">
                   {item.icon}
                 </span>
                 <span className="nav-label">{item.label}</span>

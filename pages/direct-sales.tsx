@@ -7,6 +7,15 @@ import CustomSelect from "../components/CustomSelect";
 
 const Rs = (n: number) => "Rs " + (Number(n) || 0).toLocaleString();
 
+// ── SVG Icon Components (mono-color, inherits currentColor) ──
+const IC = {
+  wallet: <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d="M21 12V7H5a2 2 0 0 1 0-4h14v4"/><path d="M3 5v14a2 2 0 0 0 2 2h16v-5"/><path d="M18 12a2 2 0 0 0 0 4h4v-4Z"/></svg>,
+  expense: <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d="M2 16.1A5 5 0 0 1 5.9 20M2 12.05A9 9 0 0 1 9.95 20M2 8V6a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2h-6"/><line x1="2" x2="2.01" y1="20" y2="20"/></svg>,
+  profit: <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><polyline points="22 7 13.5 15.5 8.5 10.5 2 17"/><polyline points="16 7 22 7 22 13"/></svg>,
+  stock: <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d="M21 8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16Z"/><path d="m3.3 7 8.7 5 8.7-5"/><path d="M12 22V12"/></svg>,
+  home: <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d="m3 9 9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><polyline points="9 22 9 12 15 12 15 22"/></svg>,
+};
+
 // ── ISO week helper ────────────────────────────────────────────────
 function getISOWeek(date: Date): number {
   const d = new Date(Date.UTC(date.getFullYear(), date.getMonth(), date.getDate()));
@@ -233,21 +242,21 @@ export default function DirectSalesPage({ user, onLogin }: PageProps) {
       {/* ── KPI cards ── */}
       <section className="kpi-grid" style={{ marginBottom: 24 }}>
         <div className="kpi-card purple">
-          <div className="kpi-icon">💵</div>
+          <div className="kpi-icon">{IC.wallet}</div>
           <div className="kpi-label">Total Received</div>
           <div className="kpi-value">{Rs(totalRevenue)}</div>
           <div className="kpi-trend">Gross sales amount</div>
         </div>
 
         <div className="kpi-card gray">
-          <div className="kpi-icon">💸</div>
+          <div className="kpi-icon">{IC.expense}</div>
           <div className="kpi-label">Expenses</div>
           <div className="kpi-value negative">-{Rs(totalExpenses)}</div>
           <div className="kpi-trend">Total shipment costs</div>
         </div>
 
         <div className="kpi-card blue">
-          <div className="kpi-icon">📈</div>
+          <div className="kpi-icon">{IC.profit}</div>
           <div className="kpi-label">Net Profit</div>
           <div className={`kpi-value ${totalProfit < 0 ? "negative" : ""}`}>
             {totalProfit < 0 ? `-${Rs(Math.abs(totalProfit))}` : Rs(totalProfit)}
@@ -256,7 +265,7 @@ export default function DirectSalesPage({ user, onLogin }: PageProps) {
         </div>
 
         <div className="kpi-card orange">
-          <div className="kpi-icon">📦</div>
+          <div className="kpi-icon">{IC.stock}</div>
           <div className="kpi-label">Units Sold</div>
           <div className="kpi-value">{totalUnits}</div>
           <div className="kpi-trend">{filtered.length} order{filtered.length !== 1 ? "s" : ""}</div>
@@ -267,7 +276,7 @@ export default function DirectSalesPage({ user, onLogin }: PageProps) {
       <div style={{ marginBottom: 32 }}>
         <SectionCard
           title={`Direct Sales${filtered.length > 0 ? ` (${filtered.length})` : ""}`}
-          icon="🏠"
+          icon={IC.home}
           action={<TableFilter value={filter} onChange={setFilter} />}
         >
           <div className="table-wrap">

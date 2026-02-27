@@ -155,7 +155,7 @@ export interface BadgeProps {
 
 export interface SectionCardProps {
   title: string;
-  icon?: string;
+  icon?: React.ReactNode;
   action?: React.ReactNode;
   children: React.ReactNode;
 }

@@ -10,6 +10,19 @@ import { AddExpenseForm } from '../components/Forms';
 import CustomSelect from "../components/CustomSelect";
 import { User, Order, Store, InventoryItem, Expense, Client, StoreInventoryItem, AppData, PageProps } from "../types";
 
+// ── SVG Icon Components (mono-color, inherits currentColor) ──
+const IC = {
+  wallet: <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d="M21 12V7H5a2 2 0 0 1 0-4h14v4"/><path d="M3 5v14a2 2 0 0 0 2 2h16v-5"/><path d="M18 12a2 2 0 0 0 0 4h4v-4Z"/></svg>,
+  expense: <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d="M2 16.1A5 5 0 0 1 5.9 20M2 12.05A9 9 0 0 1 9.95 20M2 8V6a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2h-6"/><line x1="2" x2="2.01" y1="20" y2="20"/></svg>,
+  profit: <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><polyline points="22 7 13.5 15.5 8.5 10.5 2 17"/><polyline points="16 7 22 7 22 13"/></svg>,
+  stock: <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d="M21 8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16Z"/><path d="m3.3 7 8.7 5 8.7-5"/><path d="M12 22V12"/></svg>,
+  store: <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d="m2 7 4.41-4.41A2 2 0 0 1 7.83 2h8.34a2 2 0 0 1 1.42.59L22 7"/><path d="M4 12v8a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-8"/><path d="M15 22v-4a2 2 0 0 0-2-2h-2a2 2 0 0 0-2 2v4"/><path d="M2 7h20"/><path d="M22 7v3a2 2 0 0 1-2 2 2.7 2.7 0 0 1-1.59-.63.7.7 0 0 0-.82 0A2.7 2.7 0 0 1 16 12a2.7 2.7 0 0 1-1.59-.63.7.7 0 0 0-.82 0A2.7 2.7 0 0 1 12 12a2.7 2.7 0 0 1-1.59-.63.7.7 0 0 0-.82 0A2.7 2.7 0 0 1 8 12a2.7 2.7 0 0 1-1.59-.63.7.7 0 0 0-.82 0A2.7 2.7 0 0 1 4 12a2 2 0 0 1-2-2V7"/></svg>,
+  chart: <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><line x1="18" x2="18" y1="20" y2="10"/><line x1="12" x2="12" y1="20" y2="4"/><line x1="6" x2="6" y1="20" y2="14"/></svg>,
+  handshake: <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d="m11 17 2 2a1 1 0 1 0 3-3"/><path d="m14 14 2.5 2.5a1 1 0 1 0 3-3l-3.88-3.88a3 3 0 0 0-4.24 0l-.88.88a1 1 0 1 1-3-3l2.81-2.81a5.79 5.79 0 0 1 7.06-.87l.47.28a2 2 0 0 0 1.42.25L21 4"/><path d="m21 3 1 11h-2"/><path d="M3 3 2 14h2"/><path d="m7 4 3.06 2.04a2 2 0 0 0 1.42.25"/><path d="m5 12 2.13 2.13a1 1 0 0 0 3-.87"/></svg>,
+  receipt: <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d="M4 2v20l2-1 2 1 2-1 2 1 2-1 2 1 2-1 2 1V2l-2 1-2-1-2 1-2-1-2 1-2-1-2 1Z"/><path d="M16 8h-6a2 2 0 1 0 0 4h4a2 2 0 1 1 0 4H8"/><path d="M12 17.5v-11"/></svg>,
+  report: <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d="M15 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7Z"/><path d="M14 2v4a2 2 0 0 0 2 2h4"/><path d="M10 12h4"/><path d="M10 16h4"/></svg>,
+};
+
 // Helpers
 const Rs = (n: number) => "Rs " + (Number(n) || 0).toLocaleString();
 
@@ -712,7 +725,7 @@ function OrdersSection({ orders, overallOrders = [], isAdmin, canDelete, onCommi
     <div>
       {/* ── Edit modal ── */}
       {editing && (
-        <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.45)', zIndex: 1200, display: 'flex', alignItems: 'flex-start', justifyContent: 'center', padding: '88px 16px 16px', overflowY: 'auto' }}>
+        <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.45)', zIndex: 1300, display: 'flex', alignItems: 'flex-start', justifyContent: 'center', padding: '80px 16px 16px', overflowY: 'auto' }}>
           <div style={{ background: 'var(--surface)', borderRadius: 16, padding: 32, width: '100%', maxWidth: 480, boxShadow: '0 8px 40px rgba(0,0,0,0.25)' }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 24 }}>
               <h2 style={{ margin: 0, fontSize: '1.2rem', fontWeight: 800 }}>Edit Sale</h2>
@@ -764,7 +777,7 @@ function OrdersSection({ orders, overallOrders = [], isAdmin, canDelete, onCommi
               {canDelete && (
                 <button className="btn" style={{ flex: '0 0 auto', background: 'var(--danger)', borderColor: 'var(--danger)', color: '#fff', fontWeight: 700, padding: '0 20px', height: 44 }}
                   onClick={() => { if (confirm('Delete this sale? This cannot be undone.')) { onDelete(editing.id); setEditing(null); } }}
-                >🗑 Delete</button>
+                ><svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{verticalAlign:'middle',marginRight:4}}><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>Delete</button>
               )}
               <button className="btn btn-glass" style={{ flex: 1, height: 44 }} onClick={() => setEditing(null)}>Cancel</button>
               <button className="btn btn-primary" style={{ flex: 1, height: 44, fontWeight: 700 }}
@@ -1337,21 +1350,21 @@ const [loading, setLoading] = useState<boolean>(true);
       <div className="home-dashboard">
         <section className="kpi-grid" style={{ marginBottom: 16 }}>
           <div className="kpi-card purple">
-            <div className="kpi-icon">💵</div>
+            <div className="kpi-icon">{IC.wallet}</div>
             <div className="kpi-label">{isAdmin ? "Payout" : "My Payout"}</div>
             <div className="kpi-value">{Rs(isAdmin ? totalAdminTake : totalShopCut)}</div>
             <div className="kpi-trend">{isAdmin ? "Overall Earnings" : "My Total Earnings"}</div>
           </div>
 
           <div className="kpi-card gray">
-            <div className="kpi-icon">💸</div>
+            <div className="kpi-icon">{IC.expense}</div>
             <div className="kpi-label">Expenses</div>
             <div className="kpi-value negative">-{Rs(totalExpenses)}</div>
             <div className="kpi-trend">Total costs (base + shipping + cuts)</div>
           </div>
 
           <div className="kpi-card blue">
-            <div className="kpi-icon">📈</div>
+            <div className="kpi-icon">{IC.profit}</div>
             <div className="kpi-label">{isAdmin ? "Profit" : "Earnings"}</div>
             <div className={`kpi-value ${totalProfitValue < 0 ? 'negative' : ''}`}>
               {totalProfitValue < 0 ? `-${Rs(Math.abs(totalProfitValue))}` : Rs(totalProfitValue)}
@@ -1360,7 +1373,7 @@ const [loading, setLoading] = useState<boolean>(true);
           </div>
 
           <div className="kpi-card orange">
-            <div className="kpi-icon">📦</div>
+            <div className="kpi-icon">{IC.stock}</div>
             <div className="kpi-label">{isAdmin ? "Stock" : "Shop Stock"}</div>
             <div className="kpi-value">{totalStockQty.toLocaleString()}</div>
             <div className="kpi-trend">
@@ -1374,7 +1387,7 @@ const [loading, setLoading] = useState<boolean>(true);
 
           {isAdmin && (
             <div className="kpi-card blue">
-              <div className="kpi-icon">🏪</div>
+              <div className="kpi-icon">{IC.store}</div>
               <div className="kpi-label">Stores</div>
               <div className="kpi-value">{storesCount.toLocaleString()}</div>
               <div className="kpi-trend">Active partners</div>
@@ -1386,11 +1399,11 @@ const [loading, setLoading] = useState<boolean>(true);
         {isAdmin && (
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 24, marginBottom: 24 }}>
             {/* ── PRODUCT PERFORMANCE: SVG Grouped Bar Chart ── */}
-            <SectionCard title="Product Performance" icon="📊" defaultOpen>
+            <SectionCard title="Product Performance" icon={IC.chart} defaultOpen>
               {isProductEmpty && (
                 <div style={{ marginBottom: 8 }}>
                   <span style={{ background: '#fef3c7', color: '#92400e', fontSize: 10, fontWeight: 800, padding: '2px 8px', borderRadius: 20, textTransform: 'uppercase', letterSpacing: '0.05em' }}>
-                    📊 Demo data · will update with real orders
+                    Demo data · will update with real orders
                   </span>
                 </div>
               )}
@@ -1405,11 +1418,11 @@ const [loading, setLoading] = useState<boolean>(true);
             </SectionCard>
 
             {/* ── STORE PERFORMANCE: Stacked Bar Chart ── */}
-            <SectionCard title="Store Performance" icon="🏪" defaultOpen>
+            <SectionCard title="Store Performance" icon={IC.store} defaultOpen>
               {isStoreEmpty && (
                 <div style={{ marginBottom: 8 }}>
                   <span style={{ background: '#fef3c7', color: '#92400e', fontSize: 10, fontWeight: 800, padding: '2px 8px', borderRadius: 20, textTransform: 'uppercase', letterSpacing: '0.05em' }}>
-                    📊 Demo data · will update with real orders
+                    Demo data · will update with real orders
                   </span>
                 </div>
               )}
@@ -1451,7 +1464,7 @@ const [loading, setLoading] = useState<boolean>(true);
             setReportData({ ...data, orders: ordersForReport, stores: storesForReport });
             setShowReport(true);
           }}>
-            <span style={{ marginRight: '8px' }}>📄</span> Generate Report
+            <span style={{ marginRight: '8px', display: 'inline-flex' }}>{IC.report}</span> Generate Report
           </button>
           <TableFilter value={kpiFilter} onChange={setKpiFilter} />
         </div>
@@ -1459,7 +1472,7 @@ const [loading, setLoading] = useState<boolean>(true);
         {(isAdmin || user.role === 'store') && (
           <SectionCard 
             title={isAdmin ? "Store Partners" : "My Store Performance"} 
-            icon="🏪"
+            icon={IC.store}
             action={
               isSuperAdmin ? (
                 <button className="btn btn-primary" onClick={() => setShowStoreModal(true)}>
@@ -1486,7 +1499,7 @@ const [loading, setLoading] = useState<boolean>(true);
         <div className="vertical-stack" style={{ display: 'flex', flexDirection: 'column', gap: 32, marginBottom: 32 }}>
           <SectionCard
             title={isAdmin ? "Partner Store Sales" : "Sales History"}
-            icon="🤝"
+            icon={IC.handshake}
             action={
               <div style={{ display: 'flex', gap: 12, alignItems: 'center' }}>
                 <TableFilter value={partnerFilter} onChange={setPartnerFilter} />
@@ -1561,7 +1574,7 @@ const [loading, setLoading] = useState<boolean>(true);
         {isAdmin && (
           <div className="grid-2-dynamic" style={{ display: 'grid', gridTemplateColumns: '1.2fr 0.8fr', gap: 24, marginBottom: 32 }}>
             {/* VIP Customers table removed as requested */}
-            <SectionCard title="Expenses (Money Spent)" icon="📉" action={
+            <SectionCard title="Expenses (Money Spent)" icon={IC.receipt} action={
               <button className="btn btn-primary" style={{ padding: '0.5rem 1rem' }} onClick={() => setShowExpenseModal(true)}>+ Add Expense</button>
             }>
               <div className="table-wrap">
