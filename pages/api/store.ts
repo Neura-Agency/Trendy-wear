@@ -162,6 +162,17 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
         return res.status(500).json({ error: 'Failed to create store' })
       }
 
+      // Step 4: Patch the account with the now-known store_id
+      const { error: accountUpdateError } = await supabaseAdmin
+        .from(TABLES.ACCOUNTS)
+        .update({ store_id: store.id })
+        .eq('id', account.id)
+
+      if (accountUpdateError) {
+        console.error('Error setting store_id on account:', accountUpdateError)
+        // Store was created successfully; log and continue rather than failing the whole request
+      }
+
       return res.status(201).json({ 
         success: true,
         store: {

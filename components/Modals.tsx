@@ -14,14 +14,17 @@ interface SaleModalPropsLocal {
 }
 
 export function SaleModal({ inventory, storeName, isAdmin, storeNames, onAdd, onClose }: SaleModalPropsLocal) {
+    const todayIso = new Date().toISOString().slice(0, 10);
     const [sale, setSale] = useState<any>({
         productName: '',
         quantity: 1,
+        extraQty: 0,
         sellingPrice: 0,
         shipmentCost: 0,
+        extraCharges: 0,
         storeName: storeName || (storeNames && storeNames[0]) || 'Direct',
         clientName: '',
-        type: 'Sale'
+        occurredAt: todayIso,
     });
 
     const [currency, setCurrency] = useState<string>('PKR');
@@ -31,21 +34,29 @@ export function SaleModal({ inventory, storeName, isAdmin, storeNames, onAdd, on
 
     const handleSubmit = (e: React.FormEvent) => {
         e.preventDefault();
-        // Convert to PKR if entered in GBP
         const finalPrice = currency === 'GBP' ? sale.sellingPrice * gbpRate : sale.sellingPrice;
-        onAdd({ ...sale, sellingPrice: finalPrice });
+        onAdd({
+            ...sale,
+            type: 'Sale',
+            sellingPrice: finalPrice,
+            occurredAt: sale.occurredAt || todayIso,
+            extraCharges: sale.extraCharges || 0,
+            extraQty: sale.extraQty || 0,
+        });
         onClose();
     };
 
     const currentPriceInPKR = currency === 'GBP' ? sale.sellingPrice * gbpRate : sale.sellingPrice;
     const totalBill = (currentPriceInPKR * sale.quantity);
-    const netPayable = totalBill - (sale.shipmentCost || 0);
+    const totalDeductions = (sale.shipmentCost || 0) + (sale.extraCharges || 0);
+    const netPayable = totalBill - totalDeductions;
+    const totalDispatch = (sale.quantity || 0) + (sale.extraQty || 0);
 
     return (
         <div className="modal-overlay">
             <div className="modal-box" style={{ maxWidth: '480px' }}>
                 <div className="modal-head" style={{ padding: '12px 20px' }}>
-                    <h3 style={{ fontSize: '16px' }}>New {sale.type}</h3>
+                    <h3 style={{ fontSize: '16px' }}>New Sale</h3>
                     <div style={{ display: 'flex', gap: 8 }}>
                         {['PKR', 'GBP'].map(curr => (
                             <button key={curr} type="button"
@@ -64,26 +75,6 @@ export function SaleModal({ inventory, storeName, isAdmin, storeNames, onAdd, on
                 </div>
                 <div className="modal-body" style={{ padding: '16px 20px' }}>
                     <form onSubmit={handleSubmit}>
-                        <div style={{ marginBottom: 16 }}>
-                            <label style={{ fontSize: '10px', color: '#8c8c8c', textTransform: 'uppercase', letterSpacing: '0.5px', marginBottom: 4 }}>Transaction Type</label>
-                            <div style={{ display: 'flex', gap: 2, background: '#f5f5f5', padding: 3, borderRadius: 6 }}>
-                                {['Sale', 'Gift'].map(t => (
-                                    <button key={t} type="button"
-                                        className="btn btn-sm"
-                                        style={{
-                                            flex: 1, border: 'none', borderRadius: 4, height: 28, fontSize: '12px', fontWeight: 700,
-                                            background: sale.type === t ? '#fff' : 'transparent',
-                                            color: sale.type === t ? '#1890ff' : '#8c8c8c',
-                                            boxShadow: sale.type === t ? '0 1px 3px rgba(0,0,0,0.05)' : 'none'
-                                        }}
-                                        onClick={() => setSale({ ...sale, type: t })}
-                                    >
-                                        {t}
-                                    </button>
-                                ))}
-                            </div>
-                        </div>
-
                         <div className="form-grid-2">
                             <div className="input-group full-width">
                                 <label>Select Product</label>
@@ -106,12 +97,22 @@ export function SaleModal({ inventory, storeName, isAdmin, storeNames, onAdd, on
                             </div>
 
                             <div className="input-group">
-                                <label>Qty</label>
+                                <label>Qty Sold</label>
                                 <input
-                                    type="number"
+                                    type="text"
+                                    inputMode="numeric"
                                     value={sale.quantity}
                                     onChange={e => setSale({ ...sale, quantity: parseInt(e.target.value) || 0 })}
-                                    min="1"
+                                />
+                            </div>
+
+                            <div className="input-group">
+                                <label>Extra Qty <span style={{ fontSize: '10px', fontWeight: 400, color: '#8c8c8c' }}>(free / bonus)</span></label>
+                                <input
+                                    type="text"
+                                    inputMode="numeric"
+                                    value={sale.extraQty}
+                                    onChange={e => setSale({ ...sale, extraQty: parseInt(e.target.value) || 0 })}
                                 />
                             </div>
 
@@ -131,14 +132,35 @@ export function SaleModal({ inventory, storeName, isAdmin, storeNames, onAdd, on
                                 )}
                             </div>
 
-                            <div className="input-group full-width">
-                                <label style={{ color: 'var(--danger)', fontWeight: 700 }}>Shipment Cost (PKR - Deductible)</label>
+                            <div className="input-group">
+                                <label style={{ color: 'var(--danger)', fontWeight: 700 }}>Shipment Cost (PKR)</label>
                                 <input
                                     type="number"
                                     placeholder="0"
                                     value={sale.shipmentCost}
                                     onChange={e => setSale({ ...sale, shipmentCost: parseFloat(e.target.value) || 0 })}
                                     style={{ border: '1px solid var(--danger)' }}
+                                />
+                            </div>
+
+                            <div className="input-group">
+                                <label style={{ color: 'var(--danger)', fontWeight: 700 }}>Extra Charges (PKR)</label>
+                                <input
+                                    type="number"
+                                    placeholder="0"
+                                    value={sale.extraCharges}
+                                    onChange={e => setSale({ ...sale, extraCharges: parseFloat(e.target.value) || 0 })}
+                                    style={{ border: '1px solid var(--danger)' }}
+                                />
+                            </div>
+
+                            <div className="input-group full-width">
+                                <label>Date of Sale</label>
+                                <input
+                                    type="date"
+                                    value={sale.occurredAt}
+                                    max={todayIso}
+                                    onChange={e => setSale({ ...sale, occurredAt: e.target.value })}
                                 />
                             </div>
 
@@ -162,6 +184,18 @@ export function SaleModal({ inventory, storeName, isAdmin, storeNames, onAdd, on
                                 <span style={{ color: '#8c8c8c', fontSize: '11px', fontWeight: 700, textTransform: 'uppercase' }}>Gross Order Value:</span>
                                 <span style={{ fontSize: '14px', fontWeight: 800 }}>Rs {totalBill.toLocaleString()}</span>
                             </div>
+                            {sale.extraQty > 0 && (
+                                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 4 }}>
+                                    <span style={{ color: '#8c8c8c', fontSize: '11px', fontWeight: 700, textTransform: 'uppercase' }}>Total Dispatched:</span>
+                                    <span style={{ fontSize: '13px', fontWeight: 700 }}>{totalDispatch} units ({sale.quantity} sold + {sale.extraQty} free)</span>
+                                </div>
+                            )}
+                            {totalDeductions > 0 && (
+                                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 4 }}>
+                                    <span style={{ color: 'var(--danger)', fontSize: '11px', fontWeight: 700, textTransform: 'uppercase' }}>Total Deductions:</span>
+                                    <span style={{ fontSize: '13px', fontWeight: 700, color: 'var(--danger)' }}>- Rs {totalDeductions.toLocaleString()}</span>
+                                </div>
+                            )}
                             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderTop: '1px solid #eee', paddingTop: 8 }}>
                                 <span style={{ color: '#000', fontSize: '12px', fontWeight: 700, textTransform: 'uppercase' }}>Final Net Payable (Rs):</span>
                                 <span style={{ fontSize: '18px', fontWeight: 900, color: 'var(--success)' }}>Rs {netPayable.toLocaleString()}</span>

@@ -27,6 +27,8 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
           store_selling_price,
           quantity_assigned,
           quantity_remaining,
+          created_at,
+          updated_at,
           stores:store_id ( name ),
           products:product_id ( product_name )
         `)
@@ -43,17 +45,30 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       }
 
       const storeInventory: Record<string, Record<string, any>> = {}
+      const latestUpdatedAtByStore: Record<string, string> = {}
+      let latestUpdatedAt: string | null = null
 
       ;(data || []).forEach((row: any) => {
         const storeName = row.stores?.name
-        const productName = row.products?.product_name
-        if (!storeName || !productName) return
+        const productName = row.products?.product_name || row.product_id || 'Unknown'
+        if (!storeName) return
 
         if (!storeInventory[storeName]) storeInventory[storeName] = {}
 
         const existing = storeInventory[storeName][productName]
         const qtyAssigned = num(row.quantity_assigned)
         const qtyRemaining = num(row.quantity_remaining)
+
+        const rowUpdatedAt = (row.updated_at ?? row.created_at) as string | null
+        if (rowUpdatedAt) {
+          const prev = latestUpdatedAtByStore[storeName]
+          if (!prev || new Date(rowUpdatedAt).getTime() > new Date(prev).getTime()) {
+            latestUpdatedAtByStore[storeName] = rowUpdatedAt
+          }
+          if (!latestUpdatedAt || new Date(rowUpdatedAt).getTime() > new Date(latestUpdatedAt).getTime()) {
+            latestUpdatedAt = rowUpdatedAt
+          }
+        }
 
         if (!existing) {
           storeInventory[storeName][productName] = {
@@ -71,7 +86,13 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
         }
       })
 
-      return res.json({ storeInventory })
+      return res.json({
+        storeInventory,
+        meta: {
+          latestUpdatedAt,
+          latestUpdatedAtByStore
+        }
+      })
     }
 
     if (req.method === 'POST') {

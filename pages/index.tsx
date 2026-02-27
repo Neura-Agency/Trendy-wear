@@ -857,6 +857,10 @@ export default function Home({ user, onLogin }: PageProps) {
     clients: Client[];
     expenses: Expense[];
     storeInventory: Record<string, Record<string, StoreInventoryItem>>;
+    storeInventoryMeta?: {
+      latestUpdatedAt?: string | null;
+      latestUpdatedAtByStore?: Record<string, string>;
+    };
     settings?: any;
   }>({
     orders: [],
@@ -882,23 +886,26 @@ const [loading, setLoading] = useState<boolean>(true);
   const refresh = useCallback(async () => {
     setLoading(true);
     try {
-      const storesRes = await fetch('/api/store')
-      const storesData = await storesRes.json()
-
-      const storeInvRes = await fetch('/api/storeInventory')
+      const [storesRes, storeInvRes, invRes, ordersRes] = await Promise.all([
+        fetch('/api/store'),
+        fetch('/api/storeInventory'),
+        fetch('/api/inventory'),
+        fetch('/api/orders'),
+      ]);
+      const storesData   = await storesRes.json()
       const storeInvData = await storeInvRes.json()
-
-      const invRes = await fetch('/api/inventory')
-      const invData = await invRes.json()
+      const invData      = await invRes.json()
+      const ordersData   = await ordersRes.json()
 
       setData({
-        orders: [],
+        orders: ordersData?.orders || [],
         stores: storesData?.stores || {},
         inventory: invData?.inventory || [],
         expenses: [],
         clients: [],
         settings: storesData?.settings || { storeCommissionPercent: 10 },
         storeInventory: storeInvData?.storeInventory || {},
+        storeInventoryMeta: storeInvData?.meta || {},
       });
     } catch (e) {
       console.error(e);
@@ -921,6 +928,7 @@ const [loading, setLoading] = useState<boolean>(true);
 
   const isAdmin = user.role === "admin";
   const isSuperAdmin = isAdmin && user.scope === 'all';
+  const isStoreManager = isAdmin && !isSuperAdmin && Array.isArray(user.managedStores) && user.managedStores.length > 0;
 
   const getFiltered = (ordList: Order[], filter: string): Order[] => {
     const now = new Date();
@@ -1004,9 +1012,45 @@ const [loading, setLoading] = useState<boolean>(true);
   const totalExpenses = isAdmin ? adminExpenses : 0;
   const totalProfit = totalGross - adminExpenses;
   const totalProfitValue = isAdmin ? totalProfit : totalShopCut;
-  const totalStockQty = isAdmin
-    ? data.inventory.reduce((s, i) => s + (i.quantityAvailable || 0), 0)
-    : Object.values(data.storeInventory[user.storeName] || {}).reduce((s, si: any) => s + (Number(si.quantityRemaining) || 0), 0);
+  const totalStockQty = (() => {
+    if (isSuperAdmin) {
+      return data.inventory.reduce((s, i) => s + (i.quantityAvailable || 0), 0)
+    }
+
+    // Store manager (admin with managed stores): stock = sum of store_inventory.quantity_remaining across managed stores
+    if (isStoreManager) {
+      const names = Object.keys(availableStores || {})
+      return names.reduce((sum, storeName) => {
+        const items = Object.values(data.storeInventory[storeName] || {}) as any[]
+        return sum + items.reduce((s, si) => s + (Number(si.quantityRemaining) || 0), 0)
+      }, 0)
+    }
+
+    // Regular admin (no managed stores): keep existing warehouse behavior
+    if (isAdmin) {
+      return data.inventory.reduce((s, i) => s + (i.quantityAvailable || 0), 0)
+    }
+
+    // Store owner: stock = own store quantity_remaining
+    return Object.values(data.storeInventory[user.storeName] || {}).reduce(
+      (s, si: any) => s + (Number(si.quantityRemaining) || 0),
+      0
+    )
+  })();
+
+  const stockAsOfIso = (() => {
+    const meta = data.storeInventoryMeta
+    if (!meta) return null
+
+    if (isStoreManager) return meta.latestUpdatedAt ?? null
+    if (user.role === 'store') {
+      const byStore = meta.latestUpdatedAtByStore || {}
+      return (user.storeName && byStore[user.storeName]) ? byStore[user.storeName] : (meta.latestUpdatedAt ?? null)
+    }
+    return null
+  })();
+
+  const stockAsOfLabel = stockAsOfIso ? new Date(stockAsOfIso).toLocaleDateString() : null
   const storesCount = isSuperAdmin
     ? Object.keys(data.stores || {}).length
     : isAdmin
@@ -1180,9 +1224,35 @@ const [loading, setLoading] = useState<boolean>(true);
         sales:    s.valuesQty,
       }));
 
-  const handleAddOrder = async (order: Partial<Order>) => {
-    // No-op: database removed
-    refresh();
+  const handleAddOrder = async (order: any) => {
+    try {
+      const res = await fetch('/api/orders', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          productName:  order.productName,
+          quantity:     order.quantity,
+          extraQty:     order.extraQty || 0,
+          sellingPrice: order.sellingPrice,
+          shipmentCost: order.shipmentCost || 0,
+          extraCharges: order.extraCharges || 0,
+          clientName:   order.clientName || '',
+          orderType:    order.type || 'Sale',
+          occurredAt:   order.occurredAt || new Date().toISOString(),
+          storeName:    order.storeName,
+        }),
+      });
+      const result = await res.json();
+      if (!res.ok) {
+        alert(result.error || 'Failed to save sale');
+        return;
+      }
+      alert(`✅ Sale recorded! Order code: ${result.orderCode}`);
+    } catch (e: any) {
+      alert(e?.message || 'Failed to save sale');
+    } finally {
+      refresh();
+    }
   };
 
   const handleCreateStore = async (store: { name: string; partnerName: string; partnerContact: string; commission: number; storeId: string }) => {
@@ -1261,7 +1331,13 @@ const [loading, setLoading] = useState<boolean>(true);
             <div className="kpi-icon">📦</div>
             <div className="kpi-label">{isAdmin ? "Stock" : "Shop Stock"}</div>
             <div className="kpi-value">{totalStockQty.toLocaleString()}</div>
-            <div className="kpi-trend">{isAdmin ? "Units available in warehouse" : "Units available in my shop"}</div>
+            <div className="kpi-trend">
+              {isSuperAdmin
+                ? "Units available in warehouse"
+                : isStoreManager
+                  ? `Units available in managed shops${stockAsOfLabel ? ` · as of ${stockAsOfLabel}` : ''}`
+                  : `Units available in my shop${stockAsOfLabel ? ` · as of ${stockAsOfLabel}` : ''}`}
+            </div>
           </div>
 
           {isAdmin && (
@@ -1316,6 +1392,15 @@ const [loading, setLoading] = useState<boolean>(true);
 
         {/* ── Filter / Generate Report bar ── */}
         <div className="header-actions" style={{ justifyContent: 'flex-end', marginBottom: 32 }}>
+          {(isStoreManager || user.role === 'store') && (
+            <button
+              className="btn btn-primary"
+              onClick={() => setShowSaleModal(true)}
+              style={{ marginRight: 8 }}
+            >
+              + Record Sale
+            </button>
+          )}
           <button className="btn btn-secondary" onClick={() => {
             let ordersForReport = kpiOrders;
             let storesForReport = data.stores || {};
@@ -1439,11 +1524,25 @@ const [loading, setLoading] = useState<boolean>(true);
 
         {showSaleModal && (
           <SaleModal
-            inventory={isAdmin ? data.inventory : Object.values(data.storeInventory[user.storeName] || {}).map(si => ({
-              productName: si.productName,
-              quantityAvailable: si.quantityRemaining,
-              sellingPrice: si.storeSellingPrice
-            }))}
+            inventory={
+              isStoreManager
+                ? Object.entries(data.storeInventory)
+                    .filter(([sName]) => (user.managedStores || []).includes(sName))
+                    .flatMap(([, items]) =>
+                      Object.values(items).map(si => ({
+                        productName: si.productName,
+                        quantityAvailable: si.quantityRemaining,
+                        sellingPrice: si.storeSellingPrice,
+                      }))
+                    )
+                : user.role === 'store'
+                  ? Object.values(data.storeInventory[user.storeName] || {}).map(si => ({
+                      productName: si.productName,
+                      quantityAvailable: si.quantityRemaining,
+                      sellingPrice: si.storeSellingPrice,
+                    }))
+                  : data.inventory
+            }
             storeName={user.storeName}
             isAdmin={isAdmin}
             storeNames={isAdmin && user.scope === 'all' ? Object.keys(data.stores) : (isAdmin ? (user.managedStores || []) : [user.storeName])}
