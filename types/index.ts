@@ -45,6 +45,7 @@ export interface Order {
   commissionAmount: number;
   adminTake: number;
   profit: number;
+  paymentStatus?: boolean | null;
 }
 
 export interface Purchase {

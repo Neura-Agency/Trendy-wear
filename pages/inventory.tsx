@@ -91,6 +91,7 @@ export default function InventoryPage({ user, onLogin }: PageProps) {
     const [showAllotModal, setShowAllotModal] = useState(false);
     const [showEditModalUI, setShowEditModalUI] = useState(false);
     const [editingRow, setEditingRow] = useState<any | null>(null);
+    const [showAlerts, setShowAlerts] = useState(false);
 
     const refresh = useCallback(async () => {
         setLoading(true);
@@ -197,6 +198,36 @@ export default function InventoryPage({ user, onLogin }: PageProps) {
         storeCommissionByName[name] = Number((s as any)?.commission) || 0;
     });
 
+    // Build alerts list
+    const alerts: Array<{ type: 'out' | 'low' | 'store-out'; product: string; detail: string; rowId: string; section: 'warehouse' | 'store' }> = [];
+    data.inventory.forEach(item => {
+        const allotedQty = allotedQtyByProduct[item.productName] || 0;
+        const availableQty = Math.max(0, (Number(item.quantityAvailable) || 0) - allotedQty);
+        if (availableQty <= 0) {
+            alerts.push({ type: 'out', product: item.productName, detail: `Batch ${item.batchNumber} — 0 units left in warehouse`, rowId: `inv-row-${item.batchNumber}`, section: 'warehouse' });
+        } else if (availableQty <= (item.lowStockWarning || 5)) {
+            alerts.push({ type: 'low', product: item.productName, detail: `Batch ${item.batchNumber} — only ${availableQty} unit${availableQty !== 1 ? 's' : ''} remaining`, rowId: `inv-row-${item.batchNumber}`, section: 'warehouse' });
+        }
+    });
+    stockProvided.forEach((item, idx) => {
+        if ((item.quantityRemaining || 0) <= 0) {
+            alerts.push({ type: 'store-out', product: item.productName, detail: `${item.storeName} — 0 units left in shop`, rowId: `store-inv-row-${item.id || idx}`, section: 'store' });
+        }
+    });
+
+    const scrollToAlert = (rowId: string) => {
+        setShowAlerts(false);
+        setTimeout(() => {
+            const el = document.getElementById(rowId);
+            if (el) {
+                el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                el.style.transition = 'background 0.5s ease';
+                el.style.background = '#fef3c7';
+                setTimeout(() => { el.style.background = ''; }, 2500);
+            }
+        }, 150);
+    };
+
     // Summary calculations
     // For superadmin: all stores. For store admin: only managed stores.
     let totalInventoryValue = 0;
@@ -258,11 +289,14 @@ export default function InventoryPage({ user, onLogin }: PageProps) {
                                 <div className="kpi-value">{totalItemsInStores}</div>
                                 <div className="kpi-trend">Active Distribution</div>
                             </div>
-                            <div className="kpi-card red">
+                            <div className="kpi-card red" onClick={() => alerts.length > 0 && setShowAlerts(true)} style={{ cursor: alerts.length > 0 ? 'pointer' : 'default', position: 'relative' }}>
+                                {alerts.length > 0 && (
+                                    <span style={{ position: 'absolute', top: 10, right: 10, width: 8, height: 8, borderRadius: '50%', background: 'var(--danger)', boxShadow: '0 0 0 2px #fff' }} />
+                                )}
                                 <div className="kpi-icon">{IC.alert}</div>
                                 <div className="kpi-label">Alerts</div>
-                                <div className="kpi-value">{data.inventory.filter(i => i.quantityAvailable <= (i.lowStockWarning || 5)).length}</div>
-                                <div className="kpi-trend">Needs Restock</div>
+                                <div className="kpi-value">{alerts.length}</div>
+                                <div className="kpi-trend">{alerts.length > 0 ? 'Click to view' : 'All good'}</div>
                             </div>
                         </>
                     ) : (
@@ -324,7 +358,7 @@ export default function InventoryPage({ user, onLogin }: PageProps) {
                                         const availableQty = Math.max(0, (Number(item.quantityAvailable) || 0) - allotedQty);
 
                                         return (
-                                            <tr key={`${item.productName}-${item.batchNumber}-${idx}`}>
+                                            <tr key={`${item.productName}-${item.batchNumber}-${idx}`} id={`inv-row-${item.batchNumber}`}>
                                                 <td className="font-bold">
                                                     <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
                                                         <div
@@ -433,7 +467,7 @@ export default function InventoryPage({ user, onLogin }: PageProps) {
                                     <tr><td colSpan={isAdmin ? 7 : 5} style={{ textAlign: 'center', padding: 40 }} className="text-muted">No stock available currently.</td></tr>
                                 ) : (
                                     stockProvided.filter(s => isAdmin || s.storeName === user.storeName).map((item, idx) => (
-                                        <tr key={item.id || idx}>
+                                        <tr key={item.id || idx} id={`store-inv-row-${item.id || idx}`}>
                                             {isAdmin && <td className="font-bold" style={{ color: 'var(--pri-900)' }}>{item.storeName}</td>}
                                             <td className="font-bold">{item.productName}</td>
                                             <td className="text-muted font-mono" style={{ fontWeight: 600 }}>
@@ -532,6 +566,59 @@ export default function InventoryPage({ user, onLogin }: PageProps) {
                     />
                 )}
             </div>
+
+            {/* ── Alerts Popup ── */}
+            {showAlerts && (
+                <div className="modal-overlay" onClick={() => setShowAlerts(false)}>
+                    <div className="modal-box" style={{ maxWidth: 520 }} onClick={e => e.stopPropagation()}>
+                        <div className="modal-head" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                                <span style={{ color: 'var(--danger)', display: 'inline-flex' }}>{IC.alert}</span>
+                                <div>
+                                    <h3 style={{ margin: 0, fontSize: 16, fontWeight: 800 }}>Stock Alerts</h3>
+                                    <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 2 }}>{alerts.length} item{alerts.length !== 1 ? 's' : ''} need attention</div>
+                                </div>
+                            </div>
+                            <button className="btn btn-sm" onClick={() => setShowAlerts(false)} style={{ border: 'none', fontSize: 18 }}>✕</button>
+                        </div>
+                        <div className="modal-body" style={{ padding: '8px 20px 20px' }}>
+                            {alerts.map((alert, idx) => (
+                                <div
+                                    key={idx}
+                                    onClick={() => scrollToAlert(alert.rowId)}
+                                    style={{
+                                        display: 'flex', alignItems: 'center', gap: 12,
+                                        padding: '10px 12px', borderRadius: 8, marginBottom: 6,
+                                        background: alert.type === 'out' || alert.type === 'store-out' ? '#fef2f2' : '#fffbeb',
+                                        border: `1px solid ${alert.type === 'out' || alert.type === 'store-out' ? '#fecaca' : '#fde68a'}`,
+                                        cursor: 'pointer', transition: 'opacity 0.15s',
+                                    }}
+                                    onMouseEnter={e => (e.currentTarget.style.opacity = '0.8')}
+                                    onMouseLeave={e => (e.currentTarget.style.opacity = '1')}
+                                >
+                                    <span style={{ fontSize: 18, flexShrink: 0 }}>
+                                        {alert.type === 'out' || alert.type === 'store-out' ? '🚫' : '⚠️'}
+                                    </span>
+                                    <div style={{ flex: 1, minWidth: 0 }}>
+                                        <div style={{ fontWeight: 700, fontSize: 13, color: '#1e293b' }}>{alert.product}</div>
+                                        <div style={{ fontSize: 11, color: '#64748b', marginTop: 2 }}>{alert.detail}</div>
+                                    </div>
+                                    <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexShrink: 0 }}>
+                                        <span style={{
+                                            fontSize: 10, fontWeight: 700, padding: '2px 8px', borderRadius: 4,
+                                            background: alert.type === 'out' || alert.type === 'store-out' ? '#fee2e2' : '#fef3c7',
+                                            color: alert.type === 'out' || alert.type === 'store-out' ? '#b91c1c' : '#92400e',
+                                        }}>
+                                            {alert.type === 'out' ? 'OUT OF STOCK' : alert.type === 'store-out' ? 'SHOP EMPTY' : 'LOW STOCK'}
+                                        </span>
+                                        <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#94a3b8" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M5 12h14"/><path d="m12 5 7 7-7 7"/></svg>
+                                    </div>
+                                </div>
+                            ))}
+                        </div>
+                    </div>
+                </div>
+            )}
 
             <style jsx>{`
                 .inventory-page {

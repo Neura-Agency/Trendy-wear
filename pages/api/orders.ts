@@ -45,6 +45,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
           commission_amount,
           admin_take,
           profit,
+          payment_status,
           created_at,
           stores:store_id ( name ),
           store_inventory:store_inventory_id (
@@ -92,6 +93,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
           commissionAmount: num(row.commission_amount),
           adminTake: num(row.admin_take),
           profit: num(row.profit),
+          paymentStatus: row.payment_status ?? null,
         }
       })
 
@@ -247,11 +249,28 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     }
 
     // ────────────────────────────────────────────────────────────────────────
-    // PATCH — update commission % and recalculate all financial fields
+    // PATCH — update commission % or payment_status
     // ────────────────────────────────────────────────────────────────────────
     if (req.method === 'PATCH') {
       if (!isSuperAdmin(session)) {
         return res.status(403).json({ error: 'Admin only' })
+      }
+
+      // ── Batch payment status update ──────────────────────────────────────
+      if (req.body?.ids !== undefined) {
+        const { ids, paymentStatus } = req.body
+        if (!Array.isArray(ids) || ids.length === 0) {
+          return res.status(400).json({ error: 'ids must be a non-empty array' })
+        }
+        const { error: batchErr } = await supabaseAdmin
+          .from(TABLES.ORDERS)
+          .update({ payment_status: paymentStatus === true })
+          .in('id', ids)
+        if (batchErr) {
+          console.error('orders PATCH payment_status error:', batchErr)
+          return res.status(500).json({ error: 'Failed to update payment status' })
+        }
+        return res.json({ success: true, updated: ids.length })
       }
 
       const { id, commissionPercent } = req.body

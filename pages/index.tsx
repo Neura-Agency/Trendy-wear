@@ -606,9 +606,10 @@ function InlineCommEdit({ value, onSave }) {
 }
 
 // ─── STORES OVERVIEW SECTION (Reworked for Table View) ───────────────
-function StoresOverviewSection({ stores, orders, storeInventory, filter, getFiltered, onMarkPaid, onCommissionChange, onAssignItem, inventory, isAdmin }) {
+function StoresOverviewSection({ stores, orders, storeInventory, filter, getFiltered, onPayOrders, onAssignItem, inventory, isAdmin }) {
   const storeNames = Object.keys(stores);
   const [selected, setSelected] = useState(storeNames[0] || "");
+  const [paying, setPaying] = useState<string | null>(null); // productName or 'ALL'
 
   useEffect(() => {
     if (!selected && storeNames.length > 0) setSelected(storeNames[0]);
@@ -627,6 +628,28 @@ function StoresOverviewSection({ stores, orders, storeInventory, filter, getFilt
     ...sOrders.map(o => o.productName),
     ...Object.values(storeInventory[name] || {}).map(si => (si as StoreInventoryItem).productName)
   ])).filter(Boolean);
+
+  // All unpaid orders for this store
+  const unpaidStoreOrders = sOrders.filter(o => o.paymentStatus !== true && (o.commissionAmount || 0) > 0);
+  const totalUnpaid = unpaidStoreOrders.reduce((acc, o) => acc + (o.commissionAmount || 0), 0);
+
+  const handlePayProduct = async (productName: string) => {
+    const ids = sOrders
+      .filter(o => o.productName === productName && o.paymentStatus !== true && (o.commissionAmount || 0) > 0)
+      .map(o => o.id);
+    if (!ids.length) return;
+    setPaying(productName);
+    await onPayOrders(ids);
+    setPaying(null);
+  };
+
+  const handlePayAll = async () => {
+    const ids = unpaidStoreOrders.map(o => o.id);
+    if (!ids.length) return;
+    setPaying('ALL');
+    await onPayOrders(ids);
+    setPaying(null);
+  };
 
   return (
     <div className="store-selector-view">
@@ -663,40 +686,80 @@ function StoresOverviewSection({ stores, orders, storeInventory, filter, getFilt
                 const catOrders = sOrders.filter(o => o.productName === productName);
                 const catInventory = Object.values(storeInventory[name] || {}).filter(si => (si as StoreInventoryItem).productName === productName);
 
-                const payout = catOrders.reduce((acc, o) => acc + (o.commissionAmount || 0), 0);
+                const unpaidOrders = catOrders.filter(o => o.paymentStatus !== true && (o.commissionAmount || 0) > 0);
+                const paidOrders   = catOrders.filter(o => o.paymentStatus === true);
+                const unpaidAmount = unpaidOrders.reduce((acc, o) => acc + (o.commissionAmount || 0), 0);
+                const paidAmount   = paidOrders.reduce((acc, o) => acc + (o.commissionAmount || 0), 0);
+                const totalPayout  = catOrders.reduce((acc, o) => acc + (o.commissionAmount || 0), 0);
+
                 const itemsSold = catInventory.reduce((acc: number, si) => acc + (((si as StoreInventoryItem).quantityAssigned || 0) - ((si as StoreInventoryItem).quantityRemaining || 0)), 0) as number;
-                const leftover = catInventory.reduce((acc: number, si) => acc + ((si as StoreInventoryItem).quantityRemaining as number), 0) as number;
-                const expenses = catOrders.reduce((acc, o) => acc + (o.shipmentCost || 0), 0);
-                const partnerCut = catOrders.reduce((acc, o) => acc + (o.commissionAmount || 0), 0);
-                const profit = catOrders.reduce((acc, o) => acc + (o.profit || 0), 0);
+                const leftover  = catInventory.reduce((acc: number, si) => acc + ((si as StoreInventoryItem).quantityRemaining as number), 0) as number;
+                const expenses   = catOrders.reduce((acc, o) => acc + (o.shipmentCost || 0), 0);
+                const partnerCut = totalPayout;
+                const profit     = catOrders.reduce((acc, o) => acc + (o.profit || 0), 0);
+
+                const allPaid = catOrders.length > 0 && unpaidOrders.length === 0;
 
                 return (
                   <tr key={productName}>
                     <td className="font-bold">{productName}</td>
-                    <td className="font-bold" style={{ color: 'var(--success)' }}>{Rs(payout)}</td>
+                    <td>
+                      <div className="font-bold" style={{ color: 'var(--success)' }}>{Rs(unpaidAmount)}</div>
+                      {paidAmount > 0 && (
+                        <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 2 }}>
+                          {Rs(paidAmount)} paid
+                        </div>
+                      )}
+                    </td>
                     <td>{itemsSold}</td>
                     <td className="font-bold" style={{ color: (leftover as number) > 0 ? 'inherit' : 'var(--danger)' }}>{leftover as number}</td>
                     {isAdmin && <td style={{ color: 'var(--danger)' }}>{Rs(expenses)}</td>}
                     {isAdmin && <td style={{ fontWeight: 600 }}>{Rs(partnerCut)}</td>}
                     {isAdmin && <td className="font-bold" style={{ color: 'var(--acc)' }}>{Rs(profit)}</td>}
                     <td style={{ textAlign: 'right' }}>
-                      <Badge type={s.paid ? 'green' : 'blue'}>
-                        {s.paid ? 'Paid' : 'Balance'}
-                      </Badge>
+                      {allPaid ? (
+                        <Badge type="green">Paid</Badge>
+                      ) : unpaidAmount > 0 && isAdmin ? (
+                        <button
+                          className="btn btn-sm btn-primary"
+                          style={{ fontSize: 11, height: 30, padding: '0 10px', whiteSpace: 'nowrap' }}
+                          disabled={paying === productName}
+                          onClick={() => handlePayProduct(productName)}
+                        >
+                          {paying === productName ? '...' : `Pay ${Rs(unpaidAmount)}`}
+                        </button>
+                      ) : (
+                        <Badge type="blue">Balance</Badge>
+                      )}
                     </td>
                   </tr>
                 );
               })
             )}
           </tbody>
+          {isAdmin && totalUnpaid > 0 && (
+            <tfoot>
+              <tr>
+                <td colSpan={2} style={{ padding: '10px 12px', fontWeight: 800, fontSize: 13 }}>
+                  Total Unpaid: <span style={{ color: 'var(--success)' }}>{Rs(totalUnpaid)}</span>
+                </td>
+                <td colSpan={6} />
+              </tr>
+            </tfoot>
+          )}
         </table>
       </div>
 
       {isAdmin && (
         <div style={{ display: 'flex', gap: 12, marginTop: 24 }}>
-          {sOrders.reduce((acc, o) => acc + (o.commissionAmount || 0), 0) > 0 && !s.paid && (
-            <button className="btn btn-primary" style={{ flex: 1, height: 48, background: 'var(--success)', borderColor: 'var(--success)' }} onClick={() => onMarkPaid(name, sOrders.reduce((acc, o) => acc + (o.commissionAmount || 0), 0))}>
-              Confirm & Mark as Fully Paid
+          {totalUnpaid > 0 && (
+            <button
+              className="btn btn-primary"
+              style={{ flex: 1, height: 48, background: 'var(--success)', borderColor: 'var(--success)', fontWeight: 700 }}
+              disabled={paying === 'ALL'}
+              onClick={handlePayAll}
+            >
+              {paying === 'ALL' ? 'Processing...' : `Confirm & Mark All Paid (${Rs(totalUnpaid)})`}
             </button>
           )}
           <button className="btn btn-primary" style={{ flex: 1, height: 48 }} onClick={() => onAssignItem(name)}>
@@ -1359,9 +1422,21 @@ const [loading, setLoading] = useState<boolean>(true);
     }
   };
 
-  const handleMarkPaid = (storeName: string, amount: number) => {
-    // No-op: database removed
-    refresh();
+  const handlePayOrders = async (ids: string[]) => {
+    try {
+      const res = await fetch('/api/orders', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ ids, paymentStatus: true }),
+      });
+      const result = await res.json();
+      if (!res.ok) toast.error(result.error || 'Failed to update payment status');
+      else toast.success(`✅ Payment recorded for ${ids.length} order${ids.length !== 1 ? 's' : ''}`);
+    } catch (e: any) {
+      toast.error(e?.message || 'Failed to update payment status');
+    } finally {
+      refresh();
+    }
   };
 
   return (
@@ -1507,7 +1582,7 @@ const [loading, setLoading] = useState<boolean>(true);
               inventory={data.inventory}
               filter="All"
               getFiltered={getFiltered}
-              onMarkPaid={handleMarkPaid}
+              onPayOrders={handlePayOrders}
               onCommissionChange={(name, v) => { refresh(); }}
               onAssignItem={(name) => router.push(`/inventory?assign=${name}`)}
               isAdmin={isAdmin}
