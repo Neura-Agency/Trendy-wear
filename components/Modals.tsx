@@ -895,7 +895,8 @@ export function AllotToStoreModal({ onSave, onClose, stores, inventory, allotedQ
 
     const selectedInv = (inventory || []).find(i => i.batchNumber === form.batchNumber);
     const productName = selectedInv?.productName || '';
-    const allotedQty = allotedQtyByProduct?.[productName] || 0;
+    // Key by inventory.id (batch-level) to avoid mixing up different batches of same product
+    const allotedQty = allotedQtyByProduct?.[selectedInv?.id || ''] || 0;
     const totalQty = Number(selectedInv?.quantityAvailable) || 0;
     const maxQty = Math.max(0, totalQty - allotedQty);
 

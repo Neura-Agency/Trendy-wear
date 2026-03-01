@@ -184,10 +184,11 @@ export default function InventoryPage({ user, onLogin }: PageProps) {
         });
     });
 
+    // Keyed by inventory.id (batch-level), NOT productName, to avoid cross-batch confusion
     const allotedQtyByProduct: Record<string, number> = {};
     Object.values(data.storeInventory || {}).forEach((items: any) => {
         Object.values(items || {}).forEach((it: any) => {
-            const key = it?.productName;
+            const key = it?.inventoryId;   // inventory.id FK — unique per batch
             if (!key) return;
             allotedQtyByProduct[key] = (allotedQtyByProduct[key] || 0) + (Number(it.quantityAssigned) || 0);
         });
@@ -201,7 +202,7 @@ export default function InventoryPage({ user, onLogin }: PageProps) {
     // Build alerts list
     const alerts: Array<{ type: 'out' | 'low' | 'store-out'; product: string; detail: string; rowId: string; section: 'warehouse' | 'store' }> = [];
     data.inventory.forEach(item => {
-        const allotedQty = allotedQtyByProduct[item.productName] || 0;
+        const allotedQty = allotedQtyByProduct[item.id] || 0;
         const availableQty = Math.max(0, (Number(item.quantityAvailable) || 0) - allotedQty);
         if (availableQty <= 0) {
             alerts.push({ type: 'out', product: item.productName, detail: `Batch ${item.batchNumber} — 0 units left in warehouse`, rowId: `inv-row-${item.batchNumber}`, section: 'warehouse' });
@@ -234,15 +235,16 @@ export default function InventoryPage({ user, onLogin }: PageProps) {
     // True inventory value = (warehouse unallotted + store remaining) × cost_price
     // This excludes already-sold units so the number reflects real unsold stock value.
     const storeRemainingByProduct: Record<string, number> = {};
+    // Keyed by inventoryId (batch FK) so each batch's store-remaining is tracked separately
     stockProvided.forEach(item => {
-        const key = item.productName;
+        const key = item.inventoryId || item.id;
         storeRemainingByProduct[key] = (storeRemainingByProduct[key] || 0) + (Number(item.quantityRemaining) || 0);
     });
 
     const calcInventoryValue = (inventoryItems: typeof data.inventory) =>
         inventoryItems.reduce((acc, it) => {
-            const warehouseUnallotted = Math.max(0, (Number(it.quantityAvailable) || 0) - (allotedQtyByProduct[it.productName] || 0));
-            const atStores = storeRemainingByProduct[it.productName] || 0;
+            const warehouseUnallotted = Math.max(0, (Number(it.quantityAvailable) || 0) - (allotedQtyByProduct[it.id] || 0));
+            const atStores = storeRemainingByProduct[it.id] || 0;
             return acc + (Number(it.costPrice) || 0) * (warehouseUnallotted + atStores);
         }, 0);
 
@@ -251,20 +253,20 @@ export default function InventoryPage({ user, onLogin }: PageProps) {
     let totalItemsInStores = 0;
     if (isSuperAdmin) {
         totalInventoryValue = calcInventoryValue(data.inventory);
-        totalItemsInWarehouse = data.inventory.reduce((acc, it) => acc + Math.max(0, (Number(it.quantityAvailable) || 0) - (allotedQtyByProduct[it.productName] || 0)), 0);
+        totalItemsInWarehouse = data.inventory.reduce((acc, it) => acc + Math.max(0, (Number(it.quantityAvailable) || 0) - (allotedQtyByProduct[it.id] || 0)), 0);
         totalItemsInStores = stockProvided.reduce((acc, it) => acc + it.quantityRemaining, 0);
     } else if (isStoreAdmin) {
         // Only managed stores
         const managedStoreNames = user.managedStores || [];
         const ownedItems = data.inventory.filter(it => it.owner === user.username);
         totalInventoryValue = calcInventoryValue(ownedItems);
-        totalItemsInWarehouse = ownedItems.reduce((acc, it) => acc + Math.max(0, (Number(it.quantityAvailable) || 0) - (allotedQtyByProduct[it.productName] || 0)), 0);
+        totalItemsInWarehouse = ownedItems.reduce((acc, it) => acc + Math.max(0, (Number(it.quantityAvailable) || 0) - (allotedQtyByProduct[it.id] || 0)), 0);
         totalItemsInStores = stockProvided.filter(it => managedStoreNames.includes(it.storeName)).reduce((acc, it) => acc + it.quantityRemaining, 0);
     } else {
         // Store user: only their own
         const ownedItems = data.inventory.filter(it => it.owner === user.username);
         totalInventoryValue = calcInventoryValue(ownedItems);
-        totalItemsInWarehouse = ownedItems.reduce((acc, it) => acc + Math.max(0, (Number(it.quantityAvailable) || 0) - (allotedQtyByProduct[it.productName] || 0)), 0);
+        totalItemsInWarehouse = ownedItems.reduce((acc, it) => acc + Math.max(0, (Number(it.quantityAvailable) || 0) - (allotedQtyByProduct[it.id] || 0)), 0);
         totalItemsInStores = stockProvided.filter(it => it.storeName === user.storeName).reduce((acc, it) => acc + it.quantityRemaining, 0);
     }
 
@@ -370,9 +372,9 @@ export default function InventoryPage({ user, onLogin }: PageProps) {
                                         const picture = (item as any)?.otherVariants?.picture as string | undefined;
                                         const pictureSrc = (typeof picture === 'string' && picture.trim().length > 0) ? picture : '/images/size_L.webp';
                                         const allotedStores = Object.entries(data.storeInventory || {})
-                                            .filter(([, items]) => Boolean((items as any)?.[item.productName]))
+                                            .filter(([, items]) => Object.values(items as any).some((si: any) => si.inventoryId === item.id))
                                             .map(([storeName]) => storeName);
-                                        const allotedQty = allotedQtyByProduct[item.productName] || 0;
+                                        const allotedQty = allotedQtyByProduct[item.id] || 0;
                                         const availableQty = Math.max(0, (Number(item.quantityAvailable) || 0) - allotedQty);
 
                                         return (

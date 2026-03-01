@@ -67,6 +67,7 @@ export interface Purchase {
 }
 
 export interface InventoryItem {
+  id?: string;          // inventory.id (UUID) — unique per batch row
   productId?: string;
   productName: string;
   category: string;
@@ -83,6 +84,9 @@ export interface InventoryItem {
 }
 
 export interface StoreInventoryItem {
+  id?: string;          // store_inventory.id (UUID)
+  inventoryId?: string; // FK → inventory.id (batch FK)
+  productId?: string;
   productName: string;
   ownerSupplyPrice: number;
   commissionPercent: number;
