@@ -94,9 +94,11 @@ export interface StoreInventoryItem {
 export interface Expense {
   id: string;
   title: string;
+  category: string;
   amount: number;
-  date: string;
-  category?: string;
+  expense_date: string; // date in YYYY-MM-DD format
+  notes?: string | null;
+  created_at?: string;
 }
 
 export interface Client {

@@ -1,9 +1,12 @@
+import { usePopup } from './Popup';
+
 export default function Inventory({ items }){
+  const { toast } = usePopup();
   return (
     <div className="section">
       <div className="section-header">
         <h3>Inventory Management</h3>
-        <button className="primary" onClick={() => alert('Add feature coming')}>+ Add Stock</button>
+        <button className="primary" onClick={() => toast.info('Add feature coming')}>+ Add Stock</button>
       </div>
       <div className="table-container">
         <table className="table">

@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { InventoryItem, Order, Purchase, Expense } from '../types';
+import { usePopup } from './Popup';
 
 /* =========================
    ADD SALE FORM
@@ -12,6 +13,7 @@ interface AddSaleFormProps {
 }
 
 export function AddSaleForm({ inventory, storeName, onAdd }: AddSaleFormProps) {
+  const { toast } = usePopup();
   const [formData, setFormData] = useState({
     productName: '',
     quantity: 1,
@@ -38,7 +40,7 @@ export function AddSaleForm({ inventory, storeName, onAdd }: AddSaleFormProps) {
 
   const handleSubmit = (e) => {
     e.preventDefault();
-    if (!formData.productName) return alert('Select product');
+    if (!formData.productName) return toast.error('Select product');
 
     const order = {
       ...formData,
@@ -251,37 +253,58 @@ interface AddExpenseFormProps {
 }
 
 export function AddExpenseForm({ onAdd }: AddExpenseFormProps) {
-  const [formData, setFormData] = useState({
-    category: 'Rent',
+  const { toast } = usePopup();
+  const [formData, setFormData] = useState<Partial<Expense>>({
+    title: '',
+    category: 'Misc',
     amount: 0,
-    description: ''
+    expense_date: new Date().toISOString().slice(0, 10),
+    notes: ''
   });
 
-  const handleSubmit = (e) => {
+  const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    onAdd(formData);
+    const amount = Number((formData.amount as any) || 0);
+    if (!formData.title || !formData.category) return toast.error('Please fill title and category');
+    if (Number.isNaN(amount) || amount < 0) return toast.error('Amount must be a positive number');
+
+    onAdd({
+      title: String(formData.title),
+      category: String(formData.category),
+      amount: amount,
+      expense_date: String(formData.expense_date),
+      notes: formData.notes || null
+    });
 
     setFormData({
-      category: 'Rent',
+      title: '',
+      category: 'Misc',
       amount: 0,
-      description: ''
+      expense_date: new Date().toISOString().slice(0, 10),
+      notes: ''
     });
   };
 
   return (
-    <div className="section-card" style={{ padding: 24 }}>
+    <form onSubmit={handleSubmit} className="section-card" style={{ padding: 24 }}>
       <h3 style={{ marginTop: 0, marginBottom: 20 }}>
         Add Expense
       </h3>
 
-      <form onSubmit={handleSubmit}>
+      <div className="input-group">
+        <label>Title</label>
+        <input
+          value={formData.title as string}
+          onChange={(e) => setFormData({ ...formData, title: e.target.value })}
+        />
+      </div>
+
+      <div className="form-grid-2">
         <div className="input-group">
           <label>Category</label>
           <select
-            value={formData.category}
-            onChange={(e) =>
-              setFormData({ ...formData, category: e.target.value })
-            }
+            value={formData.category as string}
+            onChange={(e) => setFormData({ ...formData, category: e.target.value })}
           >
             <option value="Rent">Rent</option>
             <option value="Electricity">Electricity</option>
@@ -295,23 +318,32 @@ export function AddExpenseForm({ onAdd }: AddExpenseFormProps) {
           <label>Amount</label>
           <input
             type="number"
-            value={formData.amount}
-            onChange={(e) =>
-              setFormData({
-                ...formData,
-                amount: parseFloat(e.target.value)
-              })
-            }
+            step="0.01"
+            min="0"
+            value={String(formData.amount)}
+            onChange={(e) => setFormData({ ...formData, amount: parseFloat(e.target.value) })}
           />
         </div>
 
-        <button
-          type="submit"
-          className="btn btn-primary btn-full"
-        >
-          Save Expense
-        </button>
-      </form>
-    </div>
+        <div className="input-group">
+          <label>Date</label>
+          <input
+            type="date"
+            value={formData.expense_date as string}
+            onChange={(e) => setFormData({ ...formData, expense_date: e.target.value })}
+          />
+        </div>
+      </div>
+
+      <div className="input-group">
+        <label>Notes</label>
+        <textarea
+          value={formData.notes as string}
+          onChange={(e) => setFormData({ ...formData, notes: e.target.value })}
+        />
+      </div>
+
+      <button type="submit" className="btn btn-primary btn-full">Save Expense</button>
+    </form>
   );
 }

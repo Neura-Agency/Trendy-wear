@@ -5,10 +5,11 @@ import Login from "../components/Login";
 import WeekMonthPicker from '../components/WeekMonthPicker';
 import SectionCard from "../components/SectionCard";
 import Badge from "../components/Badge";
-import { SaleModal, CreateStoreModal, ReportModal } from "../components/Modals";
+import { SaleModal, CreateStoreModal, ReportModal, ExpenseBreakdownModal } from "../components/Modals";
 import { AddExpenseForm } from '../components/Forms';
 import CustomSelect from "../components/CustomSelect";
 import { User, Order, Store, InventoryItem, Expense, Client, StoreInventoryItem, AppData, PageProps } from "../types";
+import { usePopup } from "../components/Popup";
 
 // ── SVG Icon Components (mono-color, inherits currentColor) ──
 const IC = {
@@ -708,7 +709,7 @@ function StoresOverviewSection({ stores, orders, storeInventory, filter, getFilt
 }
 
 // ─── ORDERS SECTION ──────────────────────────────────────────────────
-function OrdersSection({ orders, overallOrders = [], isAdmin, canDelete, onCommissionEdit, onTogglePayout, onEdit, onDelete }) {
+function OrdersSection({ orders, overallOrders = [], isAdmin, canDelete, onCommissionEdit, onTogglePayout, onEdit, onDelete, confirmDialog }: any) {
   const [editing, setEditing] = useState<any>(null);
 
   const filteredQty = orders.reduce((s, o) => s + (o.quantity || 0), 0);
@@ -776,7 +777,7 @@ function OrdersSection({ orders, overallOrders = [], isAdmin, canDelete, onCommi
             <div style={{ display: 'flex', gap: 10, marginTop: 24 }}>
               {canDelete && (
                 <button className="btn" style={{ flex: '0 0 auto', background: 'var(--danger)', borderColor: 'var(--danger)', color: '#fff', fontWeight: 700, padding: '0 20px', height: 44 }}
-                  onClick={() => { if (confirm('Delete this sale? This cannot be undone.')) { onDelete(editing.id); setEditing(null); } }}
+                  onClick={async () => { if (await confirmDialog('Delete this sale? This cannot be undone.')) { onDelete(editing.id); setEditing(null); } }}
                 ><svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{verticalAlign:'middle',marginRight:4}}><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>Delete</button>
               )}
               <button className="btn btn-glass" style={{ flex: 1, height: 44 }} onClick={() => setEditing(null)}>Cancel</button>
@@ -897,6 +898,7 @@ function ClientsSection({ clients }) {
 // ─── MAIN PAGE ───────────────────────────────────────────────────────
 export default function Home({ user, onLogin }: PageProps) {
   const router = useRouter();
+  const { toast, confirmDialog } = usePopup();
   const [data, setData] = useState<{
     orders: Order[];
     inventory: InventoryItem[];
@@ -924,6 +926,7 @@ const [loading, setLoading] = useState<boolean>(true);
   const [showStoreModal, setShowStoreModal] = useState<boolean>(false);
   const [showReport, setShowReport] = useState<boolean>(false);
   const [showExpenseModal, setShowExpenseModal] = useState<boolean>(false);
+  const [showExpenseBreakdown, setShowExpenseBreakdown] = useState<boolean>(false);
   const [reportData, setReportData] = useState<any>(null);
   const [partnerFilter, setPartnerFilter] = useState<string>('All');
   const [partnerStore, setPartnerStore] = useState<string>('All');
@@ -932,22 +935,24 @@ const [loading, setLoading] = useState<boolean>(true);
   const refresh = useCallback(async () => {
     setLoading(true);
     try {
-      const [storesRes, storeInvRes, invRes, ordersRes] = await Promise.all([
+      const [storesRes, storeInvRes, invRes, ordersRes, expensesRes] = await Promise.all([
         fetch('/api/store'),
         fetch('/api/storeInventory'),
         fetch('/api/inventory'),
         fetch('/api/orders'),
+        fetch('/api/expenses'),
       ]);
       const storesData   = await storesRes.json()
       const storeInvData = await storeInvRes.json()
       const invData      = await invRes.json()
       const ordersData   = await ordersRes.json()
+      const expensesData = await expensesRes.json()
 
       setData({
         orders: ordersData?.orders || [],
         stores: storesData?.stores || {},
         inventory: invData?.inventory || [],
-        expenses: [],
+        expenses: expensesData?.expenses || [],
         clients: [],
         settings: storesData?.settings || { storeCommissionPercent: 10 },
         storeInventory: storeInvData?.storeInventory || {},
@@ -1053,7 +1058,10 @@ const [loading, setLoading] = useState<boolean>(true);
   const lowStock = data.inventory.filter(i => i.quantityAvailable <= (i.lowStockWarning || 5)).length;
   const ordersCount = kpiOrders.length;
 
-  const adminExpenses = totalCostPrice + totalShipping + totalShopCut + totalAdminTake;
+  // Sum all recorded expenses from the expenses table
+  const supabaseExpensesTotal = data.expenses.reduce((s, e) => s + (Number(e.amount) || 0), 0);
+  // Total Expenses = Supabase expenses + Cost of goods sold + Shipping + Store partner commissions
+  const adminExpenses = supabaseExpensesTotal + totalCostPrice + totalShipping + totalShopCut;
   const totalExpenses = isAdmin ? adminExpenses : 0;
   const totalProfit = totalGross - adminExpenses;
   const totalProfitValue = isAdmin ? totalNetProfit : totalShopCut;
@@ -1289,12 +1297,12 @@ const [loading, setLoading] = useState<boolean>(true);
       });
       const result = await res.json();
       if (!res.ok) {
-        alert(result.error || 'Failed to save sale');
+        toast.error(result.error || 'Failed to save sale');
         return;
       }
-      alert(`✅ Sale recorded! Order code: ${result.orderCode}`);
+      toast.success(`Sale recorded! Order code: ${result.orderCode}`);
     } catch (e: any) {
-      alert(e?.message || 'Failed to save sale');
+      toast.error(e?.message || 'Failed to save sale');
     } finally {
       refresh();
     }
@@ -1326,18 +1334,29 @@ const [loading, setLoading] = useState<boolean>(true);
         `Password: ${result.credentials.password}\n\n` +
         `Please save these credentials!`;
       
-      alert(credentialsMessage);
+      toast.success(credentialsMessage);
       console.log('Shop Credentials:', result.credentials);
       
       refresh();
     } catch (error: any) {
-      alert(error.message || 'Failed to create store');
+      toast.error(error.message || 'Failed to create store');
     }
   };
 
   const handleAddExpense = async (expense: Partial<Expense>) => {
-    // No-op: database removed
-    refresh();
+    try {
+      const res = await fetch('/api/expenses', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(expense),
+      });
+      const result = await res.json();
+      if (!res.ok) { toast.error(result.error || 'Failed to save expense'); return; }
+      toast.success('Expense added successfully!');
+      refresh();
+    } catch (e: any) {
+      toast.error(e?.message || 'Failed to save expense');
+    }
   };
 
   const handleMarkPaid = (storeName: string, amount: number) => {
@@ -1351,16 +1370,16 @@ const [loading, setLoading] = useState<boolean>(true);
         <section className="kpi-grid" style={{ marginBottom: 16 }}>
           <div className="kpi-card purple">
             <div className="kpi-icon">{IC.wallet}</div>
-            <div className="kpi-label">{isAdmin ? "Payout" : "My Payout"}</div>
-            <div className="kpi-value">{Rs(isAdmin ? totalAdminTake : totalShopCut)}</div>
-            <div className="kpi-trend">{isAdmin ? "Overall Earnings" : "My Total Earnings"}</div>
+            <div className="kpi-label">{isAdmin ? "Revenue" : "My Revenue"}</div>
+            <div className="kpi-value">{Rs(totalGross)}</div>
+            <div className="kpi-trend">{isAdmin ? "Gross Sales" : "My Total Sales"}</div>
           </div>
 
-          <div className="kpi-card gray">
+          <div className="kpi-card gray" onClick={() => setShowExpenseBreakdown(true)} style={{ cursor: 'pointer' }}>
             <div className="kpi-icon">{IC.expense}</div>
             <div className="kpi-label">Expenses</div>
             <div className="kpi-value negative">-{Rs(totalExpenses)}</div>
-            <div className="kpi-trend">Total costs (base + shipping + cuts)</div>
+            <div className="kpi-trend">Expenses + COGS + shipping + commissions</div>
           </div>
 
           <div className="kpi-card blue">
@@ -1526,9 +1545,9 @@ const [loading, setLoading] = useState<boolean>(true);
                     body: JSON.stringify({ id, commissionPercent: v }),
                   });
                   const result = await res.json();
-                  if (!res.ok) alert(result.error || 'Failed to update commission');
+                  if (!res.ok) toast.error(result.error || 'Failed to update commission');
                 } catch (e: any) {
-                  alert(e?.message || 'Failed to update commission');
+                  toast.error(e?.message || 'Failed to update commission');
                 } finally {
                   refresh();
                 }
@@ -1550,9 +1569,9 @@ const [loading, setLoading] = useState<boolean>(true);
                     }),
                   });
                   const result = await res.json();
-                  if (!res.ok) alert(result.error || 'Failed to update sale');
+                  if (!res.ok) toast.error(result.error || 'Failed to update sale');
                   else refresh();
-                } catch (e: any) { alert(e?.message || 'Failed to update sale'); }
+                } catch (e: any) { toast.error(e?.message || 'Failed to update sale'); }
               }}
               onDelete={async (id: string) => {
                 try {
@@ -1562,9 +1581,9 @@ const [loading, setLoading] = useState<boolean>(true);
                     body: JSON.stringify({ id }),
                   });
                   const result = await res.json();
-                  if (!res.ok) alert(result.error || 'Failed to delete sale');
+                  if (!res.ok) toast.error(result.error || 'Failed to delete sale');
                   else refresh();
-                } catch (e: any) { alert(e?.message || 'Failed to delete sale'); }
+                } catch (e: any) { toast.error(e?.message || 'Failed to delete sale'); }
               }}
             />
           </SectionCard>
@@ -1583,18 +1602,27 @@ const [loading, setLoading] = useState<boolean>(true);
                     <tr>
                       <th>Title</th>
                       <th>Category</th>
+                      <th>Date</th>
                       <th style={{ textAlign: 'right' }}>Amount</th>
                     </tr>
                   </thead>
                   <tbody>
-                    {data.expenses.slice(-5).reverse().map((e, i) => (
+                    {data.expenses.slice(-5).reverse().map((e, i) => {
+                      const dateStr = e.expense_date || (e as any).date || (e as any).occurred_at || (e as any).created_at;
+                      let displayDate = '-';
+                      try {
+                        if (dateStr) displayDate = new Date(String(dateStr)).toLocaleDateString();
+                      } catch (err) { displayDate = String(dateStr || '-'); }
+
+                      return (
                       <tr key={i}>
                         <td className="text-muted">{e.title}</td>
                         <td className="text-muted">{e.category || '-'}</td>
+                        <td className="text-muted">{displayDate}</td>
                         <td className="font-bold" style={{ textAlign: 'right' }}>{Rs(e.amount)}</td>
                       </tr>
-                    ))}
-                    {data.expenses.length === 0 && <tr><td colSpan={3} style={{ textAlign: 'center', padding: 20 }}>No costs recorded.</td></tr>}
+                    )})}
+                    {data.expenses.length === 0 && <tr><td colSpan={4} style={{ textAlign: 'center', padding: 20 }}>No costs recorded.</td></tr>}
                   </tbody>
                 </table>
               </div>
@@ -1654,6 +1682,13 @@ const [loading, setLoading] = useState<boolean>(true);
           <ReportModal
             data={reportData || { ...data, orders: kpiOrders }}
             onClose={() => { setShowReport(false); setReportData(null); }}
+          />
+        )}
+        {showExpenseBreakdown && (
+          <ExpenseBreakdownModal
+            expenses={data.expenses}
+            orders={kpiOrders}
+            onClose={() => setShowExpenseBreakdown(false)}
           />
         )}
       </div>

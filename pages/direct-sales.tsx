@@ -1,4 +1,5 @@
 import { useEffect, useState, useCallback } from "react";
+import { usePopup } from '../components/Popup';
 import Login from "../components/Login";
 import SectionCard from "../components/SectionCard";
 import { SaleModal } from "../components/Modals";
@@ -140,6 +141,7 @@ function getFiltered(ordList: Order[], filter: string): Order[] {
 
 // ── Page ───────────────────────────────────────────────────────────
 export default function DirectSalesPage({ user, onLogin }: PageProps) {
+  const { toast } = usePopup();
   const [orders, setOrders] = useState<Order[]>([]);
   const [inventory, setInventory] = useState<InventoryItem[]>([]);
   const [loading, setLoading] = useState(true);
@@ -210,11 +212,11 @@ export default function DirectSalesPage({ user, onLogin }: PageProps) {
         }),
       });
       const result = await res.json();
-      if (!res.ok) { alert(result.error || "Failed to save sale"); return; }
-      alert(`✅ Sale recorded! Order code: ${result.orderCode}`);
+      if (!res.ok) { toast.error(result.error || "Failed to save sale"); return; }
+      toast.success(`✅ Sale recorded! Order code: ${result.orderCode}`);
       refresh();
     } catch (e: any) {
-      alert(e?.message || "Failed to save sale");
+      toast.error(e?.message || "Failed to save sale");
     }
   };
 

@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState } from "react";
 import type { AppProps } from "next/app";
 import "../styles/globals.css";
 import Layout from "../components/Layout";
+import { PopupProvider } from "../components/Popup";
 import { User } from "../types";
 
 interface ExtendedAppProps extends AppProps {
@@ -80,11 +81,13 @@ export default function App({ Component, pageProps }: ExtendedAppProps) {
   );
 
   // Only show the full app chrome (navbar/sidebar) once authenticated.
-  if (!user) return page;
+  if (!user) return <PopupProvider>{page}</PopupProvider>;
 
   return (
-    <Layout user={user} onLogout={onLogout}>
-      {page}
-    </Layout>
+    <PopupProvider>
+      <Layout user={user} onLogout={onLogout}>
+        {page}
+      </Layout>
+    </PopupProvider>
   );
 }

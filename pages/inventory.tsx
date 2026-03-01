@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback } from "react";
+import { usePopup } from '../components/Popup';
 import SectionCard from "../components/SectionCard";
 import Badge from "../components/Badge";
 import Login from "../components/Login";
@@ -11,7 +12,7 @@ import {
     Product,
   User 
 } from "../types";
-import { AddInventoryModal, AllotToStoreModal } from "../components/Modals";
+import { AddInventoryModal, AllotToStoreModal, EditStoreInventoryModal } from "../components/Modals";
 
 // ── SVG Icon Components (mono-color, inherits currentColor) ──
 const IC = {
@@ -68,6 +69,7 @@ function QuantityEditor({ current, onSave }: QuantityEditorProps) {
 }
 
 export default function InventoryPage({ user, onLogin }: PageProps) {
+    const { toast } = usePopup();
     const [data, setData] = useState<{
         inventory: InventoryItem[];
         storeInventory: Record<string, Record<string, StoreInventoryItem>>;
@@ -87,6 +89,8 @@ export default function InventoryPage({ user, onLogin }: PageProps) {
     const [editModal, setEditModal] = useState<{ item: any; field: string } | null>(null); // { item, field } or null
     const [showAddInventoryModal, setShowAddInventoryModal] = useState(false);
     const [showAllotModal, setShowAllotModal] = useState(false);
+    const [showEditModalUI, setShowEditModalUI] = useState(false);
+    const [editingRow, setEditingRow] = useState<any | null>(null);
 
     const refresh = useCallback(async () => {
         setLoading(true);
@@ -149,10 +153,10 @@ export default function InventoryPage({ user, onLogin }: PageProps) {
                 throw new Error(result.error || 'Failed to save inventory');
             }
 
-            alert('✅ Inventory item added successfully!');
+            toast.success('✅ Inventory item added successfully!');
             refresh();
         } catch (e: any) {
-            alert(e?.message || 'Failed to save inventory')
+            toast.error(e?.message || 'Failed to save inventory')
         }
     };
 
@@ -421,14 +425,15 @@ export default function InventoryPage({ user, onLogin }: PageProps) {
                                     <th>In Shop Stock</th>
                                     {isAdmin && <th>Shop Cut %</th>}
                                     <th style={{ textAlign: 'right' }}>Items Sold</th>
+                                    {isAdmin && <th>Actions</th>}
                                 </tr>
                             </thead>
                             <tbody>
-                                {stockProvided.filter(s => isAdmin || s.storeName === user.storeName).length === 0 ? (
+                                    {stockProvided.filter(s => isAdmin || s.storeName === user.storeName).length === 0 ? (
                                     <tr><td colSpan={isAdmin ? 7 : 5} style={{ textAlign: 'center', padding: 40 }} className="text-muted">No stock available currently.</td></tr>
                                 ) : (
                                     stockProvided.filter(s => isAdmin || s.storeName === user.storeName).map((item, idx) => (
-                                        <tr key={idx}>
+                                        <tr key={item.id || idx}>
                                             {isAdmin && <td className="font-bold" style={{ color: 'var(--pri-900)' }}>{item.storeName}</td>}
                                             <td className="font-bold">{item.productName}</td>
                                             <td className="text-muted font-mono" style={{ fontWeight: 600 }}>
@@ -444,6 +449,16 @@ export default function InventoryPage({ user, onLogin }: PageProps) {
                                                     {item.quantityAssigned - item.quantityRemaining}
                                                 </Badge>
                                             </td>
+                                            {isAdmin && (
+                                                <td style={{ textAlign: 'right' }}>
+                                                    <button
+                                                        className="btn btn-sm"
+                                                        onClick={() => { setEditingRow(item); setShowEditModalUI(true); }}
+                                                    >
+                                                        Edit
+                                                    </button>
+                                                </td>
+                                            )}
                                         </tr>
                                     ))
                                 )}
@@ -482,13 +497,38 @@ export default function InventoryPage({ user, onLogin }: PageProps) {
                                 })
                                 const json = await resp.json()
                                 if (!resp.ok) throw new Error(json?.error || 'Failed to save allotment')
-                                alert('✅ Allotment saved')
+                                toast.success('✅ Allotment saved')
                                 refresh()
                             } catch (e: any) {
-                                alert(e?.message || 'Failed to save allotment')
+                                toast.error(e?.message || 'Failed to save allotment')
                             }
                         }}
                         onClose={() => setShowAllotModal(false)}
+                    />
+                )}
+
+                {showEditModalUI && editingRow && (
+                    <EditStoreInventoryModal
+                        item={editingRow}
+                        storeNames={Object.keys(data.stores)}
+                        onSave={async (fields: any) => {
+                            try {
+                                const resp = await fetch('/api/storeInventory', {
+                                    method: 'PATCH',
+                                    headers: { 'Content-Type': 'application/json' },
+                                    body: JSON.stringify({ id: editingRow.id, fields })
+                                })
+                                const json = await resp.json()
+                                if (!resp.ok) throw new Error(json?.error || 'Failed to update allotment')
+                                toast.success('✅ Allotment updated')
+                                setShowEditModalUI(false)
+                                setEditingRow(null)
+                                refresh()
+                            } catch (e: any) {
+                                toast.error(e?.message || 'Update failed')
+                            }
+                        }}
+                        onClose={() => { setShowEditModalUI(false); setEditingRow(null); }}
                     />
                 )}
             </div>

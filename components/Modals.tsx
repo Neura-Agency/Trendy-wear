@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
+import { usePopup } from './Popup';
 import Badge from './Badge';
-import { SaleModalProps, CreateStoreModalProps, ReportModalProps, AddInventoryModalProps, AllotToStoreModalProps, InventoryItem, Order, Product, Store } from '../types';
+import { SaleModalProps, CreateStoreModalProps, ReportModalProps, AddInventoryModalProps, AllotToStoreModalProps, InventoryItem, Order, Product, Store, Expense } from '../types';
 
 type SaleInventoryItem = Pick<InventoryItem, 'productName' | 'quantityAvailable' | 'sellingPrice'>;
 
@@ -11,6 +12,112 @@ interface SaleModalPropsLocal {
   storeNames?: string[];
   onAdd: (sale: any) => void;
   onClose: () => void;
+}
+
+export function EditStoreInventoryModal({ item, storeNames, onSave, onClose }: { item: any; storeNames?: string[]; onSave: (fields: any) => void; onClose: () => void }) {
+    const { toast } = usePopup();
+    const [form, setForm] = useState({
+        storeName: item?.storeName || (storeNames && storeNames[0]) || '',
+        ownerSupplyPrice: item?.ownerSupplyPrice || 0,
+        commissionPercent: item?.commissionPercent || 0,
+        storeSellingPrice: item?.storeSellingPrice || item?.ownerSupplyPrice || 0,
+        quantityAssigned: item?.quantityAssigned || 0,
+        quantityRemaining: item?.quantityRemaining || 0,
+    });
+
+    React.useEffect(() => {
+        if (!form.storeName && storeNames?.length) {
+            setForm(prev => ({ ...prev, storeName: storeNames[0] }));
+        }
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [storeNames]);
+
+    const handleSubmit = (e: React.FormEvent) => {
+        e.preventDefault();
+        const assigned = Number(form.quantityAssigned) || 0;
+        const remaining = Number(form.quantityRemaining) || 0;
+        if (assigned < 0 || remaining < 0) return toast.error('Quantities must be >= 0');
+        if (remaining > assigned) return toast.error('Remaining cannot exceed assigned');
+
+        const fields: any = {};
+        if (form.ownerSupplyPrice !== undefined) fields.owner_supply_price = Number(form.ownerSupplyPrice) || 0;
+        if (form.commissionPercent !== undefined) fields.commission_percent = Number(form.commissionPercent) || 0;
+        if (form.storeSellingPrice !== undefined) fields.store_selling_price = Number(form.storeSellingPrice) || 0;
+        if (form.quantityAssigned !== undefined) fields.quantity_assigned = Number(form.quantityAssigned) || 0;
+        if (form.quantityRemaining !== undefined) fields.quantity_remaining = Number(form.quantityRemaining) || 0;
+        if (form.storeName) fields.storeName = form.storeName;
+
+        onSave(fields);
+        onClose();
+    };
+
+    return (
+        <div className="modal-overlay">
+            <div className="modal-box" style={{ maxWidth: '560px', width: '95%' }}>
+                <div className="modal-head" style={{ padding: '16px 20px' }}>
+                    <h3 style={{ fontSize: '18px', fontWeight: 800 }}>Edit Allotment</h3>
+                    <button className="btn btn-sm" onClick={onClose} style={{ border: 'none', fontSize: '18px' }}>✕</button>
+                </div>
+                <div className="modal-body" style={{ padding: '22px 20px' }}>
+                    <form onSubmit={handleSubmit}>
+                        <div className="form-grid-2" style={{ marginBottom: 12 }}>
+                            <div className="input-group">
+                                <label>Store</label>
+                                <select value={form.storeName} onChange={(e) => setForm({ ...form, storeName: e.target.value })} required>
+                                    {(storeNames || []).map((s) => (
+                                        <option key={s} value={s}>{s}</option>
+                                    ))}
+                                </select>
+                            </div>
+
+                            <div className="input-group">
+                                <label>Item (Batch)</label>
+                                <input readOnly value={item?.productName || item?.batchNumber || 'Unknown'} style={{ background: 'var(--surface-2)', fontWeight: 700 }} />
+                            </div>
+                        </div>
+
+                        <div className="form-grid-2" style={{ marginBottom: 12 }}>
+                            <div className="input-group">
+                                <label>Owner Supply Price</label>
+                                <input type="number" min={0} step="0.01" value={form.ownerSupplyPrice} onChange={(e) => setForm({ ...form, ownerSupplyPrice: parseFloat(e.target.value) || 0 })} />
+                            </div>
+                            <div className="input-group">
+                                <label>Store Selling Price</label>
+                                <input type="number" min={0} step="0.01" value={form.storeSellingPrice} onChange={(e) => setForm({ ...form, storeSellingPrice: parseFloat(e.target.value) || 0 })} />
+                            </div>
+                        </div>
+
+                        <div className="form-grid-2" style={{ marginBottom: 12 }}>
+                            <div className="input-group">
+                                <label>Quantity Assigned</label>
+                                <input type="number" min={0} value={form.quantityAssigned} onChange={(e) => setForm({ ...form, quantityAssigned: parseInt(e.target.value) || 0 })} />
+                            </div>
+                            <div className="input-group">
+                                <label>Quantity Remaining</label>
+                                <input type="number" min={0} value={form.quantityRemaining} onChange={(e) => setForm({ ...form, quantityRemaining: parseInt(e.target.value) || 0 })} />
+                            </div>
+                        </div>
+
+                        <div className="form-grid-2" style={{ marginBottom: 16 }}>
+                            <div className="input-group">
+                                <label>Partner Commission %</label>
+                                <input type="number" min={0} max={100} value={form.commissionPercent} onChange={(e) => setForm({ ...form, commissionPercent: parseFloat(e.target.value) || 0 })} />
+                            </div>
+                            <div className="input-group">
+                                <label>Inventory ID</label>
+                                <input readOnly value={item?.inventoryId || item?.inventory_id || item?.id || ''} style={{ background: 'var(--surface-2)', fontWeight: 700 }} />
+                            </div>
+                        </div>
+
+                        <div style={{ display: 'flex', gap: 8 }}>
+                            <button type="submit" className="btn btn-primary">Save</button>
+                            <button type="button" className="btn btn-glass" onClick={onClose}>Cancel</button>
+                        </div>
+                    </form>
+                </div>
+            </div>
+        </div>
+    );
 }
 
 export function SaleModal({ inventory, storeName, isAdmin, storeNames, onAdd, onClose }: SaleModalPropsLocal) {
@@ -299,6 +406,7 @@ export function CreateStoreModal({ onSave, onClose }) {
 }
 
 export function ReportModal({ data, onClose }) {
+    const { toast } = usePopup();
     const Rs = (n) => "Rs " + (Number(n) || 0).toLocaleString();
 
     // Group analysis by month
@@ -341,7 +449,7 @@ export function ReportModal({ data, onClose }) {
                                             window.URL.revokeObjectURL(url);
                                         } catch (e) {
                                             console.error(e);
-                                            alert('Failed to download PDF');
+                                            toast.error('Failed to download PDF');
                                         }
                                     }} style={{ padding: '6px 10px' }}>
                                         ⬇️ Download PDF
@@ -405,6 +513,7 @@ export function ReportModal({ data, onClose }) {
 }
 
 export function AddInventoryModal({ onSave, onClose, stores, products }: AddInventoryModalProps) {
+    const { toast } = usePopup();
     const [productMode, setProductMode] = useState<'select' | 'new'>(products?.length ? 'select' : 'new');
     const [selectedProductId, setSelectedProductId] = useState<string>(products?.[0]?.id || '');
 
@@ -476,10 +585,10 @@ export function AddInventoryModal({ onSave, onClose, stores, products }: AddInve
     const handleSubmit = (e: React.FormEvent) => {
         e.preventDefault();
 
-        if (productMode === 'select' && !selectedProductId) return alert('Select a product');
+        if (productMode === 'select' && !selectedProductId) return toast.error('Select a product');
         if (productMode === 'new') {
             const pn = newProduct.productName.trim();
-            if (!pn) return alert('Enter product name');
+            if (!pn) return toast.error('Enter product name');
         }
 
         onSave({
@@ -775,6 +884,7 @@ export function AddInventoryModal({ onSave, onClose, stores, products }: AddInve
 }
 
 export function AllotToStoreModal({ onSave, onClose, stores, inventory, allotedQtyByProduct, storeCommissionByName }: AllotToStoreModalProps) {
+    const { toast } = usePopup();
     const [form, setForm] = useState({
         storeName: stores?.[0] || '',
         batchNumber: inventory?.[0]?.batchNumber || '',
@@ -810,10 +920,10 @@ export function AllotToStoreModal({ onSave, onClose, stores, inventory, allotedQ
     const handleSubmit = (e: React.FormEvent) => {
         e.preventDefault();
 
-        if (!form.storeName) return alert('Select store');
-        if (!form.batchNumber) return alert('Select item');
-        if (!form.quantity || form.quantity < 1) return alert('Enter quantity');
-        if (form.quantity > maxQty) return alert(`Quantity cannot be more than ${maxQty}`);
+        if (!form.storeName) return toast.error('Select store');
+        if (!form.batchNumber) return toast.error('Select item');
+        if (!form.quantity || form.quantity < 1) return toast.error('Enter quantity');
+        if (form.quantity > maxQty) return toast.error(`Quantity cannot be more than ${maxQty}`);
 
         onSave({
             storeName: form.storeName,
@@ -908,6 +1018,157 @@ export function AllotToStoreModal({ onSave, onClose, stores, inventory, allotedQ
                             Save Allotment
                         </button>
                     </form>
+                </div>
+            </div>
+        </div>
+    );
+}
+
+/* ==========================================================================
+   EXPENSE BREAKDOWN MODAL
+   Shows all components of the Expense KPI with individual line items:
+     1. Recorded business expenses (from Supabase expenses table)
+     2. Cost of goods sold (per order)
+     3. Delivery / shipment charges (per order)
+     4. Store partner commissions (per order)
+   ======================================================================= */
+
+interface ExpenseBreakdownModalProps {
+    expenses: Expense[];
+    orders: Order[]; // already KPI-filtered orders
+    onClose: () => void;
+}
+
+export function ExpenseBreakdownModal({ expenses, orders, onClose }: ExpenseBreakdownModalProps) {
+    const Rs = (n: number) => 'Rs\u00a0' + (Number(n) || 0).toLocaleString();
+
+    // --- Section totals ---
+    const expensesTotal   = expenses.reduce((s, e) => s + (Number(e.amount) || 0), 0);
+    const cogsTotal       = orders.reduce((s, o) => s + ((Number(o.costPrice) || 0) * (Number(o.quantity) || 1)), 0);
+    const shippingTotal   = orders.reduce((s, o) => s + (Number(o.shipmentCost) || 0), 0);
+    const commissionTotal = orders.reduce((s, o) => s + (Number(o.commissionAmount) || 0), 0);
+    const grandTotal      = expensesTotal + cogsTotal + shippingTotal + commissionTotal;
+
+    const ordersWithShipping   = orders.filter(o => (Number(o.shipmentCost) || 0) > 0);
+    const ordersWithCommission = orders.filter(o => (Number(o.commissionAmount) || 0) > 0);
+
+    const SectionHeader = ({ title, total, color }: { title: string; total: number; color: string }) => (
+        <div style={{
+            display: 'flex', justifyContent: 'space-between', alignItems: 'center',
+            background: color, borderRadius: 8, padding: '10px 14px', marginBottom: 8, marginTop: 20,
+        }}>
+            <span style={{ fontWeight: 800, fontSize: 13, color: '#1e293b' }}>{title}</span>
+            <span style={{ fontWeight: 900, fontSize: 14, color: '#1e293b' }}>{Rs(total)}</span>
+        </div>
+    );
+
+    const LineItem = ({ label, sub, amount, muted }: { label: string; sub?: string; amount: number; muted?: boolean }) => (
+        <div style={{
+            display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start',
+            padding: '7px 4px', borderBottom: '1px solid var(--border)',
+            opacity: muted ? 0.55 : 1,
+        }}>
+            <div style={{ flex: 1 }}>
+                <div style={{ fontSize: 13, fontWeight: 600 }}>{label}</div>
+                {sub && <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 2 }}>{sub}</div>}
+            </div>
+            <div style={{ fontWeight: 800, fontSize: 13, whiteSpace: 'nowrap', color: amount > 0 ? 'var(--danger)' : 'var(--text-muted)', marginLeft: 16 }}>-{Rs(amount)}</div>
+        </div>
+    );
+
+    return (
+        <div className="modal-overlay" onClick={onClose}>
+            <div
+                className="modal-box"
+                style={{ maxWidth: 640, width: '95%', maxHeight: '88vh', display: 'flex', flexDirection: 'column' }}
+                onClick={e => e.stopPropagation()}
+            >
+                {/* Header */}
+                <div className="modal-head" style={{ padding: '16px 20px', flexShrink: 0 }}>
+                    <div>
+                        <h3 style={{ fontSize: 18, fontWeight: 800, margin: 0 }}>Expense Breakdown</h3>
+                        <div style={{ fontSize: 12, color: 'var(--text-muted)', marginTop: 4 }}>All costs contributing to the Expenses KPI</div>
+                    </div>
+                    <button className="btn btn-sm" onClick={onClose} style={{ border: 'none', fontSize: 18 }}>✕</button>
+                </div>
+
+                {/* Scrollable body */}
+                <div className="modal-body" style={{ padding: '4px 20px 24px', overflowY: 'auto', flex: 1 }}>
+
+                    {/* ── 1. Business Expenses ── */}
+                    <SectionHeader title="📋 Business Expenses" total={expensesTotal} color="#fef9ec" />
+                    {expenses.length === 0 ? (
+                        <div style={{ fontSize: 12, color: 'var(--text-muted)', padding: '8px 4px' }}>No recorded expenses.</div>
+                    ) : (
+                        expenses.map((e) => (
+                            <LineItem
+                                key={e.id}
+                                label={e.title}
+                                sub={`${e.category} · ${e.expense_date || ''}`}
+                                amount={Number(e.amount)}
+                            />
+                        ))
+                    )}
+
+                    {/* ── 2. Cost of Goods Sold ── */}
+                    <SectionHeader title="📦 Cost of Goods Sold (COGS)" total={cogsTotal} color="#eff6ff" />
+                    {orders.length === 0 ? (
+                        <div style={{ fontSize: 12, color: 'var(--text-muted)', padding: '8px 4px' }}>No orders in this period.</div>
+                    ) : (
+                        orders.map((o, i) => (
+                            <LineItem
+                                key={o.id || i}
+                                label={o.productName}
+                                sub={`${o.quantity} unit${o.quantity !== 1 ? 's' : ''} × Rs ${(Number(o.costPrice) || 0).toLocaleString()} · ${o.storeName}`}
+                                amount={(Number(o.costPrice) || 0) * (Number(o.quantity) || 1)}
+                            />
+                        ))
+                    )}
+
+                    {/* ── 3. Delivery / Shipment Charges ── */}
+                    <SectionHeader title="🚚 Delivery / Shipment Charges" total={shippingTotal} color="#f0fdf4" />
+                    {ordersWithShipping.length === 0 ? (
+                        <div style={{ fontSize: 12, color: 'var(--text-muted)', padding: '8px 4px' }}>No delivery charges in this period.</div>
+                    ) : (
+                        ordersWithShipping.map((o, i) => (
+                            <LineItem
+                                key={`ship-${o.id || i}`}
+                                label={`${o.productName} — Delivery`}
+                                sub={`${o.quantity} unit${o.quantity !== 1 ? 's' : ''} · ${o.clientName || 'N/A'} · ${o.storeName}`}
+                                amount={Number(o.shipmentCost)}
+                            />
+                        ))
+                    )}
+
+                    {/* ── 4. Store Partner Commissions ── */}
+                    <SectionHeader title="🤝 Store Partner Commissions" total={commissionTotal} color="#fdf4ff" />
+                    {ordersWithCommission.length === 0 ? (
+                        <div style={{ fontSize: 12, color: 'var(--text-muted)', padding: '8px 4px' }}>No partner commissions in this period.</div>
+                    ) : (
+                        ordersWithCommission.map((o, i) => (
+                            <LineItem
+                                key={`comm-${o.id || i}`}
+                                label={`${o.productName} — ${o.storeName}`}
+                                sub={`${o.quantity} unit${o.quantity !== 1 ? 's' : ''} · ${o.commissionPercent || 0}% commission`}
+                                amount={Number(o.commissionAmount)}
+                            />
+                        ))
+                    )}
+
+                    {/* ── Grand Total ── */}
+                    <div style={{
+                        marginTop: 24, padding: '16px 18px', background: 'var(--surface-2)',
+                        borderRadius: 10, border: '2px solid var(--border)', display: 'flex',
+                        justifyContent: 'space-between', alignItems: 'center',
+                    }}>
+                        <div>
+                            <div style={{ fontSize: 12, fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Grand Total Expenses</div>
+                            <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 4 }}>
+                                {Rs(expensesTotal)} expenses + {Rs(cogsTotal)} COGS + {Rs(shippingTotal)} shipping + {Rs(commissionTotal)} commissions
+                            </div>
+                        </div>
+                        <div style={{ fontSize: 22, fontWeight: 900, color: 'var(--danger)' }}>-{Rs(grandTotal)}</div>
+                    </div>
                 </div>
             </div>
         </div>

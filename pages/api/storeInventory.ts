@@ -54,8 +54,6 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
         if (!storeName) return
 
         if (!storeInventory[storeName]) storeInventory[storeName] = {}
-
-        const existing = storeInventory[storeName][productName]
         const qtyAssigned = num(row.quantity_assigned)
         const qtyRemaining = num(row.quantity_remaining)
 
@@ -70,19 +68,20 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
           }
         }
 
-        if (!existing) {
-          storeInventory[storeName][productName] = {
-            productName,
-            ownerSupplyPrice: num(row.owner_supply_price),
-            commissionPercent: num(row.commission_percent),
-            storeSellingPrice: num(row.store_selling_price),
-            quantityAssigned: qtyAssigned,
-            quantityRemaining: qtyRemaining
-          }
-        } else {
-          existing.quantityAssigned = num(existing.quantityAssigned) + qtyAssigned
-          existing.quantityRemaining = num(existing.quantityRemaining) + qtyRemaining
-          // Keep latest price/commission (most recent row is first due to ordering)
+        // Key by unique store_inventory id to avoid combining different lots
+        const key = row.id || `${productName}_${row.inventory_id || ''}_${row.created_at}`
+        storeInventory[storeName][key] = {
+          id: row.id,
+          productName,
+          productId: row.product_id,
+          inventoryId: row.inventory_id,
+          ownerSupplyPrice: num(row.owner_supply_price),
+          commissionPercent: num(row.commission_percent),
+          storeSellingPrice: num(row.store_selling_price),
+          quantityAssigned: qtyAssigned,
+          quantityRemaining: qtyRemaining,
+          created_at: row.created_at,
+          updated_at: row.updated_at
         }
       })
 
@@ -174,6 +173,53 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       }
 
       return res.status(201).json({ success: true, id: inserted?.id })
+    }
+
+    if (req.method === 'PATCH') {
+      // Update existing store_inventory row (admin only)
+      const { id, fields } = req.body || {}
+
+      if (!id) return res.status(400).json({ error: 'id is required' })
+      if (!fields || typeof fields !== 'object') return res.status(400).json({ error: 'fields are required' })
+
+      // Only allow updating specific fields
+      const allowed: Record<string, any> = {}
+      if (fields.owner_supply_price !== undefined) allowed.owner_supply_price = fields.owner_supply_price
+      if (fields.commission_percent !== undefined) allowed.commission_percent = fields.commission_percent
+      if (fields.store_selling_price !== undefined) allowed.store_selling_price = fields.store_selling_price
+      if (fields.quantity_assigned !== undefined) allowed.quantity_assigned = fields.quantity_assigned
+      if (fields.quantity_remaining !== undefined) allowed.quantity_remaining = fields.quantity_remaining
+
+      // Allow updating store by storeName (resolve to store_id)
+      if (fields.storeName) {
+        const { data: storeRow, error: storeErr } = await supabaseAdmin
+          .from(TABLES.STORES)
+          .select('id')
+          .eq('name', String(fields.storeName))
+          .maybeSingle()
+        if (storeErr) {
+          console.error('store lookup error on patch:', storeErr)
+          return res.status(500).json({ error: 'Failed to lookup store' })
+        }
+        if (!storeRow) return res.status(404).json({ error: 'Store not found' })
+        allowed.store_id = storeRow.id
+      }
+
+      if (Object.keys(allowed).length === 0) return res.status(400).json({ error: 'no updatable fields provided' })
+
+      const { data: updated, error: updateErr } = await supabaseAdmin
+        .from(TABLES.STORE_INVENTORY)
+        .update(allowed)
+        .eq('id', id)
+        .select()
+        .maybeSingle()
+
+      if (updateErr) {
+        console.error('storeInventory update error:', updateErr)
+        return res.status(500).json({ error: 'Failed to update allotment' })
+      }
+
+      return res.json({ success: true, updated })
     }
 
     return res.status(405).json({ error: 'Method not allowed' })
