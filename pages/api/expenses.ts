@@ -7,12 +7,6 @@ function num(v: any): number {
   return Number.isFinite(n) ? n : 0
 }
 
-function generateExpenseCode(): string {
-  const ts = Date.now().toString(36).toUpperCase()
-  const rand = Math.random().toString(36).substr(2, 4).toUpperCase()
-  return `EXP-${ts}-${rand}`
-}
-
 export default async function handler(req: NextApiRequest, res: NextApiResponse) {
   try {
     const session = await requireSession(req, res)
@@ -22,18 +16,18 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     if (req.method === 'GET') {
       const { data, error } = await supabaseAdmin
         .from(TABLES.EXPENSES)
-        .select('id, expense_code, title, amount, category, occurred_at, created_at')
-        .order('occurred_at', { ascending: false })
+        .select('id, title, amount, category, expense_date, notes, created_at')
+        .order('expense_date', { ascending: false })
 
       if (error) throw error
 
       const expenses = (data ?? []).map((r: any) => ({
         id: r.id,
-        expenseCode: r.expense_code,
         title: r.title,
         amount: num(r.amount),
         category: r.category || 'Misc',
-        expense_date: r.occurred_at ? new Date(r.occurred_at).toISOString().slice(0, 10) : '',
+        expense_date: r.expense_date ?? '',
+        notes: r.notes ?? null,
         created_at: r.created_at,
       }))
 
@@ -57,32 +51,28 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
         return res.status(400).json({ error: 'Amount must be >= 0' })
       }
 
-      const expenseCode = generateExpenseCode()
-
       const { data: inserted, error } = await supabaseAdmin
         .from(TABLES.EXPENSES)
         .insert({
-          expense_code: expenseCode,
           title: title.trim(),
           amount: amt,
           category: (category || 'Misc').trim(),
-          occurred_at: expense_date || new Date().toISOString(),
-          created_by: session.accountId,
+          expense_date: expense_date || new Date().toISOString().slice(0, 10),
+          notes: notes ?? null,
         })
-        .select('id, expense_code, title, amount, category, occurred_at, created_at')
+        .select('id, title, amount, category, expense_date, notes, created_at')
         .single()
 
       if (error) throw error
 
       return res.status(201).json({
-        expenseCode,
         expense: {
           id: inserted.id,
-          expenseCode: inserted.expense_code,
           title: inserted.title,
           amount: num(inserted.amount),
           category: inserted.category || 'Misc',
-          expense_date: inserted.occurred_at ? new Date(inserted.occurred_at).toISOString().slice(0, 10) : '',
+          expense_date: inserted.expense_date ?? '',
+          notes: inserted.notes ?? null,
           created_at: inserted.created_at,
         },
       })

@@ -46,7 +46,12 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
           admin_take,
           profit,
           created_at,
-          stores:store_id ( name )
+          stores:store_id ( name ),
+          store_inventory:store_inventory_id (
+            inventory:inventory_id (
+              cost_price
+            )
+          )
         `)
         .order('occurred_at', { ascending: false })
 
@@ -63,24 +68,32 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
         return res.status(500).json({ error: 'Failed to fetch orders' })
       }
 
-      const orders = (data || []).map((row: any) => ({
-        id: row.id,
-        orderCode: row.order_code,
-        productName: row.product_name,
-        quantity: num(row.quantity),
-        sellingPrice: num(row.selling_price),
-        shipmentCost: num(row.shipment_cost),
-        storeName: row.stores?.name ?? '',
-        clientName: row.client_name ?? '',
-        type: row.order_type ?? 'Sale',
-        date: row.occurred_at ?? row.created_at,
-        includedInPayout: row.included_in_payout ?? false,
-        commissionPercent: num(row.commission_percent),
-        costPrice: num(row.cost_price),
-        commissionAmount: num(row.commission_amount),
-        adminTake: num(row.admin_take),
-        profit: num(row.profit),
-      }))
+      const orders = (data || []).map((row: any) => {
+        // Follow: orders.store_inventory_id → store_inventory.inventory_id → inventory.cost_price
+        const inventoryCostPrice = row.store_inventory?.inventory?.cost_price
+        const costPrice = inventoryCostPrice != null
+          ? num(inventoryCostPrice)
+          : num(row.cost_price)  // fallback to stored value if link is missing
+
+        return {
+          id: row.id,
+          orderCode: row.order_code,
+          productName: row.product_name,
+          quantity: num(row.quantity),
+          sellingPrice: num(row.selling_price),
+          shipmentCost: num(row.shipment_cost),
+          storeName: row.stores?.name ?? '',
+          clientName: row.client_name ?? '',
+          type: row.order_type ?? 'Sale',
+          date: row.occurred_at ?? row.created_at,
+          includedInPayout: row.included_in_payout ?? false,
+          commissionPercent: num(row.commission_percent),
+          costPrice,
+          commissionAmount: num(row.commission_amount),
+          adminTake: num(row.admin_take),
+          profit: num(row.profit),
+        }
+      })
 
       return res.json({ orders })
     }

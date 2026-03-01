@@ -1416,7 +1416,7 @@ const [loading, setLoading] = useState<boolean>(true);
 
         {/* ── CHARTS: right under the KPI cards ── */}
         {isAdmin && (
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 24, marginBottom: 24 }}>
+          <div className="responsive-charts-grid">
             {/* ── PRODUCT PERFORMANCE: SVG Grouped Bar Chart ── */}
             <SectionCard title="Product Performance" icon={IC.chart} defaultOpen>
               {isProductEmpty && (
@@ -1520,9 +1520,9 @@ const [loading, setLoading] = useState<boolean>(true);
             title={isAdmin ? "Partner Store Sales" : "Sales History"}
             icon={IC.handshake}
             action={
-              <div style={{ display: 'flex', gap: 12, alignItems: 'center' }}>
+              <div className="section-action-wrap">
                 <TableFilter value={partnerFilter} onChange={setPartnerFilter} />
-                <div style={{ width: 140 }}>
+                <div className="store-select-wrap">
                   <CustomSelect 
                     value={partnerStore} 
                     onChange={setPartnerStore} 
@@ -1591,38 +1591,76 @@ const [loading, setLoading] = useState<boolean>(true);
         </div>
 
         {isAdmin && (
-          <div className="grid-2-dynamic" style={{ display: 'grid', gridTemplateColumns: '1.2fr 0.8fr', gap: 24, marginBottom: 32 }}>
-            {/* VIP Customers table removed as requested */}
+          <div style={{ marginBottom: 32 }}>
             <SectionCard title="Expenses (Money Spent)" icon={IC.receipt} action={
               <button className="btn btn-primary" style={{ padding: '0.5rem 1rem' }} onClick={() => setShowExpenseModal(true)}>+ Add Expense</button>
             }>
-              <div className="table-wrap">
-                <table style={{ fontSize: '0.85rem' }}>
+              <div style={{ overflowX: 'auto', width: '100%' }}>
+                <table style={{ width: '100%', fontSize: '0.85rem', borderCollapse: 'collapse', tableLayout: 'fixed' }}>
+                  <colgroup>
+                    <col style={{ width: '40%' }} />
+                    <col style={{ width: '22%' }} />
+                    <col style={{ width: '20%' }} />
+                    <col style={{ width: '18%' }} />
+                  </colgroup>
                   <thead>
-                    <tr>
-                      <th>Title</th>
-                      <th>Category</th>
-                      <th>Date</th>
-                      <th style={{ textAlign: 'right' }}>Amount</th>
+                    <tr style={{ background: 'var(--surface-2)' }}>
+                      <th style={{ padding: '10px 14px', textAlign: 'left', fontWeight: 700, fontSize: '0.78rem', color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.04em', borderBottom: '1px solid var(--border)' }}>Title</th>
+                      <th style={{ padding: '10px 14px', textAlign: 'left', fontWeight: 700, fontSize: '0.78rem', color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.04em', borderBottom: '1px solid var(--border)' }}>Category</th>
+                      <th style={{ padding: '10px 14px', textAlign: 'center', fontWeight: 700, fontSize: '0.78rem', color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.04em', borderBottom: '1px solid var(--border)' }}>Date</th>
+                      <th style={{ padding: '10px 14px', textAlign: 'right', fontWeight: 700, fontSize: '0.78rem', color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.04em', borderBottom: '1px solid var(--border)' }}>Amount</th>
                     </tr>
                   </thead>
                   <tbody>
-                    {data.expenses.slice(-5).reverse().map((e, i) => {
-                      const dateStr = e.expense_date || (e as any).date || (e as any).occurred_at || (e as any).created_at;
-                      let displayDate = '-';
-                      try {
-                        if (dateStr) displayDate = new Date(String(dateStr)).toLocaleDateString();
-                      } catch (err) { displayDate = String(dateStr || '-'); }
-
-                      return (
-                      <tr key={i}>
-                        <td className="text-muted">{e.title}</td>
-                        <td className="text-muted">{e.category || '-'}</td>
-                        <td className="text-muted">{displayDate}</td>
-                        <td className="font-bold" style={{ textAlign: 'right' }}>{Rs(e.amount)}</td>
+                    {data.expenses.length === 0 ? (
+                      <tr>
+                        <td colSpan={5} style={{ textAlign: 'center', padding: '32px 20px', color: 'var(--text-muted)', fontSize: '0.85rem' }}>
+                          No expenses recorded yet.
+                        </td>
                       </tr>
-                    )})}
-                    {data.expenses.length === 0 && <tr><td colSpan={4} style={{ textAlign: 'center', padding: 20 }}>No costs recorded.</td></tr>}
+                    ) : (
+                      <>
+                        {[...data.expenses].reverse().map((e, i) => {
+                          const dateStr = e.expense_date || (e as any).date || (e as any).occurred_at || (e as any).created_at;
+                          let displayDate = '-';
+                          try { if (dateStr) displayDate = new Date(String(dateStr)).toLocaleDateString('en-PK', { day: '2-digit', month: 'short', year: 'numeric' }); }
+                          catch { displayDate = String(dateStr || '-'); }
+
+                          const catColors: Record<string, { bg: string; color: string }> = {
+                            'Rent':        { bg: '#ede9fe', color: '#6d28d9' },
+                            'Salaries':    { bg: '#dbeafe', color: '#1d4ed8' },
+                            'Utilities':   { bg: '#dcfce7', color: '#15803d' },
+                            'Marketing':   { bg: '#fef9c3', color: '#a16207' },
+                            'Logistics':   { bg: '#ffedd5', color: '#c2410c' },
+                            'Misc':        { bg: '#f1f5f9', color: '#475569' },
+                          };
+                          const cat = e.category || 'Misc';
+                          const chip = catColors[cat] || { bg: '#f1f5f9', color: '#475569' };
+
+                          return (
+                            <tr key={i} style={{ borderBottom: '1px solid var(--border)', transition: 'background 0.15s' }}
+                              onMouseEnter={ev => (ev.currentTarget.style.background = 'var(--surface-2)')}
+                              onMouseLeave={ev => (ev.currentTarget.style.background = 'transparent')}
+                            >
+                              <td style={{ padding: '11px 14px', fontWeight: 600, color: 'var(--text-main)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{e.title}</td>
+                              <td style={{ padding: '11px 14px' }}>
+                                <span style={{ display: 'inline-block', padding: '2px 10px', borderRadius: 20, fontSize: '0.75rem', fontWeight: 700, background: chip.bg, color: chip.color, whiteSpace: 'nowrap' }}>{cat}</span>
+                              </td>
+                              <td style={{ padding: '11px 14px', textAlign: 'center', color: 'var(--text-muted)', fontSize: '0.82rem' }}>{displayDate}</td>
+                              <td style={{ padding: '11px 14px', textAlign: 'right', fontWeight: 800, color: 'var(--danger)', whiteSpace: 'nowrap' }}>−{Rs(e.amount)}</td>
+                            </tr>
+                          );
+                        })}
+                        <tr style={{ background: 'var(--surface-2)', borderTop: '2px solid var(--border)' }}>
+                          <td colSpan={3} style={{ padding: '11px 14px', fontWeight: 700, fontSize: '0.85rem', color: 'var(--text-main)' }}>
+                            Total — {data.expenses.length} expense{data.expenses.length !== 1 ? 's' : ''}
+                          </td>
+                          <td style={{ padding: '11px 14px', textAlign: 'right', fontWeight: 900, fontSize: '0.95rem', color: 'var(--danger)', whiteSpace: 'nowrap' }}>
+                            −{Rs(data.expenses.reduce((s, e) => s + (Number(e.amount) || 0), 0))}
+                          </td>
+                        </tr>
+                      </>
+                    )}
                   </tbody>
                 </table>
               </div>

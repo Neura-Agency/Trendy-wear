@@ -14,12 +14,25 @@ interface NavItem {
 
 export default function Layout({ children, user, onLogout }: LayoutProps) {
   const [showMenu, setShowMenu] = useState<boolean>(false);
+  const [mobileNavOpen, setMobileNavOpen] = useState<boolean>(false);
   const router = useRouter();
   const currentPath = router.pathname;
 
   useEffect(() => {
     setShowMenu(false);
+    setMobileNavOpen(false);
   }, [currentPath]);
+
+  // Close mobile nav on resize if window becomes large
+  useEffect(() => {
+    const handleResize = () => {
+      if (window.innerWidth > 768) {
+        setMobileNavOpen(false);
+      }
+    };
+    window.addEventListener('resize', handleResize);
+    return () => window.removeEventListener('resize', handleResize);
+  }, []);
 
   // Clean mono-color SVG icons (currentColor inherits nav text color)
   const iconDashboard = <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="3" width="7" height="9" rx="1"/><rect x="14" y="3" width="7" height="5" rx="1"/><rect x="14" y="12" width="7" height="9" rx="1"/><rect x="3" y="16" width="7" height="5" rx="1"/></svg>;
@@ -59,9 +72,36 @@ export default function Layout({ children, user, onLogout }: LayoutProps) {
 
   return (
     <div className="page-wrap">
+      {/* ── MOBILE OVERLAY ── */}
+      <div 
+        className={`mobile-overlay ${mobileNavOpen ? 'show' : ''}`} 
+        onClick={() => setMobileNavOpen(false)}
+      />
+
       {/* ── TOP BAR ── */}
       <header className="topbar">
-        <div style={{ width: 1 }} />
+        {/* Mobile hamburger button */}
+        <button 
+          className="mobile-menu-btn"
+          onClick={() => setMobileNavOpen(v => !v)}
+          aria-label="Toggle navigation menu"
+        >
+          <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+            {mobileNavOpen ? (
+              <>
+                <line x1="18" y1="6" x2="6" y2="18" />
+                <line x1="6" y1="6" x2="18" y2="18" />
+              </>
+            ) : (
+              <>
+                <line x1="4" y1="6" x2="20" y2="6" />
+                <line x1="4" y1="12" x2="20" y2="12" />
+                <line x1="4" y1="18" x2="20" y2="18" />
+              </>
+            )}
+          </svg>
+        </button>
+        <div style={{ width: 1 }} className="hide-mobile" />
         <div className="topbar-right">
           <div className="topbar-user" onClick={() => setShowMenu((v) => !v)}>
             <div className="user-avatar">
@@ -93,7 +133,7 @@ export default function Layout({ children, user, onLogout }: LayoutProps) {
 
       <div className="page-body">
         {/* ── SIDEBAR ── */}
-        <nav className="sidebar">
+        <nav className={`sidebar ${mobileNavOpen ? 'mobile-open' : ''}`}>
           <div className="sidebar-brand">
             <img src="/logo.jpg" alt="Trendy Wear" className="brand-logo" />
           </div>
@@ -116,6 +156,7 @@ export default function Layout({ children, user, onLogout }: LayoutProps) {
                 key={item.id}
                 className={`nav-item ${currentPath === item.path ? "active" : ""}`}
                 style={{ textDecoration: "none" }}
+                onClick={() => setMobileNavOpen(false)}
               >
                 <span className="nav-icon">
                   {item.icon}
