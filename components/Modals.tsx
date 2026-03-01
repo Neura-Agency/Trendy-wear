@@ -1042,6 +1042,18 @@ interface ExpenseBreakdownModalProps {
 export function ExpenseBreakdownModal({ expenses, orders, onClose }: ExpenseBreakdownModalProps) {
     const Rs = (n: number) => 'Rs\u00a0' + (Number(n) || 0).toLocaleString();
 
+    // --- Collapsible state for each section (default collapsed) ---
+    const [expandedSections, setExpandedSections] = useState<Record<string, boolean>>({
+        expenses: false,
+        cogs: false,
+        shipping: false,
+        commission: false,
+    });
+
+    const toggleSection = (key: string) => {
+        setExpandedSections(prev => ({ ...prev, [key]: !prev[key] }));
+    };
+
     // --- Section totals ---
     const expensesTotal   = expenses.reduce((s, e) => s + (Number(e.amount) || 0), 0);
     const cogsTotal       = orders.reduce((s, o) => s + ((Number(o.costPrice) || 0) * (Number(o.quantity) || 1)), 0);
@@ -1052,15 +1064,42 @@ export function ExpenseBreakdownModal({ expenses, orders, onClose }: ExpenseBrea
     const ordersWithShipping   = orders.filter(o => (Number(o.shipmentCost) || 0) > 0);
     const ordersWithCommission = orders.filter(o => (Number(o.commissionAmount) || 0) > 0);
 
-    const SectionHeader = ({ title, total, color }: { title: string; total: number; color: string }) => (
-        <div style={{
-            display: 'flex', justifyContent: 'space-between', alignItems: 'center',
-            background: color, borderRadius: 8, padding: '10px 14px', marginBottom: 8, marginTop: 20,
-        }}>
-            <span style={{ fontWeight: 800, fontSize: 13, color: '#1e293b' }}>{title}</span>
-            <span style={{ fontWeight: 900, fontSize: 14, color: '#1e293b' }}>{Rs(total)}</span>
-        </div>
-    );
+    // SVG icons for expense sections
+    const icons = {
+        expenses: <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/><polyline points="10 9 9 9 8 9"/></svg>,
+        cogs: <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16Z"/><path d="m3.3 7 8.7 5 8.7-5"/><path d="M12 22V12"/></svg>,
+        shipping: <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M14 18V6a2 2 0 0 0-2-2H4a2 2 0 0 0-2 2v11a1 1 0 0 0 1 1h2"/><path d="M15 18H9"/><path d="M19 18h2a1 1 0 0 0 1-1v-3.65a1 1 0 0 0-.22-.624l-3.48-4.35A1 1 0 0 0 17.52 8H14"/><circle cx="17" cy="18" r="2"/><circle cx="7" cy="18" r="2"/></svg>,
+        commission: <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>,
+    };
+
+    const SectionHeader = ({ title, total, color, sectionKey, itemCount }: { title: string; total: number; color: string; sectionKey: string; itemCount: number }) => {
+        const isExpanded = expandedSections[sectionKey];
+        const icon = icons[sectionKey as keyof typeof icons];
+        return (
+            <div
+                onClick={() => toggleSection(sectionKey)}
+                style={{
+                    display: 'flex', justifyContent: 'space-between', alignItems: 'center',
+                    background: color, borderRadius: 8, padding: '10px 14px', marginBottom: isExpanded ? 8 : 0, marginTop: 20,
+                    cursor: 'pointer', userSelect: 'none', transition: 'all 0.15s ease',
+                }}
+            >
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                    <span style={{
+                        display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
+                        width: 20, height: 20, fontSize: 10, fontWeight: 700,
+                        transition: 'transform 0.2s ease',
+                        transform: isExpanded ? 'rotate(90deg)' : 'rotate(0deg)',
+                        color: '#64748b',
+                    }}>▶</span>
+                    <span style={{ color: '#64748b', display: 'inline-flex', alignItems: 'center' }}>{icon}</span>
+                    <span style={{ fontWeight: 800, fontSize: 13, color: '#1e293b' }}>{title}</span>
+                    <span style={{ fontSize: 11, color: '#64748b', fontWeight: 500 }}>({itemCount} item{itemCount !== 1 ? 's' : ''})</span>
+                </div>
+                <span style={{ fontWeight: 900, fontSize: 14, color: '#1e293b' }}>{Rs(total)}</span>
+            </div>
+        );
+    };
 
     const LineItem = ({ label, sub, amount, muted }: { label: string; sub?: string; amount: number; muted?: boolean }) => (
         <div style={{
@@ -1096,63 +1135,71 @@ export function ExpenseBreakdownModal({ expenses, orders, onClose }: ExpenseBrea
                 <div className="modal-body" style={{ padding: '4px 20px 24px', overflowY: 'auto', flex: 1 }}>
 
                     {/* ── 1. Business Expenses ── */}
-                    <SectionHeader title="📋 Business Expenses" total={expensesTotal} color="#fef9ec" />
-                    {expenses.length === 0 ? (
-                        <div style={{ fontSize: 12, color: 'var(--text-muted)', padding: '8px 4px' }}>No recorded expenses.</div>
-                    ) : (
-                        expenses.map((e) => (
-                            <LineItem
-                                key={e.id}
-                                label={e.title}
-                                sub={`${e.category} · ${e.expense_date || ''}`}
-                                amount={Number(e.amount)}
-                            />
-                        ))
+                    <SectionHeader title="Business Expenses" total={expensesTotal} color="#fef9ec" sectionKey="expenses" itemCount={expenses.length} />
+                    {expandedSections.expenses && (
+                        expenses.length === 0 ? (
+                            <div style={{ fontSize: 12, color: 'var(--text-muted)', padding: '8px 4px' }}>No recorded expenses.</div>
+                        ) : (
+                            expenses.map((e) => (
+                                <LineItem
+                                    key={e.id}
+                                    label={e.title}
+                                    sub={`${e.category} · ${e.expense_date || ''}`}
+                                    amount={Number(e.amount)}
+                                />
+                            ))
+                        )
                     )}
 
                     {/* ── 2. Cost of Goods Sold ── */}
-                    <SectionHeader title="📦 Cost of Goods Sold (COGS)" total={cogsTotal} color="#eff6ff" />
-                    {orders.length === 0 ? (
-                        <div style={{ fontSize: 12, color: 'var(--text-muted)', padding: '8px 4px' }}>No orders in this period.</div>
-                    ) : (
-                        orders.map((o, i) => (
-                            <LineItem
-                                key={o.id || i}
-                                label={o.productName}
-                                sub={`${o.quantity} unit${o.quantity !== 1 ? 's' : ''} × Rs ${(Number(o.costPrice) || 0).toLocaleString()} · ${o.storeName}`}
-                                amount={(Number(o.costPrice) || 0) * (Number(o.quantity) || 1)}
-                            />
-                        ))
+                    <SectionHeader title="Cost of Goods Sold (COGS)" total={cogsTotal} color="#eff6ff" sectionKey="cogs" itemCount={orders.length} />
+                    {expandedSections.cogs && (
+                        orders.length === 0 ? (
+                            <div style={{ fontSize: 12, color: 'var(--text-muted)', padding: '8px 4px' }}>No orders in this period.</div>
+                        ) : (
+                            orders.map((o, i) => (
+                                <LineItem
+                                    key={o.id || i}
+                                    label={o.productName}
+                                    sub={`${o.quantity} unit${o.quantity !== 1 ? 's' : ''} × Rs ${(Number(o.costPrice) || 0).toLocaleString()} · ${o.storeName}`}
+                                    amount={(Number(o.costPrice) || 0) * (Number(o.quantity) || 1)}
+                                />
+                            ))
+                        )
                     )}
 
                     {/* ── 3. Delivery / Shipment Charges ── */}
-                    <SectionHeader title="🚚 Delivery / Shipment Charges" total={shippingTotal} color="#f0fdf4" />
-                    {ordersWithShipping.length === 0 ? (
-                        <div style={{ fontSize: 12, color: 'var(--text-muted)', padding: '8px 4px' }}>No delivery charges in this period.</div>
-                    ) : (
-                        ordersWithShipping.map((o, i) => (
-                            <LineItem
-                                key={`ship-${o.id || i}`}
-                                label={`${o.productName} — Delivery`}
-                                sub={`${o.quantity} unit${o.quantity !== 1 ? 's' : ''} · ${o.clientName || 'N/A'} · ${o.storeName}`}
-                                amount={Number(o.shipmentCost)}
-                            />
-                        ))
+                    <SectionHeader title="Delivery / Shipment Charges" total={shippingTotal} color="#f0fdf4" sectionKey="shipping" itemCount={ordersWithShipping.length} />
+                    {expandedSections.shipping && (
+                        ordersWithShipping.length === 0 ? (
+                            <div style={{ fontSize: 12, color: 'var(--text-muted)', padding: '8px 4px' }}>No delivery charges in this period.</div>
+                        ) : (
+                            ordersWithShipping.map((o, i) => (
+                                <LineItem
+                                    key={`ship-${o.id || i}`}
+                                    label={`${o.productName} — Delivery`}
+                                    sub={`${o.quantity} unit${o.quantity !== 1 ? 's' : ''} · ${o.clientName || 'N/A'} · ${o.storeName}`}
+                                    amount={Number(o.shipmentCost)}
+                                />
+                            ))
+                        )
                     )}
 
                     {/* ── 4. Store Partner Commissions ── */}
-                    <SectionHeader title="🤝 Store Partner Commissions" total={commissionTotal} color="#fdf4ff" />
-                    {ordersWithCommission.length === 0 ? (
-                        <div style={{ fontSize: 12, color: 'var(--text-muted)', padding: '8px 4px' }}>No partner commissions in this period.</div>
-                    ) : (
-                        ordersWithCommission.map((o, i) => (
-                            <LineItem
-                                key={`comm-${o.id || i}`}
-                                label={`${o.productName} — ${o.storeName}`}
-                                sub={`${o.quantity} unit${o.quantity !== 1 ? 's' : ''} · ${o.commissionPercent || 0}% commission`}
-                                amount={Number(o.commissionAmount)}
-                            />
-                        ))
+                    <SectionHeader title="Store Partner Commissions" total={commissionTotal} color="#fdf4ff" sectionKey="commission" itemCount={ordersWithCommission.length} />
+                    {expandedSections.commission && (
+                        ordersWithCommission.length === 0 ? (
+                            <div style={{ fontSize: 12, color: 'var(--text-muted)', padding: '8px 4px' }}>No partner commissions in this period.</div>
+                        ) : (
+                            ordersWithCommission.map((o, i) => (
+                                <LineItem
+                                    key={`comm-${o.id || i}`}
+                                    label={`${o.productName} — ${o.storeName}`}
+                                    sub={`${o.quantity} unit${o.quantity !== 1 ? 's' : ''} · ${o.commissionPercent || 0}% commission`}
+                                    amount={Number(o.commissionAmount)}
+                                />
+                            ))
+                        )
                     )}
 
                     {/* ── Grand Total ── */}
