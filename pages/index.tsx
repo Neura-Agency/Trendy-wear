@@ -1031,9 +1031,9 @@ const [loading, setLoading] = useState<boolean>(true);
   useEffect(() => {
     if (!user) return;
     refresh();
-    const es = new EventSource("/api/stream");
-    es.onmessage = () => refresh();
-    return () => es.close();
+    // Poll for updates every 5 minutes (SSE doesn't work on Vercel serverless)
+    const interval = setInterval(refresh, 5 * 60 * 1000);
+    return () => clearInterval(interval);
   }, [user, refresh]);
 
   if (!user) return <Login onLogin={onLogin} />;
