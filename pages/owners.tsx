@@ -238,22 +238,35 @@ export default function OwnersPage({ user, onLogin }: PageProps) {
   // ── Fetch everything in parallel ─────────────────────────────────────
   const refresh = useCallback(async () => {
     try {
-      const [ownersRes, payoutsRes, ordersRes] = await Promise.all([
+      const [ownersRes, payoutsRes, ordersRes, expensesRes] = await Promise.all([
         fetch('/api/owners'),
         fetch('/api/owners?payouts=1'),
         fetch('/api/orders'),
+        fetch('/api/expenses'),
       ]);
-      const [ownersData, payoutsData, ordersData] = await Promise.all([
+      const [ownersData, payoutsData, ordersData, expensesData] = await Promise.all([
         ownersRes.json(),
         payoutsRes.json(),
         ordersRes.json(),
+        expensesRes.json(),
       ]);
 
       setOwners(ownersData.owners || []);
       setPayouts(payoutsData.payouts || []);
 
       const orders: any[] = ordersData.orders || [];
-      const netProfit = orders.reduce((s: number, o: any) => s + (o.profit || 0), 0);
+      const expenses: any[] = expensesData.expenses || [];
+
+      // Revenue = gross sales
+      const totalGross = orders.reduce((s: number, o: any) => s + ((o.sellingPrice || 0) * (o.quantity || 1)), 0);
+      // All expenses = recorded expenses + COGS + shipping + store commissions
+      const supabaseExpenses = expenses.reduce((s: number, e: any) => s + (Number(e.amount) || 0), 0);
+      const totalCostPrice = orders.reduce((s: number, o: any) => s + ((o.costPrice || 0) * (o.quantity || 1)), 0);
+      const totalShipping = orders.reduce((s: number, o: any) => s + (o.shipmentCost || 0), 0);
+      const totalShopCut = orders.reduce((s: number, o: any) => s + (o.commissionAmount || 0), 0);
+      const allExpenses = supabaseExpenses + totalCostPrice + totalShipping + totalShopCut;
+      // Net Profit = Revenue - Expenses
+      const netProfit = totalGross - allExpenses;
       setTotalNetProfit(netProfit);
     } catch (err) {
       console.error(err);

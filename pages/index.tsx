@@ -1126,8 +1126,8 @@ const [loading, setLoading] = useState<boolean>(true);
   // Total Expenses = Supabase expenses + Cost of goods sold + Shipping + Store partner commissions
   const adminExpenses = supabaseExpensesTotal + totalCostPrice + totalShipping + totalShopCut;
   const totalExpenses = isAdmin ? adminExpenses : 0;
-  const totalProfit = totalGross - adminExpenses;
-  const totalProfitValue = isAdmin ? totalNetProfit : totalShopCut;
+  // Net Profit = Revenue - All Expenses
+  const totalProfitValue = isAdmin ? (totalGross - adminExpenses) : totalShopCut;
   const totalStockQty = (() => {
     if (isSuperAdmin) {
       return data.inventory.reduce((s, i) => s + (i.quantityAvailable || 0), 0)

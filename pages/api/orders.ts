@@ -166,6 +166,88 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       const productId: string | null = product?.id ?? null
 
       // ── Find store_inventory rows (FIFO: oldest first) ───────────────────
+      // Special case: "Direct" store sells straight from warehouse inventory
+      if (resolvedStoreName === 'Direct') {
+        // Query warehouse inventory for this product (FIFO: oldest batch first)
+        let invQuery = supabaseAdmin
+          .from(TABLES.INVENTORY)
+          .select('id, cost_price, quantity_available')
+          .order('created_at', { ascending: true })
+
+        if (productId) {
+          invQuery = invQuery.eq('product_id', productId)
+        } else {
+          invQuery = invQuery.eq('product_name', productName)
+        }
+
+        const { data: invRows2, error: invErr2 } = await invQuery
+        if (invErr2) throw invErr2
+
+        const warehouseRows = (invRows2 || []).filter((r: any) => num(r.quantity_available) > 0)
+        const totalAvailableWarehouse = warehouseRows.reduce((s: number, r: any) => s + num(r.quantity_available), 0)
+
+        if (totalAvailableWarehouse < totalDispatch) {
+          return res.status(400).json({ error: `Insufficient warehouse stock. Only ${totalAvailableWarehouse} unit(s) available (need ${totalDispatch}).` })
+        }
+
+        const primaryWarehouseRow = warehouseRows[0] as any
+        const costPrice = num(primaryWarehouseRow?.cost_price)
+        const commissionPercent = 0
+        const commissionAmount = 0
+        const grossAmount = price * qty
+        const adminTake = grossAmount - totalDeductions
+        const profit = adminTake - costPrice * qty
+
+        // ── Insert order ──────────────────────────────────────────────────
+        const { data: order, error: orderErr } = await supabaseAdmin
+          .from(TABLES.ORDERS)
+          .insert({
+            order_code: generateOrderCode(),
+            store_id: storeId,
+            product_id: productId,
+            product_name: productName,
+            store_inventory_id: null,
+            quantity: qty,
+            selling_price: price,
+            shipment_cost: totalDeductions,
+            client_name: clientName || null,
+            order_type: orderType || 'Sale',
+            occurred_at: occurredAt ? new Date(occurredAt).toISOString() : new Date().toISOString(),
+            included_in_payout: false,
+            commission_percent: commissionPercent,
+            cost_price: costPrice,
+            commission_amount: commissionAmount,
+            admin_take: adminTake,
+            profit: profit,
+          })
+          .select('id, order_code')
+          .single()
+
+        if (orderErr) {
+          console.error('orders INSERT error (direct):', orderErr)
+          return res.status(500).json({ error: 'Failed to save order' })
+        }
+
+        // ── Deduct from warehouse inventory FIFO ──────────────────────────
+        let remaining = totalDispatch
+        for (const row of warehouseRows) {
+          if (remaining <= 0) break
+          const rowQty = num((row as any).quantity_available)
+          const deduct = Math.min(rowQty, remaining)
+          await supabaseAdmin
+            .from(TABLES.INVENTORY)
+            .update({ quantity_available: rowQty - deduct })
+            .eq('id', (row as any).id)
+          remaining -= deduct
+        }
+
+        return res.status(201).json({
+          success: true,
+          orderId: order.id,
+          orderCode: order.order_code,
+        })
+      }
+
       let storeInvQuery = supabaseAdmin
         .from(TABLES.STORE_INVENTORY)
         .select('id, commission_percent, owner_supply_price, quantity_remaining')
