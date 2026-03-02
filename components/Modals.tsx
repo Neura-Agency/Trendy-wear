@@ -79,29 +79,29 @@ export function EditStoreInventoryModal({ item, storeNames, onSave, onClose }: {
                         <div className="form-grid-2" style={{ marginBottom: 12 }}>
                             <div className="input-group">
                                 <label>Owner Supply Price</label>
-                                <input type="number" min={0} step="0.01" value={form.ownerSupplyPrice} onChange={(e) => setForm({ ...form, ownerSupplyPrice: parseFloat(e.target.value) || 0 })} />
+                                <input type="text" inputMode="decimal" value={form.ownerSupplyPrice} onChange={(e) => setForm({ ...form, ownerSupplyPrice: parseFloat(e.target.value) || 0 })} />
                             </div>
                             <div className="input-group">
                                 <label>Store Selling Price</label>
-                                <input type="number" min={0} step="0.01" value={form.storeSellingPrice} onChange={(e) => setForm({ ...form, storeSellingPrice: parseFloat(e.target.value) || 0 })} />
+                                <input type="text" inputMode="decimal" value={form.storeSellingPrice} onChange={(e) => setForm({ ...form, storeSellingPrice: parseFloat(e.target.value) || 0 })} />
                             </div>
                         </div>
 
                         <div className="form-grid-2" style={{ marginBottom: 12 }}>
                             <div className="input-group">
                                 <label>Quantity Assigned</label>
-                                <input type="number" min={0} value={form.quantityAssigned} onChange={(e) => setForm({ ...form, quantityAssigned: parseInt(e.target.value) || 0 })} />
+                                <input type="text" inputMode="numeric" value={form.quantityAssigned} onChange={(e) => setForm({ ...form, quantityAssigned: parseInt(e.target.value) || 0 })} />
                             </div>
                             <div className="input-group">
                                 <label>Quantity Remaining</label>
-                                <input type="number" min={0} value={form.quantityRemaining} onChange={(e) => setForm({ ...form, quantityRemaining: parseInt(e.target.value) || 0 })} />
+                                <input type="text" inputMode="numeric" value={form.quantityRemaining} onChange={(e) => setForm({ ...form, quantityRemaining: parseInt(e.target.value) || 0 })} />
                             </div>
                         </div>
 
                         <div className="form-grid-2" style={{ marginBottom: 16 }}>
                             <div className="input-group">
                                 <label>Partner Commission %</label>
-                                <input type="number" min={0} max={100} value={form.commissionPercent} onChange={(e) => setForm({ ...form, commissionPercent: parseFloat(e.target.value) || 0 })} />
+                                <input type="text" inputMode="decimal" value={form.commissionPercent} onChange={(e) => setForm({ ...form, commissionPercent: parseFloat(e.target.value) || 0 })} />
                             </div>
                             <div className="input-group">
                                 <label>Inventory ID</label>
@@ -226,8 +226,8 @@ export function SaleModal({ inventory, storeName, isAdmin, storeNames, onAdd, on
                             <div className="input-group">
                                 <label>Selling Price ({currency})</label>
                                 <input
-                                    type="number"
-                                    step="0.01"
+                                    type="text"
+                                    inputMode="decimal"
                                     value={sale.sellingPrice}
                                     onChange={e => setSale({ ...sale, sellingPrice: parseFloat(e.target.value) || 0 })}
                                     style={{ fontWeight: 700 }}
@@ -242,7 +242,8 @@ export function SaleModal({ inventory, storeName, isAdmin, storeNames, onAdd, on
                             <div className="input-group">
                                 <label style={{ color: 'var(--danger)', fontWeight: 700 }}>Shipment Cost (PKR)</label>
                                 <input
-                                    type="number"
+                                    type="text"
+                                    inputMode="decimal"
                                     placeholder="0"
                                     value={sale.shipmentCost}
                                     onChange={e => setSale({ ...sale, shipmentCost: parseFloat(e.target.value) || 0 })}
@@ -253,7 +254,8 @@ export function SaleModal({ inventory, storeName, isAdmin, storeNames, onAdd, on
                             <div className="input-group">
                                 <label style={{ color: 'var(--danger)', fontWeight: 700 }}>Extra Charges (PKR)</label>
                                 <input
-                                    type="number"
+                                    type="text"
+                                    inputMode="decimal"
                                     placeholder="0"
                                     value={sale.extraCharges}
                                     onChange={e => setSale({ ...sale, extraCharges: parseFloat(e.target.value) || 0 })}
@@ -377,7 +379,8 @@ export function CreateStoreModal({ onSave, onClose }) {
                                 <label>Partner's Cut (%)</label>
                                 <div style={{ position: 'relative' }}>
                                     <input
-                                        type="number"
+                                        type="text"
+                                        inputMode="decimal"
                                         value={store.commission}
                                         onChange={e => setStore({ ...store, commission: parseFloat(e.target.value) })}
                                         style={{ paddingRight: 40 }}
@@ -747,11 +750,11 @@ export function AddInventoryModal({ onSave, onClose, stores, products }: AddInve
                         <div className="form-grid-2" style={{ marginBottom: 20 }}>
                             <div className="input-group">
                                 <label>Price Per Piece (Cost)</label>
-                                <input type="number" required placeholder="0.00" value={item.pricePerPiece} onChange={e => setItem({ ...item, pricePerPiece: parseFloat(e.target.value) })} />
+                                <input type="text" inputMode="decimal" required placeholder="0.00" value={item.pricePerPiece} onChange={e => setItem({ ...item, pricePerPiece: parseFloat(e.target.value) })} />
                             </div>
                             <div className="input-group">
                                 <label>Total Quantity</label>
-                                <input type="number" required min="1" value={item.quantity} onChange={e => setItem({ ...item, quantity: parseInt(e.target.value) })} />
+                                <input type="text" inputMode="numeric" required value={item.quantity} onChange={e => setItem({ ...item, quantity: parseInt(e.target.value) })} />
                             </div>
                         </div>
 
@@ -973,9 +976,8 @@ export function AllotToStoreModal({ onSave, onClose, stores, inventory, allotedQ
                             <div className="input-group">
                                 <label>Quantity (Max {maxQty})</label>
                                 <input
-                                    type="number"
-                                    min={1}
-                                    max={maxQty}
+                                    type="text"
+                                    inputMode="numeric"
                                     value={form.quantity}
                                     onChange={(e) => setForm({ ...form, quantity: parseInt(e.target.value) || 0 })}
                                     required
@@ -995,8 +997,8 @@ export function AllotToStoreModal({ onSave, onClose, stores, inventory, allotedQ
                             <div className="input-group">
                                 <label>New Price (Supply to Store)</label>
                                 <input
-                                    type="number"
-                                    min={0}
+                                    type="text"
+                                    inputMode="decimal"
                                     value={form.ownerSupplyPrice}
                                     onChange={(e) => setForm({ ...form, ownerSupplyPrice: parseFloat(e.target.value) || 0 })}
                                     required
@@ -1005,9 +1007,8 @@ export function AllotToStoreModal({ onSave, onClose, stores, inventory, allotedQ
                             <div className="input-group">
                                 <label>Partner Commission %</label>
                                 <input
-                                    type="number"
-                                    min={0}
-                                    max={100}
+                                    type="text"
+                                    inputMode="decimal"
                                     value={form.commissionPercent}
                                     onChange={(e) => setForm({ ...form, commissionPercent: parseFloat(e.target.value) || 0 })}
                                     required

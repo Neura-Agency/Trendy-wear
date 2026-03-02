@@ -44,7 +44,8 @@ function QuantityEditor({ current, onSave }: QuantityEditorProps) {
     return (
         <div style={{ display: 'flex', gap: 6, alignItems: 'center', background: 'var(--surface-2)', padding: '4px 8px', borderRadius: 8, border: '1px solid var(--border)' }}>
             <input
-                type="number"
+                type="text"
+                inputMode="numeric"
                 placeholder="+/-"
                 autoFocus
                 style={{ width: 64, height: 32, padding: '0 8px', fontSize: '12px', fontWeight: 800 }}

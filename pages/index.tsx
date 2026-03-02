@@ -581,7 +581,8 @@ function InlineCommEdit({ value, onSave }) {
   return (
     <div className="inline-edit-box" style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
       <input
-        type="number"
+        type="text"
+        inputMode="numeric"
         value={val}
         onChange={e => setVal(e.target.value)}
         autoFocus

@@ -18,6 +18,16 @@ export default function App({ Component, pageProps }: ExtendedAppProps) {
   const [hydrated, setHydrated] = useState<boolean>(false);
   const [user, setUser] = useState<User | null>(null);
 
+  // Auto-select number input content on focus so typing replaces 0 instead of appending
+  useEffect(() => {
+    const handler = (e: FocusEvent) => {
+      const target = e.target as HTMLInputElement;
+      if (target && (target.inputMode === 'numeric' || target.inputMode === 'decimal')) target.select();
+    };
+    document.addEventListener('focusin', handler);
+    return () => document.removeEventListener('focusin', handler);
+  }, []);
+
   useEffect(() => {
     setHydrated(true);
 

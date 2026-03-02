@@ -92,10 +92,8 @@ function OwnerFormModal({
             <div className="input-group">
               <label>Profit Share % *</label>
               <input
-                type="number"
-                min={0}
-                max={100}
-                step={0.01}
+                type="text"
+                inputMode="decimal"
                 value={form.profitSharePercent}
                 onChange={e => setForm(p => ({ ...p, profitSharePercent: Number(e.target.value) }))}
                 required
@@ -192,7 +190,7 @@ function PayoutModal({
             </div>
             <div className="input-group">
               <label>Amount (Rs) *</label>
-              <input type="number" min={1} step={1} value={form.amount} onChange={e => setForm(p => ({ ...p, amount: e.target.value }))} placeholder="e.g. 25000" required />
+              <input type="text" inputMode="numeric" value={form.amount} onChange={e => setForm(p => ({ ...p, amount: e.target.value }))} placeholder="e.g. 25000" required />
             </div>
             <div className="form-grid-2">
               <div className="input-group">
@@ -374,14 +372,7 @@ export default function OwnersPage({ user, onLogin }: PageProps) {
                 Manage ownership shares and track profit distributions for <span className="highlight">Bilal, Yahya & Hammad</span>
               </p>
             </div>
-            <div className="header-actions" style={{ display: 'flex', gap: 8 }}>
-              <button className="btn btn-secondary" onClick={() => openPayout()}>
-                + Record Payout
-              </button>
-              <button className="btn btn-primary" onClick={() => setShowAddOwner(true)}>
-                + Add Owner
-              </button>
-            </div>
+
           </div>
         </header>
 
