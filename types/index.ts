@@ -1,5 +1,33 @@
 // Application types for Trendy Wear ERP
 
+export interface Owner {
+  id: string;
+  name: string;
+  phone?: string;
+  email?: string;
+  profitSharePercent: number;   // e.g. 33.34  — should sum to 100 across active owners
+  notes?: string;
+  isActive: boolean;
+  createdAt: string;
+  updatedAt: string;
+  /** Aggregated from owner_payouts (returned by GET /api/owners) */
+  totalPaidOut?: number;
+  payoutCount?: number;
+  lastPayoutAt?: string | null;
+}
+
+export interface OwnerPayout {
+  id: string;
+  ownerId: string;
+  ownerName?: string;
+  amount: number;
+  periodFrom: string;   // YYYY-MM-DD
+  periodTo: string;     // YYYY-MM-DD
+  notes?: string;
+  paidAt: string;
+  createdAt: string;
+}
+
 export interface User {
   username: string;
   role: 'admin' | 'store';

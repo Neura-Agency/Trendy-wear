@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from "react";
 import type { AppProps } from "next/app";
+import Head from "next/head";
 import "../styles/globals.css";
 import Layout from "../components/Layout";
 import { PopupProvider } from "../components/Popup";
@@ -69,7 +70,16 @@ export default function App({ Component, pageProps }: ExtendedAppProps) {
     }
   }, []);
 
-  if (!hydrated) return <div className="loading">Loading...</div>;
+  const favicon = (
+    <Head>
+      <title>Trendy Wear</title>
+      <link rel="icon" type="image/jpeg" href="/logo.jpg" />
+      <link rel="apple-touch-icon" href="/logo.jpg" />
+      <meta name="application-name" content="Trendy Wear" />
+    </Head>
+  );
+
+  if (!hydrated) return <>{favicon}<div className="loading">Loading...</div></>;
 
   const page = (
     <Component
@@ -81,13 +91,16 @@ export default function App({ Component, pageProps }: ExtendedAppProps) {
   );
 
   // Only show the full app chrome (navbar/sidebar) once authenticated.
-  if (!user) return <PopupProvider>{page}</PopupProvider>;
+  if (!user) return <>{favicon}<PopupProvider>{page}</PopupProvider></>;
 
   return (
-    <PopupProvider>
-      <Layout user={user} onLogout={onLogout}>
-        {page}
-      </Layout>
-    </PopupProvider>
+    <>
+      {favicon}
+      <PopupProvider>
+        <Layout user={user} onLogout={onLogout}>
+          {page}
+        </Layout>
+      </PopupProvider>
+    </>
   );
 }
