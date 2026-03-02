@@ -1583,7 +1583,6 @@ const [loading, setLoading] = useState<boolean>(true);
               filter="All"
               getFiltered={getFiltered}
               onPayOrders={handlePayOrders}
-              onCommissionChange={(name, v) => { refresh(); }}
               onAssignItem={(name) => router.push(`/inventory?assign=${name}`)}
               isAdmin={isAdmin}
             />
