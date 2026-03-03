@@ -990,6 +990,7 @@ const [loading, setLoading] = useState<boolean>(true);
   const [showStoreModal, setShowStoreModal] = useState<boolean>(false);
   const [showReport, setShowReport] = useState<boolean>(false);
   const [showExpenseModal, setShowExpenseModal] = useState<boolean>(false);
+  const [editingExpense, setEditingExpense] = useState<Expense | null>(null);
   const [showExpenseBreakdown, setShowExpenseBreakdown] = useState<boolean>(false);
   const [reportData, setReportData] = useState<any>(null);
   const [partnerFilter, setPartnerFilter] = useState<string>('All');
@@ -1423,6 +1424,23 @@ const [loading, setLoading] = useState<boolean>(true);
     }
   };
 
+  const handleEditExpense = async (expense: Partial<Expense> & { id?: string }) => {
+    try {
+      const res = await fetch('/api/expenses', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(expense),
+      });
+      const result = await res.json();
+      if (!res.ok) { toast.error(result.error || 'Failed to update expense'); return; }
+      toast.success('Expense updated!');
+      setEditingExpense(null);
+      refresh();
+    } catch (e: any) {
+      toast.error(e?.message || 'Failed to update expense');
+    }
+  };
+
   const handlePayOrders = async (ids: string[]) => {
     try {
       const res = await fetch('/api/orders', {
@@ -1542,7 +1560,8 @@ const [loading, setLoading] = useState<boolean>(true);
             </button>
           )}
           <button className="btn btn-secondary" onClick={() => {
-            let ordersForReport = kpiOrders;
+            // Pass dashboardOrders (all time, scope-filtered) so the modal applies its own period filter
+            let ordersForReport = dashboardOrders;
             let storesForReport = data.stores || {};
             if (!isSuperAdmin) {
               if (isAdmin) {
@@ -1550,10 +1569,10 @@ const [loading, setLoading] = useState<boolean>(true);
                 const filteredStores = {};
                 managed.forEach(name => { if (data.stores[name]) filteredStores[name] = data.stores[name]; });
                 storesForReport = filteredStores;
-                ordersForReport = kpiOrders.filter(o => managed.includes(o.storeName));
+                ordersForReport = dashboardOrders.filter(o => managed.includes(o.storeName));
               } else if (user.role === 'store') {
                 storesForReport = { [user.storeName]: data.stores[user.storeName] };
-                ordersForReport = kpiOrders.filter(o => o.storeName === user.storeName);
+                ordersForReport = dashboardOrders.filter(o => o.storeName === user.storeName);
               }
             }
             setReportData({ ...data, orders: ordersForReport, stores: storesForReport });
@@ -1713,7 +1732,8 @@ const [loading, setLoading] = useState<boolean>(true);
                           const chip = catColors[cat] || { bg: '#f1f5f9', color: '#475569' };
 
                           return (
-                            <tr key={i} style={{ borderBottom: '1px solid var(--border)', transition: 'background 0.15s' }}
+                            <tr key={i} style={{ borderBottom: '1px solid var(--border)', transition: 'background 0.15s', cursor: 'pointer' }}
+                              onClick={() => setEditingExpense(e)}
                               onMouseEnter={ev => (ev.currentTarget.style.background = 'var(--surface-2)')}
                               onMouseLeave={ev => (ev.currentTarget.style.background = 'transparent')}
                             >
@@ -1781,14 +1801,31 @@ const [loading, setLoading] = useState<boolean>(true);
           />
         )}
         {showExpenseModal && (
-          <div className="modal-overlay">
-            <div className="modal-box" style={{ maxWidth: '640px' }}>
+          <div className="modal-overlay" onClick={() => setShowExpenseModal(false)}>
+            <div className="modal-box" style={{ maxWidth: '640px' }} onClick={ev => ev.stopPropagation()}>
               <div className="modal-head" style={{ padding: '12px 20px' }}>
                 <h3 style={{ fontSize: '16px' }}>Add Expense</h3>
                 <button className="btn btn-sm" onClick={() => setShowExpenseModal(false)} style={{ border: 'none', fontSize: '16px' }}>✕</button>
               </div>
               <div className="modal-body" style={{ padding: 20 }}>
                 <AddExpenseForm onAdd={(e) => { handleAddExpense(e); setShowExpenseModal(false); }} />
+              </div>
+            </div>
+          </div>
+        )}
+        {editingExpense && (
+          <div className="modal-overlay" onClick={() => setEditingExpense(null)}>
+            <div className="modal-box" style={{ maxWidth: '640px' }} onClick={ev => ev.stopPropagation()}>
+              <div className="modal-head" style={{ padding: '12px 20px' }}>
+                <h3 style={{ fontSize: '16px' }}>Edit Expense</h3>
+                <button className="btn btn-sm" onClick={() => setEditingExpense(null)} style={{ border: 'none', fontSize: '16px' }}>✕</button>
+              </div>
+              <div className="modal-body" style={{ padding: 20 }}>
+                <AddExpenseForm
+                  key={editingExpense.id}
+                  initialData={editingExpense}
+                  onAdd={(e) => handleEditExpense(e as Partial<Expense> & { id?: string })}
+                />
               </div>
             </div>
           </div>

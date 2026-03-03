@@ -78,6 +78,44 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       })
     }
 
+    // ── PATCH — update an existing expense ──────────────────────────────
+    if (req.method === 'PATCH') {
+      if (!isSuperAdmin(session)) {
+        return res.status(403).json({ error: 'Only super-admins can edit expenses' })
+      }
+
+      const { id, title, amount, category, expense_date, notes } = req.body || {}
+      if (!id) return res.status(400).json({ error: 'Expense id is required' })
+
+      const updates: Record<string, any> = {}
+      if (title !== undefined)        updates.title        = String(title).trim()
+      if (amount !== undefined)       updates.amount       = num(amount)
+      if (category !== undefined)     updates.category     = String(category).trim()
+      if (expense_date !== undefined) updates.expense_date = expense_date
+      if (notes !== undefined)        updates.notes        = notes ?? null
+
+      const { data: updated, error } = await supabaseAdmin
+        .from(TABLES.EXPENSES)
+        .update(updates)
+        .eq('id', id)
+        .select('id, title, amount, category, expense_date, notes, created_at')
+        .single()
+
+      if (error) throw error
+
+      return res.status(200).json({
+        expense: {
+          id: updated.id,
+          title: updated.title,
+          amount: num(updated.amount),
+          category: updated.category || 'Misc',
+          expense_date: updated.expense_date ?? '',
+          notes: updated.notes ?? null,
+          created_at: updated.created_at,
+        },
+      })
+    }
+
     // ── DELETE — remove an expense ───────────────────────────────────────
     if (req.method === 'DELETE') {
       if (!isSuperAdmin(session)) {

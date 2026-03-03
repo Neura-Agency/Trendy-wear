@@ -253,16 +253,18 @@ export function AddPurchaseForm({ onAdd }: AddPurchaseFormProps) {
 
 interface AddExpenseFormProps {
   onAdd: (expense: Partial<Expense>) => void;
+  initialData?: Partial<Expense> & { id?: string };
 }
 
-export function AddExpenseForm({ onAdd }: AddExpenseFormProps) {
+export function AddExpenseForm({ onAdd, initialData }: AddExpenseFormProps) {
   const { toast } = usePopup();
+  const isEdit = Boolean(initialData?.id);
   const [formData, setFormData] = useState<Partial<Expense>>({
-    title: '',
-    category: 'Misc',
-    amount: 0,
-    expense_date: new Date().toISOString().slice(0, 10),
-    notes: ''
+    title:        initialData?.title        ?? '',
+    category:     initialData?.category     ?? 'Misc',
+    amount:       initialData?.amount       ?? 0,
+    expense_date: initialData?.expense_date ?? new Date().toISOString().slice(0, 10),
+    notes:        initialData?.notes        ?? ''
   });
 
   const handleSubmit = (e: React.FormEvent) => {
@@ -272,27 +274,17 @@ export function AddExpenseForm({ onAdd }: AddExpenseFormProps) {
     if (Number.isNaN(amount) || amount < 0) return toast.error('Amount must be a positive number');
 
     onAdd({
+      ...(isEdit ? { id: initialData!.id } : {}),
       title: String(formData.title),
       category: String(formData.category),
       amount: amount,
       expense_date: String(formData.expense_date),
       notes: formData.notes || null
     });
-
-    setFormData({
-      title: '',
-      category: 'Misc',
-      amount: 0,
-      expense_date: new Date().toISOString().slice(0, 10),
-      notes: ''
-    });
   };
 
   return (
-    <form onSubmit={handleSubmit} className="section-card" style={{ padding: 24 }}>
-      <h3 style={{ marginTop: 0, marginBottom: 20 }}>
-        Add Expense
-      </h3>
+    <form onSubmit={handleSubmit} style={{ display: 'flex', flexDirection: 'column', gap: 0 }}>
 
       <div className="input-group">
         <label>Title</label>
@@ -345,7 +337,7 @@ export function AddExpenseForm({ onAdd }: AddExpenseFormProps) {
         />
       </div>
 
-      <button type="submit" className="btn btn-primary btn-full">Save Expense</button>
+      <button type="submit" className="btn btn-primary btn-full">{isEdit ? 'Save Changes' : 'Save Expense'}</button>
     </form>
   );
 }

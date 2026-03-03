@@ -421,112 +421,532 @@ export function CreateStoreModal({ onSave, onClose }) {
     );
 }
 
-export function ReportModal({ data, onClose }) {
-    const { toast } = usePopup();
-    const Rs = (n) => "Rs " + (Number(n) || 0).toLocaleString();
+export function ReportModal({ data, onClose }: ReportModalProps) {
+    const Rs = (n: number) => 'Rs ' + Math.round(Number(n) || 0).toLocaleString('en-PK');
+    const pct = (n: number) => n.toFixed(1) + '%';
 
-    // Group analysis by month
-    const monthlyData = {};
-    data.orders.forEach(o => {
-        const month = new Date(o.date).toLocaleString('default', { month: 'long', year: 'numeric' });
-        if (!monthlyData[month]) monthlyData[month] = { sales: 0, profit: 0, commission: 0 };
-        monthlyData[month].sales += (o.sellingPrice * o.quantity);
-        monthlyData[month].profit += o.profit;
-        monthlyData[month].commission += (o.commissionAmount || 0);
+    // ── ISO week helper ──────────────────────────────────────────────────
+    function getISOWeek(d: Date): number {
+        const date = new Date(Date.UTC(d.getFullYear(), d.getMonth(), d.getDate()));
+        date.setUTCDate(date.getUTCDate() + 4 - (date.getUTCDay() || 7));
+        const yearStart = new Date(Date.UTC(date.getUTCFullYear(), 0, 1));
+        return Math.ceil(((date.getTime() - yearStart.getTime()) / 86400000 + 1) / 7);
+    }
+
+    // ── State ────────────────────────────────────────────────────────────
+    const now = new Date();
+    const [view, setView]             = useState<'products' | 'stores' | 'expenses'>('products');
+    const [periodType, setPeriodType] = useState<'all' | 'week' | 'month' | 'year'>('all');
+    const [selYear, setSelYear]       = useState(now.getFullYear());
+    const [selMonth, setSelMonth]     = useState(now.getMonth() + 1);
+    const [selWeek, setSelWeek]       = useState(getISOWeek(now));
+    const [sortKey, setSortKey]       = useState('revenue');
+    const [sortDir, setSortDir]       = useState<'asc' | 'desc'>('desc');
+
+    // ── Period filter ────────────────────────────────────────────────────
+    function inPeriod(dateStr: string): boolean {
+        if (!dateStr) return false;
+        const d = new Date(dateStr);
+        if (periodType === 'all')   return true;
+        if (periodType === 'year')  return d.getFullYear() === selYear;
+        if (periodType === 'month') return d.getFullYear() === selYear && (d.getMonth() + 1) === selMonth;
+        if (periodType === 'week')  return d.getFullYear() === selYear && getISOWeek(d) === selWeek;
+        return true;
+    }
+
+    const orders   = (data.orders   || []).filter(o => inPeriod(o.date));
+    const expenses = (data.expenses || []).filter(e => inPeriod(e.expense_date));
+
+    // ── Aggregate KPIs ───────────────────────────────────────────────────
+    const totRevenue    = orders.reduce((s, o) => s + (o.sellingPrice || 0) * (o.quantity || 0), 0);
+    const totCOGS       = orders.reduce((s, o) => s + (o.costPrice    || 0) * (o.quantity || 0), 0);
+    const totCommission = orders.reduce((s, o) => s + (o.commissionAmount || 0), 0);
+    const grossProfit   = totRevenue - totCOGS;
+    const totExpenses   = expenses.reduce((s, e) => s + (e.amount || 0), 0);
+    const netProfit     = grossProfit - totExpenses;
+
+    // ── Build product rows ───────────────────────────────────────────────
+    const prodMap: Record<string, { product: string; orders: number; qty: number; revenue: number; cogs: number; commission: number; gp: number }> = {};
+    orders.forEach(o => {
+        const k = o.productName || 'Unknown';
+        if (!prodMap[k]) prodMap[k] = { product: k, orders: 0, qty: 0, revenue: 0, cogs: 0, commission: 0, gp: 0 };
+        prodMap[k].orders++;
+        prodMap[k].qty        += o.quantity || 0;
+        prodMap[k].revenue    += (o.sellingPrice || 0) * (o.quantity || 0);
+        prodMap[k].cogs       += (o.costPrice    || 0) * (o.quantity || 0);
+        prodMap[k].commission += o.commissionAmount || 0;
+        prodMap[k].gp          = prodMap[k].revenue - prodMap[k].cogs;
     });
+    const prodRows = Object.values(prodMap);
 
-    const totalSales = data.orders.reduce((s, o) => s + (o.sellingPrice * o.quantity), 0);
-    const totalProfit = data.orders.reduce((s, o) => s + o.profit, 0);
-    const totalExpenses = data.expenses.reduce((s, e) => s + e.amount, 0);
+    // ── Build store rows ─────────────────────────────────────────────────
+    const storeMap: Record<string, { store: string; orders: number; qty: number; revenue: number; cogs: number; commission: number; netProfit: number }> = {};
+    orders.forEach(o => {
+        const k = o.storeName || 'Unknown';
+        if (!storeMap[k]) storeMap[k] = { store: k, orders: 0, qty: 0, revenue: 0, cogs: 0, commission: 0, netProfit: 0 };
+        storeMap[k].orders++;
+        storeMap[k].qty        += o.quantity || 0;
+        storeMap[k].revenue    += (o.sellingPrice    || 0) * (o.quantity || 0);
+        storeMap[k].cogs       += (o.costPrice       || 0) * (o.quantity || 0);
+        storeMap[k].commission += o.commissionAmount || 0;
+        storeMap[k].netProfit  += o.profit           || 0;
+    });
+    const storeRows = Object.values(storeMap);
+
+    // ── Expense category summary ─────────────────────────────────────────
+    const expCatMap: Record<string, number> = {};
+    expenses.forEach(e => { expCatMap[e.category || 'Misc'] = (expCatMap[e.category || 'Misc'] || 0) + (e.amount || 0); });
+    const expCatRows = Object.entries(expCatMap).map(([cat, amt]) => ({ cat, amt })).sort((a, b) => b.amt - a.amt);
+
+    // ── Sort helper ──────────────────────────────────────────────────────
+    function sorted<T extends Record<string, any>>(rows: T[]): T[] {
+        return [...rows].sort((a, b) => {
+            const va = a[sortKey] ?? 0;
+            const vb = b[sortKey] ?? 0;
+            if (typeof va === 'number') return sortDir === 'desc' ? vb - va : va - vb;
+            return sortDir === 'desc' ? String(vb).localeCompare(String(va)) : String(va).localeCompare(String(vb));
+        });
+    }
+    function toggleSort(key: string) {
+        if (sortKey === key) setSortDir(d => d === 'desc' ? 'asc' : 'desc');
+        else { setSortKey(key); setSortDir('desc'); }
+    }
+    const sortIcon = (key: string) => sortKey === key ? (sortDir === 'desc' ? ' ▼' : ' ▲') : ' ⇅';
+
+    // ── Common labels ────────────────────────────────────────────────────
+    const MONTHS = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+    const periodLabel =
+        periodType === 'all'   ? 'All Time' :
+        periodType === 'year'  ? String(selYear) :
+        periodType === 'month' ? `${MONTHS[selMonth - 1]} ${selYear}` :
+        `Week ${selWeek}, ${selYear}`;
+
+    const yearOpts = Array.from({ length: 5 }, (_, i) => now.getFullYear() - i);
+    const weekOpts = Array.from({ length: 52 }, (_, i) => i + 1);
+
+    // ── PDF export ───────────────────────────────────────────────────────
+    function handlePDF() {
+        const baseStyle = `*{box-sizing:border-box;margin:0;padding:0}body{font-family:system-ui,sans-serif;padding:24px;color:#111}
+            h1{font-size:20px;font-weight:800;margin-bottom:4px}.sub{font-size:13px;color:#6b7280;margin-bottom:20px}
+            h2{font-size:15px;font-weight:700;margin:24px 0 10px;color:#374151}
+            table{border-collapse:collapse;width:100%}
+            th{background:#f1f5f9;padding:7px 10px;border:1px solid #d1d5db;font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.4px;text-align:left}
+            td{padding:6px 10px;border:1px solid #e2e8f0;font-size:12px}
+            tr:nth-child(even) td{background:#f8fafc}
+            tfoot td{background:#e0e7ef;font-weight:700}
+            @page{size:A4 landscape;margin:12mm}`;
+
+        const kpiHtml = `<div style="display:flex;gap:12px;flex-wrap:wrap;margin-bottom:20px">
+            ${[
+                ['Revenue', Rs(totRevenue), '#7c3aed'],
+                ['Gross Profit', Rs(grossProfit), grossProfit >= 0 ? '#16a34a' : '#dc2626'],
+                ['Partner Commissions', Rs(totCommission), '#ea580c'],
+                ['Total Expenses', Rs(totExpenses), '#dc2626'],
+                ['Net Profit', Rs(netProfit), netProfit >= 0 ? '#0891b2' : '#dc2626'],
+            ].map(([l, v, c]) => `<div style="flex:1;min-width:120px;border:1px solid #e2e8f0;border-top:3px solid ${c};border-radius:8px;padding:10px 12px">
+                <div style="font-size:16px;font-weight:800;color:${c}">${v}</div>
+                <div style="font-size:10px;font-weight:600;color:#6b7280;margin-top:2px">${l}</div>
+            </div>`).join('')}
+        </div>`;
+
+        let bodyHtml = '';
+
+        if (view === 'products') {
+            const rows = sorted(prodRows) as typeof prodRows;
+            bodyHtml = `<h2>Product Performance</h2>
+            <table><thead><tr>
+                <th>#</th><th>Product</th><th>Orders</th><th>Units Sold</th>
+                <th>Revenue</th><th>COGS</th><th>Partner's Share</th><th>Gross Profit</th><th>Margin %</th>
+            </tr></thead><tbody>
+            ${rows.map((r, i) => `<tr>
+                <td>${i+1}</td><td>${r.product}</td><td>${r.orders}</td><td>${r.qty}</td>
+                <td>${Rs(r.revenue)}</td><td>${Rs(r.cogs)}</td>
+                <td style="color:#ea580c">${Rs(r.commission)}</td>
+                <td style="color:${r.gp>=0?'#16a34a':'#dc2626'}">${Rs(r.gp)}</td>
+                <td>${r.revenue>0?pct(r.gp/r.revenue*100):'—'}</td>
+            </tr>`).join('')}
+            </tbody><tfoot><tr>
+                <td></td><td>${prodRows.length} products</td><td>${orders.length}</td><td>${orders.reduce((s,o)=>s+o.quantity,0)}</td>
+                <td>${Rs(totRevenue)}</td><td>${Rs(totCOGS)}</td>
+                <td style="color:#ea580c">${Rs(totCommission)}</td>
+                <td style="color:${grossProfit>=0?'#16a34a':'#dc2626'}">${Rs(grossProfit)}</td>
+                <td>${totRevenue>0?pct(grossProfit/totRevenue*100):'—'}</td>
+            </tr></tfoot></table>`;
+
+        } else if (view === 'stores') {
+            const rows = sorted(storeRows) as typeof storeRows;
+            bodyHtml = `<h2>Store Performance</h2>
+            <table><thead><tr>
+                <th>#</th><th>Store</th><th>Orders</th><th>Units Sold</th>
+                <th>Revenue</th><th>COGS</th><th>Partner's Share</th><th>Net Profit</th>
+            </tr></thead><tbody>
+            ${rows.map((r, i) => `<tr>
+                <td>${i+1}</td><td>${r.store}</td><td>${r.orders}</td><td>${r.qty}</td>
+                <td>${Rs(r.revenue)}</td><td>${Rs(r.cogs)}</td>
+                <td style="color:#ea580c">${Rs(r.commission)}</td>
+                <td style="color:${r.netProfit>=0?'#16a34a':'#dc2626'}">${Rs(r.netProfit)}</td>
+            </tr>`).join('')}
+            </tbody><tfoot><tr>
+                <td></td><td>${storeRows.length} stores</td><td>${orders.length}</td><td>${orders.reduce((s,o)=>s+o.quantity,0)}</td>
+                <td>${Rs(totRevenue)}</td><td>${Rs(totCOGS)}</td>
+                <td style="color:#ea580c">${Rs(totCommission)}</td>
+                <td style="color:${netProfit>=0?'#16a34a':'#dc2626'}">${Rs(netProfit)}</td>
+            </tr></tfoot></table>`;
+
+        } else {
+            // expenses
+            const sortedExp = [...expenses].sort((a, b) => new Date(b.expense_date).getTime() - new Date(a.expense_date).getTime());
+            bodyHtml = `<h2>Expense Log</h2>
+            <table><thead><tr><th>#</th><th>Date</th><th>Title</th><th>Category</th><th>Amount</th><th>Notes</th></tr></thead>
+            <tbody>${sortedExp.map((e, i) => `<tr>
+                <td>${i+1}</td>
+                <td>${new Date(e.expense_date).toLocaleDateString('en-PK')}</td>
+                <td>${e.title}</td><td>${e.category||'Misc'}</td>
+                <td style="color:#dc2626;font-weight:600">${Rs(e.amount)}</td>
+                <td style="color:#6b7280">${e.notes||'—'}</td>
+            </tr>`).join('')}
+            </tbody><tfoot><tr>
+                <td></td><td></td><td>${expenses.length} entries</td><td></td>
+                <td style="color:#dc2626">${Rs(totExpenses)}</td><td></td>
+            </tr></tfoot></table>
+            <h2>By Category</h2>
+            <table><thead><tr><th>Category</th><th>Entries</th><th>Total</th><th>% of Expenses</th></tr></thead>
+            <tbody>${expCatRows.map((r, i) => `<tr>
+                <td>${r.cat}</td>
+                <td>${expenses.filter(e=>(e.category||'Misc')===r.cat).length}</td>
+                <td style="color:#dc2626;font-weight:600">${Rs(r.amt)}</td>
+                <td>${totExpenses>0?pct(r.amt/totExpenses*100):'—'}</td>
+            </tr>`).join('')}
+            </tbody><tfoot><tr><td>TOTAL</td><td>${expenses.length}</td><td style="color:#dc2626">${Rs(totExpenses)}</td><td>100%</td></tr></tfoot></table>`;
+        }
+
+        const viewTitle = view === 'products' ? 'Product Performance' : view === 'stores' ? 'Store Performance' : 'Expenses';
+        const html = `<!DOCTYPE html><html><head><title>Trendy Wear – ${viewTitle} · ${periodLabel}</title>
+        <style>${baseStyle}</style></head><body>
+        <h1>Trendy Wear — ${viewTitle} Report</h1>
+        <p class="sub">Period: ${periodLabel} &nbsp;·&nbsp; Generated: ${new Date().toLocaleDateString('en-PK',{day:'numeric',month:'long',year:'numeric'})}</p>
+        ${kpiHtml}${bodyHtml}
+        </body></html>`;
+
+        const win = window.open('', '_blank', 'width=1000,height=700');
+        if (!win) { alert('Please allow pop-ups to download the PDF'); return; }
+        win.document.write(html);
+        win.document.close();
+        win.focus();
+        setTimeout(() => { win.print(); }, 400);
+    }
+
+    // ── Shared table styles ──────────────────────────────────────────────
+    const TH = (key: string, _label: string, align: 'left' | 'right' | 'center' = 'left'): React.CSSProperties => ({
+        padding: '7px 10px', border: '1px solid #d1d5db', background: '#f1f5f9',
+        fontWeight: 700, fontSize: 11, textTransform: 'uppercase', letterSpacing: '0.4px',
+        cursor: 'pointer', userSelect: 'none', textAlign: align, whiteSpace: 'nowrap',
+        color: sortKey === key ? '#7c3aed' : '#374151',
+    });
+    const TD = (align: 'left' | 'right' | 'center' = 'left', alt = false): React.CSSProperties => ({
+        padding: '6px 10px', border: '1px solid #e2e8f0',
+        background: alt ? '#f8fafc' : '#fff', fontSize: 13, textAlign: align, whiteSpace: 'nowrap',
+    });
+    const TFoot: React.CSSProperties = {
+        padding: '6px 10px', border: '1px solid #d1d5db',
+        background: '#e0e7ef', fontWeight: 700, fontSize: 13,
+    };
 
     return (
-        <div className="modal-overlay">
-            <div className="modal-box" style={{ maxWidth: '800px', width: '90%' }}>
-                <div className="modal-head">
-                                <h3>Financial Performance Reports</h3>
-                                <div style={{ display: 'flex', gap: 8 }}>
-                                    <button className="btn btn-sm" onClick={async () => {
-                                        // Download PDF for the provided data via POST
-                                        try {
-                                            const resp = await fetch('/api/report', {
-                                                method: 'POST',
-                                                headers: { 'Content-Type': 'application/json' },
-                                                body: JSON.stringify({ orders: data.orders || [], expenses: data.expenses || [], stores: data.stores || {} })
-                                            });
-                                            if (!resp.ok) throw new Error('Failed to generate PDF');
-                                            const blob = await resp.blob();
-                                            const url = window.URL.createObjectURL(blob);
-                                            const a = document.createElement('a');
-                                            a.href = url;
-                                            a.download = `report-${new Date().toISOString().slice(0,10)}.pdf`;
-                                            document.body.appendChild(a);
-                                            a.click();
-                                            a.remove();
-                                            window.URL.revokeObjectURL(url);
-                                        } catch (e) {
-                                            console.error(e);
-                                            toast.error('Failed to download PDF');
-                                        }
-                                    }} style={{ padding: '6px 10px' }}>
-                                        ⬇️ Download PDF
-                                    </button>
-                                    <button className="btn btn-sm" onClick={onClose}>✕</button>
-                                </div>
+        <div className="modal-overlay" onClick={onClose}>
+            <div className="modal-box" style={{ maxWidth: 960, width: '95vw', maxHeight: '90vh', display: 'flex', flexDirection: 'column' }} onClick={e => e.stopPropagation()}>
+
+                {/* ── Header ── */}
+                <div className="modal-head" style={{ flexShrink: 0 }}>
+                    <h3 style={{ fontSize: 16, fontWeight: 800, margin: 0 }}>Generate Report</h3>
+                    <div style={{ display: 'flex', gap: 8 }}>
+                        <button className="btn btn-primary btn-sm" onClick={handlePDF} style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+                            Download PDF
+                        </button>
+                        <button className="btn btn-sm" onClick={onClose} style={{ border: 'none', fontSize: 18, lineHeight: 1 }}>✕</button>
+                    </div>
                 </div>
-                <div className="modal-body">
-                    <div className="report-summary" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: 16, marginBottom: 24 }}>
-                        <div style={{ padding: 16, background: 'var(--acc-soft)', borderRadius: 12 }}>
-                            <div style={{ fontSize: '12px', color: 'var(--acc)', fontWeight: 700 }}>LIFE-TIME SALES</div>
-                            <div style={{ fontSize: '20px', fontWeight: 800 }}>{Rs(totalSales)}</div>
+
+                <div className="modal-body" style={{ overflowY: 'auto', flex: 1 }}>
+
+                    {/* ── Filter bar ── */}
+                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: 12, alignItems: 'center', marginBottom: 18, padding: '10px 14px', background: 'var(--surface-2)', borderRadius: 10, border: '1px solid var(--border)' }}>
+
+                        {/* View toggle */}
+                        <div style={{ display: 'flex', border: '1px solid var(--border)', borderRadius: 8, overflow: 'hidden', flexShrink: 0 }}>
+                            {([
+                                { id: 'products', label: '📦 Products' },
+                                { id: 'stores',   label: '🏪 Stores' },
+                                { id: 'expenses', label: '💸 Expenses' },
+                            ] as const).map(v => (
+                                <button key={v.id} onClick={() => { setView(v.id); setSortKey(v.id === 'expenses' ? 'amount' : 'revenue'); setSortDir('desc'); }}
+                                    style={{ padding: '6px 14px', border: 'none', cursor: 'pointer', fontWeight: 700, fontSize: 12,
+                                        background: view === v.id ? '#7c3aed' : 'transparent',
+                                        color: view === v.id ? '#fff' : 'var(--text-muted)', transition: 'all 0.15s' }}>
+                                    {v.label}
+                                </button>
+                            ))}
                         </div>
-                        <div style={{ padding: 16, background: 'rgba(39,174,96,0.1)', borderRadius: 12 }}>
-                            <div style={{ fontSize: '12px', color: '#27ae60', fontWeight: 700 }}>GROSS PROFIT</div>
-                            <div style={{ fontSize: '20px', fontWeight: 800 }}>{Rs(totalProfit)}</div>
+
+                        <div style={{ width: 1, height: 28, background: 'var(--border)', flexShrink: 0 }} />
+
+                        {/* Period buttons */}
+                        <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap' }}>
+                            {(['all', 'week', 'month', 'year'] as const).map(t => (
+                                <button key={t} onClick={() => setPeriodType(t)}
+                                    className={`btn btn-sm ${periodType === t ? 'btn-primary' : 'btn-glass'}`}
+                                    style={{ fontSize: 12, textTransform: 'capitalize' }}>
+                                    {t === 'all' ? 'All Time' : t === 'week' ? 'Weekly' : t === 'month' ? 'Monthly' : 'Yearly'}
+                                </button>
+                            ))}
                         </div>
-                        <div style={{ padding: 16, background: 'rgba(235,87,87,0.1)', borderRadius: 12 }}>
-                            <div style={{ fontSize: '12px', color: '#eb5757', fontWeight: 700 }}>OPERATIONAL COSTS</div>
-                            <div style={{ fontSize: '20px', fontWeight: 800 }}>{Rs(totalExpenses)}</div>
-                        </div>
-                        <div style={{ padding: 16, background: 'var(--purple-soft)', borderRadius: 12 }}>
-                            <div style={{ fontSize: '12px', color: 'var(--purple)', fontWeight: 700 }}>NET BALANCE</div>
-                            <div style={{ fontSize: '20px', fontWeight: 800 }}>{Rs(totalProfit - totalExpenses)}</div>
-                        </div>
+
+                        {periodType !== 'all' && (
+                            <select value={selYear} onChange={e => setSelYear(Number(e.target.value))}
+                                style={{ height: 32, padding: '0 8px', borderRadius: 7, border: '1px solid var(--border)', fontSize: 13, cursor: 'pointer', background: 'var(--surface-1)' }}>
+                                {yearOpts.map(y => <option key={y} value={y}>{y}</option>)}
+                            </select>
+                        )}
+                        {periodType === 'month' && (
+                            <select value={selMonth} onChange={e => setSelMonth(Number(e.target.value))}
+                                style={{ height: 32, padding: '0 8px', borderRadius: 7, border: '1px solid var(--border)', fontSize: 13, cursor: 'pointer', background: 'var(--surface-1)' }}>
+                                {MONTHS.map((m, i) => <option key={i} value={i + 1}>{m}</option>)}
+                            </select>
+                        )}
+                        {periodType === 'week' && (
+                            <select value={selWeek} onChange={e => setSelWeek(Number(e.target.value))}
+                                style={{ height: 32, padding: '0 8px', borderRadius: 7, border: '1px solid var(--border)', fontSize: 13, cursor: 'pointer', background: 'var(--surface-1)' }}>
+                                {weekOpts.map(w => <option key={w} value={w}>Week {w}</option>)}
+                            </select>
+                        )}
+
+                        <span style={{ marginLeft: 'auto', fontWeight: 600, fontSize: 12, color: 'var(--text-muted)' }}>
+                            {view === 'expenses' ? `${expenses.length} entries` : `${orders.length} orders`} · {periodLabel}
+                        </span>
                     </div>
 
-                    <div className="table-wrap">
-                        <table style={{ fontSize: '0.9rem' }}>
-                            <thead>
-                                <tr>
-                                    <th>Month Period</th>
-                                    <th>Sales Generated</th>
-                                    <th>Partner Comm.</th>
-                                    <th style={{ textAlign: 'right' }}>Admin Net Profit</th>
-                                </tr>
-                            </thead>
-                            <tbody>
-                                {Object.entries(monthlyData).reverse().map(([month, vals], i) => (
-                                    <tr key={i}>
-                                        <td className="font-bold">{month}</td>
-                                        <td>{Rs((vals as any).sales)}</td>
-                                        <td style={{ color: 'var(--danger)' }}>-{Rs((vals as any).commission)}</td>
-                                        <td style={{ textAlign: 'right', fontWeight: 800, color: 'var(--success)' }}>{Rs((vals as any).profit)}</td>
+                    {/* ── KPI strip ── */}
+                    <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', marginBottom: 18 }}>
+                        {[
+                            { label: 'Revenue',           val: Rs(totRevenue),    color: '#7c3aed' },
+                            { label: 'Gross Profit',      val: Rs(grossProfit),   color: grossProfit >= 0 ? '#16a34a' : '#dc2626' },
+                            { label: 'Partner Commissions', val: Rs(totCommission), color: '#ea580c' },
+                            { label: 'Total Expenses',    val: Rs(totExpenses),   color: '#dc2626' },
+                            { label: 'Net Profit',        val: Rs(netProfit),     color: netProfit >= 0 ? '#0891b2' : '#dc2626' },
+                            { label: 'Orders',            val: String(orders.length), color: '#2563eb' },
+                        ].map(k => (
+                            <div key={k.label} style={{ flex: 1, minWidth: 110, padding: '10px 12px', border: '1px solid var(--border)', borderTop: `3px solid ${k.color}`, borderRadius: 9, background: 'var(--surface-1)' }}>
+                                <div style={{ fontSize: 16, fontWeight: 800, color: k.color }}>{k.val}</div>
+                                <div style={{ fontSize: 11, fontWeight: 600, color: 'var(--text-muted)', marginTop: 2 }}>{k.label}</div>
+                            </div>
+                        ))}
+                    </div>
+
+                    {/* ══ PRODUCTS TABLE ══ */}
+                    {view === 'products' && (
+                        <div style={{ overflowX: 'auto', borderRadius: 8, border: '1px solid #d1d5db' }}>
+                            <table style={{ borderCollapse: 'collapse', width: '100%' }}>
+                                <thead>
+                                    <tr>
+                                        <th style={{ ...TH('#','#'), width: 36, cursor: 'default' }}>#</th>
+                                        <th style={TH('product','Product Name')} onClick={() => toggleSort('product')}>Product Name{sortIcon('product')}</th>
+                                        <th style={TH('orders','Orders','right')} onClick={() => toggleSort('orders')}>Orders{sortIcon('orders')}</th>
+                                        <th style={TH('qty','Units','right')} onClick={() => toggleSort('qty')}>Units Sold{sortIcon('qty')}</th>
+                                        <th style={TH('revenue','Revenue','right')} onClick={() => toggleSort('revenue')}>Revenue{sortIcon('revenue')}</th>
+                                        <th style={TH('cogs','COGS','right')} onClick={() => toggleSort('cogs')}>COGS{sortIcon('cogs')}</th>
+                                        <th style={{ ...TH('commission','Partner\'s Share','right'), color: sortKey === 'commission' ? '#ea580c' : '#374151' }} onClick={() => toggleSort('commission')}>Partner's Share{sortIcon('commission')}</th>
+                                        <th style={TH('gp','Gross Profit','right')} onClick={() => toggleSort('gp')}>Gross Profit{sortIcon('gp')}</th>
+                                        <th style={{ ...TH('margin','Margin','right'), cursor: 'default' }}>Margin %</th>
                                     </tr>
-                                ))}
-                                {Object.keys(monthlyData).length === 0 && <tr><td colSpan={4} style={{ textAlign: 'center', padding: 40 }}>No report data available yet.</td></tr>}
-                            </tbody>
-                        </table>
-                    </div>
+                                </thead>
+                                <tbody>
+                                    {sorted(prodRows).length === 0 && (
+                                        <tr><td colSpan={9} style={{ textAlign: 'center', padding: 32, color: '#9ca3af' }}>No orders for selected period</td></tr>
+                                    )}
+                                    {sorted(prodRows).map((r, i) => (
+                                        <tr key={r.product}>
+                                            <td style={{ ...TD('center', i%2===1), color: '#9ca3af', fontSize: 12 }}>{i + 1}</td>
+                                            <td style={{ ...TD('left', i%2===1), fontWeight: 600 }}>{r.product}</td>
+                                            <td style={TD('right', i%2===1)}>{r.orders}</td>
+                                            <td style={TD('right', i%2===1)}>{r.qty}</td>
+                                            <td style={{ ...TD('right', i%2===1), fontWeight: 600 }}>{Rs(r.revenue)}</td>
+                                            <td style={TD('right', i%2===1)}>{Rs(r.cogs)}</td>
+                                            <td style={{ ...TD('right', i%2===1), color: '#ea580c', fontWeight: 600 }}>{Rs(r.commission)}</td>
+                                            <td style={{ ...TD('right', i%2===1), fontWeight: 700, color: r.gp >= 0 ? '#16a34a' : '#dc2626' }}>{Rs(r.gp)}</td>
+                                            <td style={{ ...TD('right', i%2===1), color: r.revenue > 0 && r.gp / r.revenue > 0.25 ? '#16a34a' : '#ea580c' }}>
+                                                {r.revenue > 0 ? pct(r.gp / r.revenue * 100) : '—'}
+                                            </td>
+                                        </tr>
+                                    ))}
+                                </tbody>
+                                <tfoot>
+                                    <tr>
+                                        <td style={TFoot}></td>
+                                        <td style={TFoot}>{prodRows.length} products</td>
+                                        <td style={{ ...TFoot, textAlign: 'right' }}>{orders.length}</td>
+                                        <td style={{ ...TFoot, textAlign: 'right' }}>{orders.reduce((s, o) => s + (o.quantity || 0), 0)}</td>
+                                        <td style={{ ...TFoot, textAlign: 'right' }}>{Rs(totRevenue)}</td>
+                                        <td style={{ ...TFoot, textAlign: 'right' }}>{Rs(totCOGS)}</td>
+                                        <td style={{ ...TFoot, textAlign: 'right', color: '#ea580c' }}>{Rs(totCommission)}</td>
+                                        <td style={{ ...TFoot, textAlign: 'right', color: grossProfit >= 0 ? '#16a34a' : '#dc2626' }}>{Rs(grossProfit)}</td>
+                                        <td style={{ ...TFoot, textAlign: 'right' }}>{totRevenue > 0 ? pct(grossProfit / totRevenue * 100) : '—'}</td>
+                                    </tr>
+                                </tfoot>
+                            </table>
+                        </div>
+                    )}
 
-                    <div style={{ marginTop: 24, textAlign: 'center', padding: 16, background: 'var(--surface-2)', borderRadius: 8 }}>
-                        <p style={{ fontSize: '12px', color: 'var(--text-muted)' }}>
-                            * Reports are generated based on all historical system transactions.
-                        </p>
-                    </div>
+                    {/* ══ STORES TABLE ══ */}
+                    {view === 'stores' && (
+                        <div style={{ overflowX: 'auto', borderRadius: 8, border: '1px solid #d1d5db' }}>
+                            <table style={{ borderCollapse: 'collapse', width: '100%' }}>
+                                <thead>
+                                    <tr>
+                                        <th style={{ ...TH('#','#'), width: 36, cursor: 'default' }}>#</th>
+                                        <th style={TH('store','Store')} onClick={() => toggleSort('store')}>Store{sortIcon('store')}</th>
+                                        <th style={TH('orders','Orders','right')} onClick={() => toggleSort('orders')}>Orders{sortIcon('orders')}</th>
+                                        <th style={TH('qty','Units','right')} onClick={() => toggleSort('qty')}>Units Sold{sortIcon('qty')}</th>
+                                        <th style={TH('revenue','Revenue','right')} onClick={() => toggleSort('revenue')}>Revenue{sortIcon('revenue')}</th>
+                                        <th style={TH('cogs','COGS','right')} onClick={() => toggleSort('cogs')}>COGS{sortIcon('cogs')}</th>
+                                        <th style={{ ...TH('commission','Partner\'s Share','right'), color: sortKey === 'commission' ? '#ea580c' : '#374151' }} onClick={() => toggleSort('commission')}>Partner's Share{sortIcon('commission')}</th>
+                                        <th style={TH('netProfit','Net Profit','right')} onClick={() => toggleSort('netProfit')}>Net Profit{sortIcon('netProfit')}</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    {sorted(storeRows).length === 0 && (
+                                        <tr><td colSpan={8} style={{ textAlign: 'center', padding: 32, color: '#9ca3af' }}>No orders for selected period</td></tr>
+                                    )}
+                                    {sorted(storeRows).map((r, i) => (
+                                        <tr key={r.store}>
+                                            <td style={{ ...TD('center', i%2===1), color: '#9ca3af', fontSize: 12 }}>{i + 1}</td>
+                                            <td style={{ ...TD('left', i%2===1), fontWeight: 600 }}>{r.store}</td>
+                                            <td style={TD('right', i%2===1)}>{r.orders}</td>
+                                            <td style={TD('right', i%2===1)}>{r.qty}</td>
+                                            <td style={{ ...TD('right', i%2===1), fontWeight: 600 }}>{Rs(r.revenue)}</td>
+                                            <td style={TD('right', i%2===1)}>{Rs(r.cogs)}</td>
+                                            <td style={{ ...TD('right', i%2===1), color: '#ea580c', fontWeight: 600 }}>{Rs(r.commission)}</td>
+                                            <td style={{ ...TD('right', i%2===1), fontWeight: 700, color: r.netProfit >= 0 ? '#16a34a' : '#dc2626' }}>{Rs(r.netProfit)}</td>
+                                        </tr>
+                                    ))}
+                                </tbody>
+                                <tfoot>
+                                    <tr>
+                                        <td style={TFoot}></td>
+                                        <td style={TFoot}>{storeRows.length} stores</td>
+                                        <td style={{ ...TFoot, textAlign: 'right' }}>{orders.length}</td>
+                                        <td style={{ ...TFoot, textAlign: 'right' }}>{orders.reduce((s, o) => s + (o.quantity || 0), 0)}</td>
+                                        <td style={{ ...TFoot, textAlign: 'right' }}>{Rs(totRevenue)}</td>
+                                        <td style={{ ...TFoot, textAlign: 'right' }}>{Rs(totCOGS)}</td>
+                                        <td style={{ ...TFoot, textAlign: 'right', color: '#ea580c' }}>{Rs(totCommission)}</td>
+                                        <td style={{ ...TFoot, textAlign: 'right', color: netProfit >= 0 ? '#16a34a' : '#dc2626' }}>{Rs(netProfit)}</td>
+                                    </tr>
+                                </tfoot>
+                            </table>
+                        </div>
+                    )}
+
+                    {/* ══ EXPENSES VIEW ══ */}
+                    {view === 'expenses' && (() => {
+                        const sortedExp = [...expenses].sort((a, b) => new Date(b.expense_date).getTime() - new Date(a.expense_date).getTime());
+                        return (
+                            <>
+                                {/* Expense log */}
+                                <div style={{ overflowX: 'auto', borderRadius: 8, border: '1px solid #d1d5db', marginBottom: 20 }}>
+                                    <table style={{ borderCollapse: 'collapse', width: '100%' }}>
+                                        <thead>
+                                            <tr>
+                                                <th style={{ ...TH('#','#'), width: 36, cursor: 'default' }}>#</th>
+                                                <th style={{ ...TH('expense_date','Date'), cursor: 'default' }}>Date</th>
+                                                <th style={{ ...TH('title','Title'), cursor: 'default' }}>Title</th>
+                                                <th style={{ ...TH('category','Category'), cursor: 'default' }}>Category</th>
+                                                <th style={{ ...TH('amount','Amount','right'), cursor: 'default' }}>Amount</th>
+                                                <th style={{ ...TH('notes','Notes'), cursor: 'default' }}>Notes</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody>
+                                            {sortedExp.length === 0 && (
+                                                <tr><td colSpan={6} style={{ textAlign: 'center', padding: 32, color: '#9ca3af' }}>No expenses for selected period</td></tr>
+                                            )}
+                                            {sortedExp.map((e, i) => (
+                                                <tr key={e.id}>
+                                                    <td style={{ ...TD('center', i%2===1), color: '#9ca3af', fontSize: 12 }}>{i + 1}</td>
+                                                    <td style={TD('left', i%2===1)}>{new Date(e.expense_date).toLocaleDateString('en-PK', { day: 'numeric', month: 'short', year: 'numeric' })}</td>
+                                                    <td style={{ ...TD('left', i%2===1), fontWeight: 600 }}>{e.title}</td>
+                                                    <td style={TD('left', i%2===1)}>
+                                                        <span style={{ fontSize: 11, padding: '2px 8px', borderRadius: 20, background: '#ede9fe', color: '#6d28d9', fontWeight: 600 }}>
+                                                            {e.category || 'Misc'}
+                                                        </span>
+                                                    </td>
+                                                    <td style={{ ...TD('right', i%2===1), color: '#dc2626', fontWeight: 700 }}>{Rs(e.amount)}</td>
+                                                    <td style={{ ...TD('left', i%2===1), color: '#9ca3af', fontSize: 12 }}>{e.notes || '—'}</td>
+                                                </tr>
+                                            ))}
+                                        </tbody>
+                                        <tfoot>
+                                            <tr>
+                                                <td style={TFoot}></td>
+                                                <td style={TFoot}></td>
+                                                <td style={TFoot}>{expenses.length} entries</td>
+                                                <td style={TFoot}></td>
+                                                <td style={{ ...TFoot, textAlign: 'right', color: '#dc2626' }}>{Rs(totExpenses)}</td>
+                                                <td style={TFoot}></td>
+                                            </tr>
+                                        </tfoot>
+                                    </table>
+                                </div>
+
+                                {/* Category summary */}
+                                {expCatRows.length > 0 && (
+                                    <>
+                                        <div style={{ fontWeight: 700, fontSize: 13, marginBottom: 10, color: '#374151' }}>By Category</div>
+                                        <div style={{ overflowX: 'auto', borderRadius: 8, border: '1px solid #d1d5db' }}>
+                                            <table style={{ borderCollapse: 'collapse', width: '100%' }}>
+                                                <thead>
+                                                    <tr>
+                                                        <th style={{ ...TH('cat','Category'), cursor: 'default' }}>Category</th>
+                                                        <th style={{ ...TH('count','Entries','right'), cursor: 'default' }}>Entries</th>
+                                                        <th style={{ ...TH('amt','Total','right'), cursor: 'default' }}>Total</th>
+                                                        <th style={{ ...TH('share','% Share','right'), cursor: 'default' }}>% Share</th>
+                                                    </tr>
+                                                </thead>
+                                                <tbody>
+                                                    {expCatRows.map((r, i) => (
+                                                        <tr key={r.cat}>
+                                                            <td style={{ ...TD('left', i%2===1), fontWeight: 600 }}>{r.cat}</td>
+                                                            <td style={TD('right', i%2===1)}>{expenses.filter(e => (e.category || 'Misc') === r.cat).length}</td>
+                                                            <td style={{ ...TD('right', i%2===1), color: '#dc2626', fontWeight: 700 }}>{Rs(r.amt)}</td>
+                                                            <td style={TD('right', i%2===1)}>{totExpenses > 0 ? pct(r.amt / totExpenses * 100) : '—'}</td>
+                                                        </tr>
+                                                    ))}
+                                                </tbody>
+                                                <tfoot>
+                                                    <tr>
+                                                        <td style={TFoot}>TOTAL</td>
+                                                        <td style={{ ...TFoot, textAlign: 'right' }}>{expenses.length}</td>
+                                                        <td style={{ ...TFoot, textAlign: 'right', color: '#dc2626' }}>{Rs(totExpenses)}</td>
+                                                        <td style={{ ...TFoot, textAlign: 'right' }}>100%</td>
+                                                    </tr>
+                                                </tfoot>
+                                            </table>
+                                        </div>
+                                    </>
+                                )}
+                            </>
+                        );
+                    })()}
+
+                    <p style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 12, textAlign: 'center' }}>
+                        Click column headers to sort · "Download PDF" opens a print-ready page in a new tab
+                    </p>
                 </div>
             </div>
         </div>
     );
 }
+
+
+
 
 export function AddInventoryModal({ onSave, onClose, stores, products }: AddInventoryModalProps) {
     const { toast } = usePopup();
