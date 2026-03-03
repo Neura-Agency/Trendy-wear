@@ -121,6 +121,8 @@ export interface StoreInventoryItem {
   storeSellingPrice: number;
   quantityAssigned: number;
   quantityRemaining: number;
+  extraQty?: number;    // gift / display units allotted (not sold, expensed at cost)
+  storeName?: string;   // populated when flattened out of the Record
   owner?: string;
 }
 
@@ -234,5 +236,6 @@ export interface AllotToStoreModalProps extends ModalProps {
     quantity: number;
     ownerSupplyPrice: number;
     commissionPercent: number;
+    extraQty: number;
   }) => void;
 }

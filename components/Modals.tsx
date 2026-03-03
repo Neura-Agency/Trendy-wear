@@ -3,7 +3,7 @@ import { usePopup } from './Popup';
 import Badge from './Badge';
 import { SaleModalProps, CreateStoreModalProps, ReportModalProps, AddInventoryModalProps, AllotToStoreModalProps, InventoryItem, Order, Product, Store, Expense } from '../types';
 
-type SaleInventoryItem = Pick<InventoryItem, 'productName' | 'quantityAvailable' | 'sellingPrice'>;
+type SaleInventoryItem = Pick<InventoryItem, 'productName' | 'quantityAvailable' | 'sellingPrice'> & { ownerSupplyPrice?: number };
 
 interface SaleModalPropsLocal {
     inventory: SaleInventoryItem[];
@@ -121,6 +121,7 @@ export function EditStoreInventoryModal({ item, storeNames, onSave, onClose }: {
 }
 
 export function SaleModal({ inventory, storeName, isAdmin, storeNames, onAdd, onClose }: SaleModalPropsLocal) {
+    const { toast } = usePopup();
     const todayIso = new Date().toISOString().slice(0, 10);
     const [sale, setSale] = useState<any>({
         productName: '',
@@ -142,6 +143,11 @@ export function SaleModal({ inventory, storeName, isAdmin, storeNames, onAdd, on
     const handleSubmit = (e: React.FormEvent) => {
         e.preventDefault();
         const finalPrice = currency === 'GBP' ? sale.sellingPrice * gbpRate : sale.sellingPrice;
+        if (!isAdmin && selectedItem?.ownerSupplyPrice) {
+            if (finalPrice < selectedItem.ownerSupplyPrice) {
+                return toast.error(`Selling price cannot be less than the supply price (Rs ${selectedItem.ownerSupplyPrice.toLocaleString()})`);
+            }
+        }
         onAdd({
             ...sale,
             type: 'Sale',
@@ -213,6 +219,7 @@ export function SaleModal({ inventory, storeName, isAdmin, storeNames, onAdd, on
                                 />
                             </div>
 
+                            {isAdmin && (
                             <div className="input-group">
                                 <label>Extra Qty <span style={{ fontSize: '10px', fontWeight: 400, color: '#8c8c8c' }}>(free / bonus)</span></label>
                                 <input
@@ -222,6 +229,7 @@ export function SaleModal({ inventory, storeName, isAdmin, storeNames, onAdd, on
                                     onChange={e => setSale({ ...sale, extraQty: parseInt(e.target.value) || 0 })}
                                 />
                             </div>
+                            )}
 
                             <div className="input-group">
                                 <label>Selling Price ({currency})</label>
@@ -232,6 +240,11 @@ export function SaleModal({ inventory, storeName, isAdmin, storeNames, onAdd, on
                                     onChange={e => setSale({ ...sale, sellingPrice: parseFloat(e.target.value) || 0 })}
                                     style={{ fontWeight: 700 }}
                                 />
+                                {!isAdmin && selectedItem?.ownerSupplyPrice ? (
+                                    <div style={{ fontSize: 11, marginTop: 4, fontWeight: 600, color: currentPriceInPKR < selectedItem.ownerSupplyPrice ? 'var(--danger)' : 'var(--success)' }}>
+                                        Min: Rs {selectedItem.ownerSupplyPrice.toLocaleString()} (supply price)
+                                    </div>
+                                ) : null}
                                 {currency === 'GBP' && (
                                     <div style={{ fontSize: '10px', color: 'var(--success)', marginTop: 4, fontWeight: 600 }}>
                                         ≈ Rs {currentPriceInPKR.toLocaleString()} (Rate: {gbpRate})
@@ -894,6 +907,7 @@ export function AllotToStoreModal({ onSave, onClose, stores, inventory, allotedQ
         quantity: 1,
         ownerSupplyPrice: 0,
         commissionPercent: 0,
+        extraQty: 0,
     });
 
     const selectedInv = (inventory || []).find(i => i.batchNumber === form.batchNumber);
@@ -927,7 +941,12 @@ export function AllotToStoreModal({ onSave, onClose, stores, inventory, allotedQ
         if (!form.storeName) return toast.error('Select store');
         if (!form.batchNumber) return toast.error('Select item');
         if (!form.quantity || form.quantity < 1) return toast.error('Enter quantity');
-        if (form.quantity > maxQty) return toast.error(`Quantity cannot be more than ${maxQty}`);
+        const extraQty = Number(form.extraQty) || 0;
+        if (form.quantity + extraQty > maxQty) return toast.error(`Total (qty + extra) cannot exceed available stock (${maxQty})`);
+        const warehouseCost = Number(selectedInv?.costPrice) || 0;
+        if (warehouseCost > 0 && Number(form.ownerSupplyPrice) < warehouseCost) {
+            return toast.error(`New price cannot be less than warehouse cost (Rs ${warehouseCost.toLocaleString()})`);
+        }
 
         onSave({
             storeName: form.storeName,
@@ -935,6 +954,7 @@ export function AllotToStoreModal({ onSave, onClose, stores, inventory, allotedQ
             quantity: Number(form.quantity),
             ownerSupplyPrice: Number(form.ownerSupplyPrice) || 0,
             commissionPercent: Number(form.commissionPercent) || 0,
+            extraQty,
         });
         onClose();
     };
@@ -1002,7 +1022,13 @@ export function AllotToStoreModal({ onSave, onClose, stores, inventory, allotedQ
                                     value={form.ownerSupplyPrice}
                                     onChange={(e) => setForm({ ...form, ownerSupplyPrice: parseFloat(e.target.value) || 0 })}
                                     required
+                                    style={{ borderColor: (Number(selectedInv?.costPrice) > 0 && Number(form.ownerSupplyPrice) < Number(selectedInv?.costPrice)) ? 'var(--danger)' : undefined }}
                                 />
+                                {Number(selectedInv?.costPrice) > 0 && (
+                                    <div style={{ fontSize: 11, marginTop: 4, fontWeight: 600, color: Number(form.ownerSupplyPrice) < Number(selectedInv?.costPrice) ? 'var(--danger)' : 'var(--text-muted)' }}>
+                                        Min: Rs {Number(selectedInv?.costPrice).toLocaleString()} (warehouse cost)
+                                    </div>
+                                )}
                             </div>
                             <div className="input-group">
                                 <label>Partner Commission %</label>
@@ -1013,6 +1039,26 @@ export function AllotToStoreModal({ onSave, onClose, stores, inventory, allotedQ
                                     onChange={(e) => setForm({ ...form, commissionPercent: parseFloat(e.target.value) || 0 })}
                                     required
                                 />
+                            </div>
+                        </div>
+
+                        <div className="form-grid-2" style={{ marginBottom: 18 }}>
+                            <div className="input-group">
+                                <label>
+                                    Extra Qty <span style={{ fontSize: '10px', fontWeight: 400, color: '#8c8c8c' }}>(gift / display — expensed at cost)</span>
+                                </label>
+                                <input
+                                    type="text"
+                                    inputMode="numeric"
+                                    value={form.extraQty}
+                                    onChange={(e) => setForm({ ...form, extraQty: parseInt(e.target.value) || 0 })}
+                                    placeholder="0"
+                                />
+                                {Number(form.extraQty) > 0 && Number(selectedInv?.costPrice) > 0 && (
+                                    <div style={{ fontSize: 11, marginTop: 4, fontWeight: 600, color: 'var(--danger)' }}>
+                                        Will expense: Rs {(Number(form.extraQty) * Number(selectedInv?.costPrice)).toLocaleString()} (cost price)
+                                    </div>
+                                )}
                             </div>
                         </div>
 

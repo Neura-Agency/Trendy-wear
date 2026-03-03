@@ -561,7 +561,7 @@ function InlineCommEdit({ value, onSave }) {
   if (!editing) return (
     <span
       className="inline-edit-trigger"
-      onClick={() => setEditing(true)}
+      onClick={(e) => { e.stopPropagation(); setEditing(true); }}
       style={{
         cursor: 'pointer',
         color: 'var(--acc)',
@@ -579,7 +579,7 @@ function InlineCommEdit({ value, onSave }) {
   );
 
   return (
-    <div className="inline-edit-box" style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+    <div className="inline-edit-box" style={{ display: 'flex', alignItems: 'center', gap: 4 }} onClick={e => e.stopPropagation()}>
       <input
         type="text"
         inputMode="numeric"
@@ -1754,6 +1754,7 @@ const [loading, setLoading] = useState<boolean>(true);
                         productName: si.productName,
                         quantityAvailable: si.quantityRemaining,
                         sellingPrice: si.storeSellingPrice,
+                        ownerSupplyPrice: si.ownerSupplyPrice,
                       }))
                     )
                 : user.role === 'store'
@@ -1761,6 +1762,7 @@ const [loading, setLoading] = useState<boolean>(true);
                       productName: si.productName,
                       quantityAvailable: si.quantityRemaining,
                       sellingPrice: si.storeSellingPrice,
+                      ownerSupplyPrice: si.ownerSupplyPrice,
                     }))
                   : data.inventory
             }

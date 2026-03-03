@@ -522,6 +522,64 @@ export default function InventoryPage({ user, onLogin }: PageProps) {
                     </div>
                 </SectionCard>
 
+                {isSuperAdmin && (() => {
+                    const extras: Array<{ storeName: string; productName: string; extraQty: number; date: string; costPerPc: number }> = [];
+                    Object.entries(data.storeInventory || {}).forEach(([sName, items]) => {
+                        Object.values(items).forEach((si: any) => {
+                            if ((si.extraQty || 0) > 0) {
+                                const inv = data.inventory.find(i => i.id === si.inventoryId);
+                                extras.push({
+                                    storeName: sName,
+                                    productName: si.productName,
+                                    extraQty: si.extraQty,
+                                    date: si.created_at ? new Date(si.created_at).toLocaleDateString() : '—',
+                                    costPerPc: inv?.costPrice || 0,
+                                });
+                            }
+                        });
+                    });
+                    if (extras.length === 0) return null;
+                    const totalExtraCost = extras.reduce((acc, e) => acc + e.extraQty * e.costPerPc, 0);
+                    return (
+                        <SectionCard
+                            title="Store Gifts & Extras"
+                            icon={<svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d="M20 12v10H4V12"/><rect x="2" y="7" width="20" height="5"/><path d="M12 22V7"/><path d="M12 7H7.5a2.5 2.5 0 0 1 0-5C11 2 12 7 12 7z"/><path d="M12 7h4.5a2.5 2.5 0 0 0 0-5C13 2 12 7 12 7z"/></svg>}
+                        >
+                            <div className="table-wrap">
+                                <table>
+                                    <thead>
+                                        <tr>
+                                            <th>Date</th>
+                                            <th>Store</th>
+                                            <th>Product</th>
+                                            <th>Extra Qty</th>
+                                            <th>Cost/PC</th>
+                                            <th>Total Cost</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        {extras.map((e, i) => (
+                                            <tr key={i}>
+                                                <td className="text-muted" style={{ fontSize: '0.75rem' }}>{e.date}</td>
+                                                <td className="font-bold" style={{ color: 'var(--pri-700)' }}>{e.storeName}</td>
+                                                <td className="font-bold">{e.productName}</td>
+                                                <td><Badge type="orange">{e.extraQty}</Badge></td>
+                                                <td className="text-muted">{e.costPerPc ? `Rs ${e.costPerPc.toLocaleString()}` : '—'}</td>
+                                                <td className="font-bold" style={{ color: 'var(--danger)' }}>
+                                                    {e.costPerPc ? `Rs ${(e.extraQty * e.costPerPc).toLocaleString()}` : '—'}
+                                                </td>
+                                            </tr>
+                                        ))}
+                                    </tbody>
+                                </table>
+                            </div>
+                            <div style={{ marginTop: 10, padding: '8px 12px', background: 'var(--surface-2)', borderRadius: 8, fontWeight: 700, color: 'var(--danger)' }}>
+                                Total gifted cost: Rs {totalExtraCost.toLocaleString()}
+                            </div>
+                        </SectionCard>
+                    );
+                })()}
+
                 {showAddInventoryModal && (
                     <AddInventoryModal 
                         stores={Object.keys(data.stores)} 
@@ -537,7 +595,7 @@ export default function InventoryPage({ user, onLogin }: PageProps) {
                         inventory={data.inventory}
                         allotedQtyByProduct={allotedQtyByProduct}
                         storeCommissionByName={storeCommissionByName}
-                        onSave={async ({ storeName, batchNumber, quantity, ownerSupplyPrice, commissionPercent }) => {
+                        onSave={async ({ storeName, batchNumber, quantity, ownerSupplyPrice, commissionPercent, extraQty }) => {
                             try {
                                 const resp = await fetch('/api/storeInventory', {
                                     method: 'POST',
@@ -548,6 +606,7 @@ export default function InventoryPage({ user, onLogin }: PageProps) {
                                         quantity,
                                         ownerSupplyPrice,
                                         commissionPercent,
+                                        extraQty: extraQty || 0,
                                     })
                                 })
                                 const json = await resp.json()
