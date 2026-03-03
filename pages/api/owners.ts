@@ -39,6 +39,33 @@ function mapPayout(row: any) {
   }
 }
 
+/**
+ * Fetch all active owners and set each one to 100 / n equally.
+ * The last owner absorbs any rounding remainder so the sum is always exactly 100.
+ */
+async function redistributeEqually() {
+  const { data: active } = await supabaseAdmin
+    .from(TABLES.OWNERS)
+    .select('id')
+    .eq('is_active', true)
+    .order('created_at', { ascending: true })
+
+  const list = active || []
+  if (list.length === 0) return
+
+  const base = Math.floor((100 / list.length) * 100) / 100
+  let assigned = 0
+  for (let i = 0; i < list.length; i++) {
+    const isLast = i === list.length - 1
+    const pct = isLast ? Math.round((100 - assigned) * 100) / 100 : base
+    assigned += pct
+    await supabaseAdmin
+      .from(TABLES.OWNERS)
+      .update({ profit_share_percent: pct })
+      .eq('id', list[i].id)
+  }
+}
+
 // ─── handler ──────────────────────────────────────────────────────────
 export default async function handler(req: NextApiRequest, res: NextApiResponse) {
   try {
@@ -125,7 +152,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       }
 
       // Create owner
-      const { name, phone, email, profitSharePercent, notes } = req.body || {}
+      const { name, phone, email, notes } = req.body || {}
       if (!name) return res.status(400).json({ error: 'name is required' })
 
       const { data, error } = await supabaseAdmin
@@ -134,7 +161,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
           name: String(name),
           phone: phone ? String(phone) : null,
           email: email ? String(email) : null,
-          profit_share_percent: num(profitSharePercent),
+          profit_share_percent: 0,
           notes: notes ? String(notes) : null,
         })
         .select('*')
@@ -145,6 +172,10 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
         console.error('owners POST error:', error)
         return res.status(500).json({ error: 'Failed to create owner' })
       }
+
+      // Redistribute equally among all active owners (including the new one)
+      await redistributeEqually()
+
       return res.status(201).json({ owner: mapOwner(data) })
     }
 
@@ -180,7 +211,6 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       if (fields?.name !== undefined) allowed.name = String(fields.name)
       if (fields?.phone !== undefined) allowed.phone = fields.phone ?? null
       if (fields?.email !== undefined) allowed.email = fields.email ?? null
-      if (fields?.profitSharePercent !== undefined) allowed.profit_share_percent = num(fields.profitSharePercent)
       if (fields?.notes !== undefined) allowed.notes = fields.notes ?? null
       if (fields?.isActive !== undefined) allowed.is_active = Boolean(fields.isActive)
 
@@ -192,6 +222,12 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
         .single()
 
       if (error) return res.status(500).json({ error: 'Failed to update owner' })
+
+      // If toggling active status, redistribute shares equally
+      if (allowed.is_active !== undefined) {
+        await redistributeEqually()
+      }
+
       return res.json({ owner: mapOwner(data) })
     }
 
@@ -217,6 +253,10 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
         .update({ is_active: false })
         .eq('id', String(id))
       if (error) return res.status(500).json({ error: 'Failed to deactivate owner' })
+
+      // Redistribute equally among the remaining active owners
+      await redistributeEqually()
+
       return res.json({ success: true })
     }
 

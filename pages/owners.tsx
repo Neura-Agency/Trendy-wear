@@ -35,7 +35,6 @@ function OwnerFormModal({
     name: owner?.name ?? '',
     phone: owner?.phone ?? '',
     email: owner?.email ?? '',
-    profitSharePercent: owner?.profitSharePercent ?? 0,
     notes: owner?.notes ?? '',
   });
   const [saving, setSaving] = useState(false);
@@ -50,8 +49,8 @@ function OwnerFormModal({
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(
           editing
-            ? { id: owner!.id, fields: { ...form, profitSharePercent: Number(form.profitSharePercent) } }
-            : { ...form, profitSharePercent: Number(form.profitSharePercent) }
+            ? { id: owner!.id, fields: { ...form } }
+            : { ...form }
         ),
       });
       const d = await res.json();
@@ -88,19 +87,6 @@ function OwnerFormModal({
                 <label>Email</label>
                 <input type="email" value={form.email} onChange={e => setForm(p => ({ ...p, email: e.target.value }))} placeholder="owner@email.com" />
               </div>
-            </div>
-            <div className="input-group">
-              <label>Profit Share % *</label>
-              <input
-                type="text"
-                inputMode="decimal"
-                value={form.profitSharePercent}
-                onChange={e => setForm(p => ({ ...p, profitSharePercent: Number(e.target.value) }))}
-                required
-              />
-              <span style={{ fontSize: 12, color: 'var(--text-muted)', marginTop: 4, display: 'block' }}>
-                All active owners' shares should sum to 100 %.
-              </span>
             </div>
             <div className="input-group">
               <label>Notes</label>
@@ -303,7 +289,7 @@ export default function OwnersPage({ user, onLogin }: PageProps) {
 
   // ── Handlers ──────────────────────────────────────────────────────────
   const handleDeactivate = async (owner: Owner) => {
-    const confirmed = await confirmDialog(`Deactivate "${owner.name}"? They will be removed from profit splits.`);
+    const confirmed = await confirmDialog(`Deactivate "${owner.name}"? Their share will be split equally among the remaining active partners.`);
     if (!confirmed) return;
     try {
       const res = await fetch('/api/owners', {
@@ -313,7 +299,25 @@ export default function OwnersPage({ user, onLogin }: PageProps) {
       });
       const d = await res.json();
       if (!res.ok) throw new Error(d.error || 'Failed');
-      toast.success(`${owner.name} deactivated`);
+      toast.success(`${owner.name} deactivated and share redistributed`);
+      refresh();
+    } catch (err: any) {
+      toast.error(err.message);
+    }
+  };
+
+  const handleReactivate = async (owner: Owner) => {
+    const confirmed = await confirmDialog(`Reactivate "${owner.name}"? All active partners' shares will be split equally.`);
+    if (!confirmed) return;
+    try {
+      const res = await fetch('/api/owners', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ id: owner.id, fields: { isActive: true } }),
+      });
+      const d = await res.json();
+      if (!res.ok) throw new Error(d.error || 'Failed');
+      toast.success(`${owner.name} reactivated`);
       refresh();
     } catch (err: any) {
       toast.error(err.message);
@@ -545,7 +549,7 @@ export default function OwnersPage({ user, onLogin }: PageProps) {
                       >
                         {isExpanded ? '▲' : '▼'} {ownerHistory.length}
                       </button>
-                      {owner.isActive && (
+                      {owner.isActive ? (
                         <button
                           className="btn btn-secondary btn-sm"
                           style={{ color: 'var(--red-500, #ef4444)' }}
@@ -553,6 +557,15 @@ export default function OwnersPage({ user, onLogin }: PageProps) {
                           title="Deactivate"
                         >
                           ✕
+                        </button>
+                      ) : (
+                        <button
+                          className="btn btn-secondary btn-sm"
+                          style={{ color: 'var(--success)' }}
+                          onClick={() => handleReactivate(owner)}
+                          title="Reactivate"
+                        >
+                          ✓ Reactivate
                         </button>
                       )}
                     </div>
