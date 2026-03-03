@@ -30,20 +30,113 @@ export default function Layout({ children, user, onLogout }: LayoutProps) {
         setMobileNavOpen(false);
       }
     };
-    window.addEventListener('resize', handleResize);
-    return () => window.removeEventListener('resize', handleResize);
+    window.addEventListener("resize", handleResize);
+    return () => window.removeEventListener("resize", handleResize);
   }, []);
 
   // Clean mono-color SVG icons (currentColor inherits nav text color)
-  const iconDashboard = <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="3" width="7" height="9" rx="1"/><rect x="14" y="3" width="7" height="5" rx="1"/><rect x="14" y="12" width="7" height="9" rx="1"/><rect x="3" y="16" width="7" height="5" rx="1"/></svg>;
-  const iconInventory = <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d="M21 8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16Z"/><path d="m3.3 7 8.7 5 8.7-5"/><path d="M12 22V12"/></svg>;
-  const iconCredentials = <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><circle cx="7.5" cy="15.5" r="5.5"/><path d="m11.5 11.5 4-4"/><path d="m15 8 2.5 2.5"/><path d="m18 5 2.5 2.5"/></svg>;
-  const iconDirectSales = <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d="M6 2 3 6v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V6l-3-4Z"/><path d="M3 6h18"/><path d="M16 10a4 4 0 0 1-8 0"/></svg>;
-  const iconOwners  = <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>;
-  const iconReports = <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d="M15 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7Z"/><path d="M14 2v4a2 2 0 0 0 2 2h4"/><line x1="9" y1="12" x2="15" y2="12"/><line x1="9" y1="16" x2="15" y2="16"/></svg>;
+  const iconDashboard = (
+    <svg
+      xmlns="http://www.w3.org/2000/svg"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="1.8"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+    >
+      <rect x="3" y="3" width="7" height="9" rx="1" />
+      <rect x="14" y="3" width="7" height="5" rx="1" />
+      <rect x="14" y="12" width="7" height="9" rx="1" />
+      <rect x="3" y="16" width="7" height="5" rx="1" />
+    </svg>
+  );
+  const iconInventory = (
+    <svg
+      xmlns="http://www.w3.org/2000/svg"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="1.8"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+    >
+      <path d="M21 8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16Z" />
+      <path d="m3.3 7 8.7 5 8.7-5" />
+      <path d="M12 22V12" />
+    </svg>
+  );
+  const iconCredentials = (
+    <svg
+      xmlns="http://www.w3.org/2000/svg"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="1.8"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+    >
+      <circle cx="7.5" cy="15.5" r="5.5" />
+      <path d="m11.5 11.5 4-4" />
+      <path d="m15 8 2.5 2.5" />
+      <path d="m18 5 2.5 2.5" />
+    </svg>
+  );
+  const iconDirectSales = (
+    <svg
+      xmlns="http://www.w3.org/2000/svg"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="1.8"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+    >
+      <path d="M6 2 3 6v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V6l-3-4Z" />
+      <path d="M3 6h18" />
+      <path d="M16 10a4 4 0 0 1-8 0" />
+    </svg>
+  );
+  const iconOwners = (
+    <svg
+      xmlns="http://www.w3.org/2000/svg"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="1.8"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+    >
+      <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2" />
+      <circle cx="9" cy="7" r="4" />
+      <path d="M23 21v-2a4 4 0 0 0-3-3.87" />
+      <path d="M16 3.13a4 4 0 0 1 0 7.75" />
+    </svg>
+  );
+  const iconReports = (
+    <svg
+      xmlns="http://www.w3.org/2000/svg"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="1.8"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+    >
+      <path d="M15 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7Z" />
+      <path d="M14 2v4a2 2 0 0 0 2 2h4" />
+      <line x1="9" y1="12" x2="15" y2="12" />
+      <line x1="9" y1="16" x2="15" y2="16" />
+    </svg>
+  );
 
   const navItems: NavItem[] = [
-    { id: "home", icon: iconDashboard as any, label: "Main Dashboard", path: "/" },
+    {
+      id: "home",
+      icon: iconDashboard as any,
+      label: "Main Dashboard",
+      path: "/",
+    },
     {
       id: "inventory",
       icon: iconInventory as any,
@@ -81,7 +174,8 @@ export default function Layout({ children, user, onLogout }: LayoutProps) {
   ];
 
   const filteredNavItems = navItems.filter((item) => {
-    if (item.superAdminOnly) return user?.role === "admin" && user?.scope === "all";
+    if (item.superAdminOnly)
+      return user?.role === "admin" && user?.scope === "all";
     if (item.adminOnly) return user?.role === "admin";
     return true;
   });
@@ -89,20 +183,30 @@ export default function Layout({ children, user, onLogout }: LayoutProps) {
   return (
     <div className="page-wrap">
       {/* ── MOBILE OVERLAY ── */}
-      <div 
-        className={`mobile-overlay ${mobileNavOpen ? 'show' : ''}`} 
+      <div
+        className={`mobile-overlay ${mobileNavOpen ? "show" : ""}`}
         onClick={() => setMobileNavOpen(false)}
       />
 
       {/* ── TOP BAR ── */}
       <header className="topbar">
         {/* Mobile hamburger button */}
-        <button 
+        <button
           className="mobile-menu-btn"
-          onClick={() => setMobileNavOpen(v => !v)}
+          onClick={() => setMobileNavOpen((v) => !v)}
           aria-label="Toggle navigation menu"
         >
-          <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+          <svg
+            xmlns="http://www.w3.org/2000/svg"
+            width="20"
+            height="20"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="2"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+          >
             {mobileNavOpen ? (
               <>
                 <line x1="18" y1="6" x2="6" y2="18" />
@@ -129,18 +233,40 @@ export default function Layout({ children, user, onLogout }: LayoutProps) {
                 {user?.role === "admin" ? "Super Admin" : "Shop Manager"}
               </span>
             </div>
-            <span className={`chevron ${showMenu ? 'open' : ''}`} style={{ fontSize: '10px', marginLeft: '4px' }}>▼</span>
+            <span
+              className={`chevron ${showMenu ? "open" : ""}`}
+              style={{ fontSize: "10px", marginLeft: "4px" }}
+            >
+              ▼
+            </span>
           </div>
 
           {/* dropdown menu */}
-          <div className={`user-menu ${showMenu ? 'show' : ''}`}>
+          <div className={`user-menu ${showMenu ? "show" : ""}`}>
             <div className="menu-header">
               <strong>{user?.username}</strong>
-              <span>{user?.role === "admin" ? "Super Admin" : "Shop Manager"}</span>
+              <span>
+                {user?.role === "admin" ? "Super Admin" : "Shop Manager"}
+              </span>
             </div>
             <div className="menu-divider"></div>
             <button className="menu-item logout" onClick={onLogout}>
-              <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ marginRight: 8 }}><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" x2="9" y1="12" y2="12"/></svg>
+              <svg
+                xmlns="http://www.w3.org/2000/svg"
+                width="16"
+                height="16"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="2"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                style={{ marginRight: 8 }}
+              >
+                <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4" />
+                <polyline points="16 17 21 12 16 7" />
+                <line x1="21" x2="9" y1="12" y2="12" />
+              </svg>
               Logout
             </button>
           </div>
@@ -149,9 +275,23 @@ export default function Layout({ children, user, onLogout }: LayoutProps) {
 
       <div className="page-body">
         {/* ── SIDEBAR ── */}
-        <nav className={`sidebar ${mobileNavOpen ? 'mobile-open' : ''}`}>
-          <div className="sidebar-brand">
-            <img src="/logo.jpg" alt="Trendy Wear" className="brand-logo" />
+        <nav className={`sidebar ${mobileNavOpen ? "mobile-open" : ""}`}>
+          <div
+            className="sidebar-brand"
+            style={{ display: "flex", alignItems: "center", gap: "12px" }}
+          >
+            <img
+              style={{ backgroundColor: "transparent !important", width: 40, height: 40, objectFit: "cover" }}
+              src="/logo.jpg"
+              alt="Trendy Wear"
+              className="brand-logo"
+            />
+            <div
+              className="brand-text"
+              style={{ color: "white", fontWeight: 800, fontSize: "16px", letterSpacing: "0.5px" }}
+            >
+              Trendy Wear
+            </div>
           </div>
           <div
             style={{
@@ -174,9 +314,7 @@ export default function Layout({ children, user, onLogout }: LayoutProps) {
                 style={{ textDecoration: "none" }}
                 onClick={() => setMobileNavOpen(false)}
               >
-                <span className="nav-icon">
-                  {item.icon}
-                </span>
+                <span className="nav-icon">{item.icon}</span>
                 <span className="nav-label">{item.label}</span>
               </Link>
             ))}

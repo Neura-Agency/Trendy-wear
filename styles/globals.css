@@ -232,7 +232,7 @@ h1, h2, h3, h4 {
   height: 38px;
   border-radius: 8px;
   object-fit: contain;
-  filter: brightness(0) invert(1);
+  /* filter: brightness(0) invert(1); */
 }
 
 .topbar-right {
@@ -397,6 +397,25 @@ h1, h2, h3, h4 {
   cursor: pointer;
   user-select: none;
   border-radius: var(--radius-lg) var(--radius-lg) 0 0;
+}
+
+/* Brand text next to logo (uses Pacifico to match logo-style text) */
+.brand-text {
+  font-family: 'Latin', cursive;
+  color: #ffffff;
+  font-size: 18px;
+  line-height: 1;
+  font-weight: 400;
+  letter-spacing: 0.4px;
+  white-space: nowrap;
+}
+
+/* Sidebar-specific logo sizing */
+.sidebar .brand-logo {
+  width: 40px;
+  height: 40px;
+  border-radius: 8px;
+  object-fit: cover;
 }
 
 .section-head-left {
@@ -2056,7 +2075,7 @@ input::placeholder {
 }
 
 /* -----------------------------------------------------------
-   PRINT / PDF STYLES — Reports page
+   PRINT / PDF STYLES ï¿½ Reports page
 ------------------------------------------------------------ */
 @media print {
   /* Hide all navigation and interactive chrome */

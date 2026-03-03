@@ -85,6 +85,7 @@ export default function App({ Component, pageProps }: ExtendedAppProps) {
       <title>Trendy Wear</title>
       <link rel="icon" type="image/jpeg" href="/logo.jpg" />
       <link rel="apple-touch-icon" href="/logo.jpg" />
+      <link href="https://fonts.googleapis.com/css2?family=Pacifico&display=swap" rel="stylesheet" />
       <meta name="application-name" content="Trendy Wear" />
     </Head>
   );
