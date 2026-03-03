@@ -334,7 +334,7 @@ export default function DirectSalesPage({ user, onLogin }: PageProps) {
             sellingPrice: item.sellingPrice ?? 0,
           }))}
           storeName="Direct"
-          isAdmin={true}
+          isAdmin={false}
           storeNames={["Direct"]}
           onAdd={handleAddOrder}
           onClose={() => setShowSaleModal(false)}

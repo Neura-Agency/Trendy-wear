@@ -27,6 +27,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
           store_selling_price,
           quantity_assigned,
           quantity_remaining,
+          "extra_Qty",
           created_at,
           updated_at,
           stores:store_id ( name ),
@@ -80,6 +81,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
           storeSellingPrice: num(row.store_selling_price),
           quantityAssigned: qtyAssigned,
           quantityRemaining: qtyRemaining,
+          extraQty: num(row['extra_Qty'] ?? 0),
           created_at: row.created_at,
           updated_at: row.updated_at
         }
@@ -95,7 +97,8 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     }
 
     if (req.method === 'POST') {
-      const { storeName, batchNumber, quantity, ownerSupplyPrice, commissionPercent } = req.body || {}
+      const { storeName, batchNumber, quantity, ownerSupplyPrice, commissionPercent, extraQty: rawExtra } = req.body || {}
+      const extraQty = num(rawExtra)
 
       if (!storeName || !batchNumber) {
         return res.status(400).json({ error: 'storeName and batchNumber are required' })
@@ -120,7 +123,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 
       const { data: inv, error: invErr } = await supabaseAdmin
         .from(TABLES.INVENTORY)
-        .select('id, product_id, quantity_available')
+        .select('id, product_id, quantity_available, cost_price, products:product_id(product_name)')
         .eq('batch_number', String(batchNumber))
         .maybeSingle()
 
@@ -145,7 +148,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       const alreadyAssigned = (assignedRows || []).reduce((acc: number, r: any) => acc + num(r.quantity_assigned), 0)
       const total = num(inv.quantity_available)
       const remaining = Math.max(0, total - alreadyAssigned)
-      if (qty > remaining) {
+      if (qty + extraQty > remaining) {
         return res.status(400).json({ error: `Quantity exceeds available stock (${remaining}) for this batch` })
       }
 
@@ -162,7 +165,8 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
           commission_percent: commission,
           store_selling_price: supply,
           quantity_assigned: qty,
-          quantity_remaining: qty
+          quantity_remaining: qty,
+          'extra_Qty': extraQty || null
         })
         .select('id')
         .single()
@@ -170,6 +174,32 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       if (insertErr) {
         console.error('storeInventory insert error:', insertErr)
         return res.status(500).json({ error: 'Failed to save allotment' })
+      }
+
+      // If extra qty was sent — deduct from warehouse + auto-record as expense
+      if (extraQty > 0) {
+        const costPrice = num((inv as any).cost_price)
+        const productName = (inv as any).products?.product_name || 'Unknown'
+
+        // Deduct extra units from warehouse quantity_available
+        await supabaseAdmin
+          .from(TABLES.INVENTORY)
+          .update({ quantity_available: total - extraQty })
+          .eq('id', inv.id)
+
+        // Auto-create expense: cost of gifted units
+        const expenseAmount = costPrice * extraQty
+        if (expenseAmount > 0) {
+          await supabaseAdmin
+            .from(TABLES.EXPENSES)
+            .insert({
+              title: `Store Gift: ${productName} ×${extraQty} → ${storeName}`,
+              amount: expenseAmount,
+              category: 'Store Gift',
+              expense_date: new Date().toISOString().slice(0, 10),
+              notes: `Auto-recorded from allotment. Batch: ${batchNumber}`,
+            })
+        }
       }
 
       return res.status(201).json({ success: true, id: inserted?.id })

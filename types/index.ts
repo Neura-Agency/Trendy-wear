@@ -1,5 +1,33 @@
 // Application types for Trendy Wear ERP
 
+export interface Owner {
+  id: string;
+  name: string;
+  phone?: string;
+  email?: string;
+  profitSharePercent: number;   // e.g. 33.34  — should sum to 100 across active owners
+  notes?: string;
+  isActive: boolean;
+  createdAt: string;
+  updatedAt: string;
+  /** Aggregated from owner_payouts (returned by GET /api/owners) */
+  totalPaidOut?: number;
+  payoutCount?: number;
+  lastPayoutAt?: string | null;
+}
+
+export interface OwnerPayout {
+  id: string;
+  ownerId: string;
+  ownerName?: string;
+  amount: number;
+  periodFrom: string;   // YYYY-MM-DD
+  periodTo: string;     // YYYY-MM-DD
+  notes?: string;
+  paidAt: string;
+  createdAt: string;
+}
+
 export interface User {
   username: string;
   role: 'admin' | 'store';
@@ -45,6 +73,7 @@ export interface Order {
   commissionAmount: number;
   adminTake: number;
   profit: number;
+  paymentStatus?: boolean | null;
 }
 
 export interface Purchase {
@@ -66,6 +95,7 @@ export interface Purchase {
 }
 
 export interface InventoryItem {
+  id?: string;          // inventory.id (UUID) — unique per batch row
   productId?: string;
   productName: string;
   category: string;
@@ -82,12 +112,17 @@ export interface InventoryItem {
 }
 
 export interface StoreInventoryItem {
+  id?: string;          // store_inventory.id (UUID)
+  inventoryId?: string; // FK → inventory.id (batch FK)
+  productId?: string;
   productName: string;
   ownerSupplyPrice: number;
   commissionPercent: number;
   storeSellingPrice: number;
   quantityAssigned: number;
   quantityRemaining: number;
+  extraQty?: number;    // gift / display units allotted (not sold, expensed at cost)
+  storeName?: string;   // populated when flattened out of the Record
   owner?: string;
 }
 
@@ -201,5 +236,6 @@ export interface AllotToStoreModalProps extends ModalProps {
     quantity: number;
     ownerSupplyPrice: number;
     commissionPercent: number;
+    extraQty: number;
   }) => void;
 }

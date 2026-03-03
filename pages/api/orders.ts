@@ -45,8 +45,14 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
           commission_amount,
           admin_take,
           profit,
+          payment_status,
           created_at,
-          stores:store_id ( name )
+          stores:store_id ( name ),
+          store_inventory:store_inventory_id (
+            inventory:inventory_id (
+              cost_price
+            )
+          )
         `)
         .order('occurred_at', { ascending: false })
 
@@ -63,24 +69,33 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
         return res.status(500).json({ error: 'Failed to fetch orders' })
       }
 
-      const orders = (data || []).map((row: any) => ({
-        id: row.id,
-        orderCode: row.order_code,
-        productName: row.product_name,
-        quantity: num(row.quantity),
-        sellingPrice: num(row.selling_price),
-        shipmentCost: num(row.shipment_cost),
-        storeName: row.stores?.name ?? '',
-        clientName: row.client_name ?? '',
-        type: row.order_type ?? 'Sale',
-        date: row.occurred_at ?? row.created_at,
-        includedInPayout: row.included_in_payout ?? false,
-        commissionPercent: num(row.commission_percent),
-        costPrice: num(row.cost_price),
-        commissionAmount: num(row.commission_amount),
-        adminTake: num(row.admin_take),
-        profit: num(row.profit),
-      }))
+      const orders = (data || []).map((row: any) => {
+        // Follow: orders.store_inventory_id → store_inventory.inventory_id → inventory.cost_price
+        const inventoryCostPrice = row.store_inventory?.inventory?.cost_price
+        const costPrice = inventoryCostPrice != null
+          ? num(inventoryCostPrice)
+          : num(row.cost_price)  // fallback to stored value if link is missing
+
+        return {
+          id: row.id,
+          orderCode: row.order_code,
+          productName: row.product_name,
+          quantity: num(row.quantity),
+          sellingPrice: num(row.selling_price),
+          shipmentCost: num(row.shipment_cost),
+          storeName: row.stores?.name ?? '',
+          clientName: row.client_name ?? '',
+          type: row.order_type ?? 'Sale',
+          date: row.occurred_at ?? row.created_at,
+          includedInPayout: row.included_in_payout ?? false,
+          commissionPercent: num(row.commission_percent),
+          costPrice,
+          commissionAmount: num(row.commission_amount),
+          adminTake: num(row.admin_take),
+          profit: num(row.profit),
+          paymentStatus: row.payment_status ?? null,
+        }
+      })
 
       return res.json({ orders })
     }
@@ -151,6 +166,88 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       const productId: string | null = product?.id ?? null
 
       // ── Find store_inventory rows (FIFO: oldest first) ───────────────────
+      // Special case: "Direct" store sells straight from warehouse inventory
+      if (resolvedStoreName === 'Direct') {
+        // Query warehouse inventory for this product (FIFO: oldest batch first)
+        let invQuery = supabaseAdmin
+          .from(TABLES.INVENTORY)
+          .select('id, cost_price, quantity_available')
+          .order('created_at', { ascending: true })
+
+        if (productId) {
+          invQuery = invQuery.eq('product_id', productId)
+        } else {
+          invQuery = invQuery.eq('product_name', productName)
+        }
+
+        const { data: invRows2, error: invErr2 } = await invQuery
+        if (invErr2) throw invErr2
+
+        const warehouseRows = (invRows2 || []).filter((r: any) => num(r.quantity_available) > 0)
+        const totalAvailableWarehouse = warehouseRows.reduce((s: number, r: any) => s + num(r.quantity_available), 0)
+
+        if (totalAvailableWarehouse < totalDispatch) {
+          return res.status(400).json({ error: `Insufficient warehouse stock. Only ${totalAvailableWarehouse} unit(s) available (need ${totalDispatch}).` })
+        }
+
+        const primaryWarehouseRow = warehouseRows[0] as any
+        const costPrice = num(primaryWarehouseRow?.cost_price)
+        const commissionPercent = 0
+        const commissionAmount = 0
+        const grossAmount = price * qty
+        const adminTake = grossAmount - totalDeductions
+        const profit = adminTake - costPrice * qty
+
+        // ── Insert order ──────────────────────────────────────────────────
+        const { data: order, error: orderErr } = await supabaseAdmin
+          .from(TABLES.ORDERS)
+          .insert({
+            order_code: generateOrderCode(),
+            store_id: storeId,
+            product_id: productId,
+            product_name: productName,
+            store_inventory_id: null,
+            quantity: qty,
+            selling_price: price,
+            shipment_cost: totalDeductions,
+            client_name: clientName || null,
+            order_type: orderType || 'Sale',
+            occurred_at: occurredAt ? new Date(occurredAt).toISOString() : new Date().toISOString(),
+            included_in_payout: false,
+            commission_percent: commissionPercent,
+            cost_price: costPrice,
+            commission_amount: commissionAmount,
+            admin_take: adminTake,
+            profit: profit,
+          })
+          .select('id, order_code')
+          .single()
+
+        if (orderErr) {
+          console.error('orders INSERT error (direct):', orderErr)
+          return res.status(500).json({ error: 'Failed to save order' })
+        }
+
+        // ── Deduct from warehouse inventory FIFO ──────────────────────────
+        let remaining = totalDispatch
+        for (const row of warehouseRows) {
+          if (remaining <= 0) break
+          const rowQty = num((row as any).quantity_available)
+          const deduct = Math.min(rowQty, remaining)
+          await supabaseAdmin
+            .from(TABLES.INVENTORY)
+            .update({ quantity_available: rowQty - deduct })
+            .eq('id', (row as any).id)
+          remaining -= deduct
+        }
+
+        return res.status(201).json({
+          success: true,
+          orderId: order.id,
+          orderCode: order.order_code,
+        })
+      }
+
       let storeInvQuery = supabaseAdmin
         .from(TABLES.STORE_INVENTORY)
         .select('id, commission_percent, owner_supply_price, quantity_remaining')
@@ -234,11 +331,28 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     }
 
     // ────────────────────────────────────────────────────────────────────────
-    // PATCH — update commission % and recalculate all financial fields
+    // PATCH — update commission % or payment_status
     // ────────────────────────────────────────────────────────────────────────
     if (req.method === 'PATCH') {
       if (!isSuperAdmin(session)) {
         return res.status(403).json({ error: 'Admin only' })
+      }
+
+      // ── Batch payment status update ──────────────────────────────────────
+      if (req.body?.ids !== undefined) {
+        const { ids, paymentStatus } = req.body
+        if (!Array.isArray(ids) || ids.length === 0) {
+          return res.status(400).json({ error: 'ids must be a non-empty array' })
+        }
+        const { error: batchErr } = await supabaseAdmin
+          .from(TABLES.ORDERS)
+          .update({ payment_status: paymentStatus === true })
+          .in('id', ids)
+        if (batchErr) {
+          console.error('orders PATCH payment_status error:', batchErr)
+          return res.status(500).json({ error: 'Failed to update payment status' })
+        }
+        return res.json({ success: true, updated: ids.length })
       }
 
       const { id, commissionPercent } = req.body

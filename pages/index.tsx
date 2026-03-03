@@ -561,7 +561,7 @@ function InlineCommEdit({ value, onSave }) {
   if (!editing) return (
     <span
       className="inline-edit-trigger"
-      onClick={() => setEditing(true)}
+      onClick={(e) => { e.stopPropagation(); setEditing(true); }}
       style={{
         cursor: 'pointer',
         color: 'var(--acc)',
@@ -579,9 +579,10 @@ function InlineCommEdit({ value, onSave }) {
   );
 
   return (
-    <div className="inline-edit-box" style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+    <div className="inline-edit-box" style={{ display: 'flex', alignItems: 'center', gap: 4 }} onClick={e => e.stopPropagation()}>
       <input
-        type="number"
+        type="text"
+        inputMode="numeric"
         value={val}
         onChange={e => setVal(e.target.value)}
         autoFocus
@@ -606,9 +607,10 @@ function InlineCommEdit({ value, onSave }) {
 }
 
 // ─── STORES OVERVIEW SECTION (Reworked for Table View) ───────────────
-function StoresOverviewSection({ stores, orders, storeInventory, filter, getFiltered, onMarkPaid, onCommissionChange, onAssignItem, inventory, isAdmin }) {
+function StoresOverviewSection({ stores, orders, storeInventory, filter, getFiltered, onPayOrders, onAssignItem, inventory, isAdmin }) {
   const storeNames = Object.keys(stores);
   const [selected, setSelected] = useState(storeNames[0] || "");
+  const [paying, setPaying] = useState<string | null>(null); // productName or 'ALL'
 
   useEffect(() => {
     if (!selected && storeNames.length > 0) setSelected(storeNames[0]);
@@ -627,6 +629,28 @@ function StoresOverviewSection({ stores, orders, storeInventory, filter, getFilt
     ...sOrders.map(o => o.productName),
     ...Object.values(storeInventory[name] || {}).map(si => (si as StoreInventoryItem).productName)
   ])).filter(Boolean);
+
+  // All unpaid orders for this store
+  const unpaidStoreOrders = sOrders.filter(o => o.paymentStatus !== true && (o.commissionAmount || 0) > 0);
+  const totalUnpaid = unpaidStoreOrders.reduce((acc, o) => acc + (o.commissionAmount || 0), 0);
+
+  const handlePayProduct = async (productName: string) => {
+    const ids = sOrders
+      .filter(o => o.productName === productName && o.paymentStatus !== true && (o.commissionAmount || 0) > 0)
+      .map(o => o.id);
+    if (!ids.length) return;
+    setPaying(productName);
+    await onPayOrders(ids);
+    setPaying(null);
+  };
+
+  const handlePayAll = async () => {
+    const ids = unpaidStoreOrders.map(o => o.id);
+    if (!ids.length) return;
+    setPaying('ALL');
+    await onPayOrders(ids);
+    setPaying(null);
+  };
 
   return (
     <div className="store-selector-view">
@@ -663,40 +687,80 @@ function StoresOverviewSection({ stores, orders, storeInventory, filter, getFilt
                 const catOrders = sOrders.filter(o => o.productName === productName);
                 const catInventory = Object.values(storeInventory[name] || {}).filter(si => (si as StoreInventoryItem).productName === productName);
 
-                const payout = catOrders.reduce((acc, o) => acc + (o.commissionAmount || 0), 0);
+                const unpaidOrders = catOrders.filter(o => o.paymentStatus !== true && (o.commissionAmount || 0) > 0);
+                const paidOrders   = catOrders.filter(o => o.paymentStatus === true);
+                const unpaidAmount = unpaidOrders.reduce((acc, o) => acc + (o.commissionAmount || 0), 0);
+                const paidAmount   = paidOrders.reduce((acc, o) => acc + (o.commissionAmount || 0), 0);
+                const totalPayout  = catOrders.reduce((acc, o) => acc + (o.commissionAmount || 0), 0);
+
                 const itemsSold = catInventory.reduce((acc: number, si) => acc + (((si as StoreInventoryItem).quantityAssigned || 0) - ((si as StoreInventoryItem).quantityRemaining || 0)), 0) as number;
-                const leftover = catInventory.reduce((acc: number, si) => acc + ((si as StoreInventoryItem).quantityRemaining as number), 0) as number;
-                const expenses = catOrders.reduce((acc, o) => acc + (o.shipmentCost || 0), 0);
-                const partnerCut = catOrders.reduce((acc, o) => acc + (o.commissionAmount || 0), 0);
-                const profit = catOrders.reduce((acc, o) => acc + (o.profit || 0), 0);
+                const leftover  = catInventory.reduce((acc: number, si) => acc + ((si as StoreInventoryItem).quantityRemaining as number), 0) as number;
+                const expenses   = catOrders.reduce((acc, o) => acc + (o.shipmentCost || 0), 0);
+                const partnerCut = totalPayout;
+                const profit     = catOrders.reduce((acc, o) => acc + (o.profit || 0), 0);
+
+                const allPaid = catOrders.length > 0 && unpaidOrders.length === 0;
 
                 return (
                   <tr key={productName}>
                     <td className="font-bold">{productName}</td>
-                    <td className="font-bold" style={{ color: 'var(--success)' }}>{Rs(payout)}</td>
+                    <td>
+                      <div className="font-bold" style={{ color: 'var(--success)' }}>{Rs(unpaidAmount)}</div>
+                      {paidAmount > 0 && (
+                        <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 2 }}>
+                          {Rs(paidAmount)} paid
+                        </div>
+                      )}
+                    </td>
                     <td>{itemsSold}</td>
                     <td className="font-bold" style={{ color: (leftover as number) > 0 ? 'inherit' : 'var(--danger)' }}>{leftover as number}</td>
                     {isAdmin && <td style={{ color: 'var(--danger)' }}>{Rs(expenses)}</td>}
                     {isAdmin && <td style={{ fontWeight: 600 }}>{Rs(partnerCut)}</td>}
                     {isAdmin && <td className="font-bold" style={{ color: 'var(--acc)' }}>{Rs(profit)}</td>}
                     <td style={{ textAlign: 'right' }}>
-                      <Badge type={s.paid ? 'green' : 'blue'}>
-                        {s.paid ? 'Paid' : 'Balance'}
-                      </Badge>
+                      {allPaid ? (
+                        <Badge type="green">Paid</Badge>
+                      ) : unpaidAmount > 0 && isAdmin ? (
+                        <button
+                          className="btn btn-sm btn-primary"
+                          style={{ fontSize: 11, height: 30, padding: '0 10px', whiteSpace: 'nowrap' }}
+                          disabled={paying === productName}
+                          onClick={() => handlePayProduct(productName)}
+                        >
+                          {paying === productName ? '...' : `Pay ${Rs(unpaidAmount)}`}
+                        </button>
+                      ) : (
+                        <Badge type="blue">Balance</Badge>
+                      )}
                     </td>
                   </tr>
                 );
               })
             )}
           </tbody>
+          {isAdmin && totalUnpaid > 0 && (
+            <tfoot>
+              <tr>
+                <td colSpan={2} style={{ padding: '10px 12px', fontWeight: 800, fontSize: 13 }}>
+                  Total Unpaid: <span style={{ color: 'var(--success)' }}>{Rs(totalUnpaid)}</span>
+                </td>
+                <td colSpan={6} />
+              </tr>
+            </tfoot>
+          )}
         </table>
       </div>
 
       {isAdmin && (
         <div style={{ display: 'flex', gap: 12, marginTop: 24 }}>
-          {sOrders.reduce((acc, o) => acc + (o.commissionAmount || 0), 0) > 0 && !s.paid && (
-            <button className="btn btn-primary" style={{ flex: 1, height: 48, background: 'var(--success)', borderColor: 'var(--success)' }} onClick={() => onMarkPaid(name, sOrders.reduce((acc, o) => acc + (o.commissionAmount || 0), 0))}>
-              Confirm & Mark as Fully Paid
+          {totalUnpaid > 0 && (
+            <button
+              className="btn btn-primary"
+              style={{ flex: 1, height: 48, background: 'var(--success)', borderColor: 'var(--success)', fontWeight: 700 }}
+              disabled={paying === 'ALL'}
+              onClick={handlePayAll}
+            >
+              {paying === 'ALL' ? 'Processing...' : `Confirm & Mark All Paid (${Rs(totalUnpaid)})`}
             </button>
           )}
           <button className="btn btn-primary" style={{ flex: 1, height: 48 }} onClick={() => onAssignItem(name)}>
@@ -926,6 +990,7 @@ const [loading, setLoading] = useState<boolean>(true);
   const [showStoreModal, setShowStoreModal] = useState<boolean>(false);
   const [showReport, setShowReport] = useState<boolean>(false);
   const [showExpenseModal, setShowExpenseModal] = useState<boolean>(false);
+  const [editingExpense, setEditingExpense] = useState<Expense | null>(null);
   const [showExpenseBreakdown, setShowExpenseBreakdown] = useState<boolean>(false);
   const [reportData, setReportData] = useState<any>(null);
   const [partnerFilter, setPartnerFilter] = useState<string>('All');
@@ -968,9 +1033,9 @@ const [loading, setLoading] = useState<boolean>(true);
   useEffect(() => {
     if (!user) return;
     refresh();
-    const es = new EventSource("/api/stream");
-    es.onmessage = () => refresh();
-    return () => es.close();
+    // Poll for updates every 5 minutes (SSE doesn't work on Vercel serverless)
+    const interval = setInterval(refresh, 5 * 60 * 1000);
+    return () => clearInterval(interval);
   }, [user, refresh]);
 
   if (!user) return <Login onLogin={onLogin} />;
@@ -1063,8 +1128,8 @@ const [loading, setLoading] = useState<boolean>(true);
   // Total Expenses = Supabase expenses + Cost of goods sold + Shipping + Store partner commissions
   const adminExpenses = supabaseExpensesTotal + totalCostPrice + totalShipping + totalShopCut;
   const totalExpenses = isAdmin ? adminExpenses : 0;
-  const totalProfit = totalGross - adminExpenses;
-  const totalProfitValue = isAdmin ? totalNetProfit : totalShopCut;
+  // Net Profit = Revenue - All Expenses
+  const totalProfitValue = isAdmin ? (totalGross - adminExpenses) : totalShopCut;
   const totalStockQty = (() => {
     if (isSuperAdmin) {
       return data.inventory.reduce((s, i) => s + (i.quantityAvailable || 0), 0)
@@ -1359,9 +1424,38 @@ const [loading, setLoading] = useState<boolean>(true);
     }
   };
 
-  const handleMarkPaid = (storeName: string, amount: number) => {
-    // No-op: database removed
-    refresh();
+  const handleEditExpense = async (expense: Partial<Expense> & { id?: string }) => {
+    try {
+      const res = await fetch('/api/expenses', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(expense),
+      });
+      const result = await res.json();
+      if (!res.ok) { toast.error(result.error || 'Failed to update expense'); return; }
+      toast.success('Expense updated!');
+      setEditingExpense(null);
+      refresh();
+    } catch (e: any) {
+      toast.error(e?.message || 'Failed to update expense');
+    }
+  };
+
+  const handlePayOrders = async (ids: string[]) => {
+    try {
+      const res = await fetch('/api/orders', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ ids, paymentStatus: true }),
+      });
+      const result = await res.json();
+      if (!res.ok) toast.error(result.error || 'Failed to update payment status');
+      else toast.success(`✅ Payment recorded for ${ids.length} order${ids.length !== 1 ? 's' : ''}`);
+    } catch (e: any) {
+      toast.error(e?.message || 'Failed to update payment status');
+    } finally {
+      refresh();
+    }
   };
 
   return (
@@ -1416,7 +1510,7 @@ const [loading, setLoading] = useState<boolean>(true);
 
         {/* ── CHARTS: right under the KPI cards ── */}
         {isAdmin && (
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 24, marginBottom: 24 }}>
+          <div className="responsive-charts-grid">
             {/* ── PRODUCT PERFORMANCE: SVG Grouped Bar Chart ── */}
             <SectionCard title="Product Performance" icon={IC.chart} defaultOpen>
               {isProductEmpty && (
@@ -1466,7 +1560,8 @@ const [loading, setLoading] = useState<boolean>(true);
             </button>
           )}
           <button className="btn btn-secondary" onClick={() => {
-            let ordersForReport = kpiOrders;
+            // Pass dashboardOrders (all time, scope-filtered) so the modal applies its own period filter
+            let ordersForReport = dashboardOrders;
             let storesForReport = data.stores || {};
             if (!isSuperAdmin) {
               if (isAdmin) {
@@ -1474,10 +1569,10 @@ const [loading, setLoading] = useState<boolean>(true);
                 const filteredStores = {};
                 managed.forEach(name => { if (data.stores[name]) filteredStores[name] = data.stores[name]; });
                 storesForReport = filteredStores;
-                ordersForReport = kpiOrders.filter(o => managed.includes(o.storeName));
+                ordersForReport = dashboardOrders.filter(o => managed.includes(o.storeName));
               } else if (user.role === 'store') {
                 storesForReport = { [user.storeName]: data.stores[user.storeName] };
-                ordersForReport = kpiOrders.filter(o => o.storeName === user.storeName);
+                ordersForReport = dashboardOrders.filter(o => o.storeName === user.storeName);
               }
             }
             setReportData({ ...data, orders: ordersForReport, stores: storesForReport });
@@ -1507,8 +1602,7 @@ const [loading, setLoading] = useState<boolean>(true);
               inventory={data.inventory}
               filter="All"
               getFiltered={getFiltered}
-              onMarkPaid={handleMarkPaid}
-              onCommissionChange={(name, v) => { refresh(); }}
+              onPayOrders={handlePayOrders}
               onAssignItem={(name) => router.push(`/inventory?assign=${name}`)}
               isAdmin={isAdmin}
             />
@@ -1520,9 +1614,9 @@ const [loading, setLoading] = useState<boolean>(true);
             title={isAdmin ? "Partner Store Sales" : "Sales History"}
             icon={IC.handshake}
             action={
-              <div style={{ display: 'flex', gap: 12, alignItems: 'center' }}>
+              <div className="section-action-wrap">
                 <TableFilter value={partnerFilter} onChange={setPartnerFilter} />
-                <div style={{ width: 140 }}>
+                <div className="store-select-wrap">
                   <CustomSelect 
                     value={partnerStore} 
                     onChange={setPartnerStore} 
@@ -1591,38 +1685,77 @@ const [loading, setLoading] = useState<boolean>(true);
         </div>
 
         {isAdmin && (
-          <div className="grid-2-dynamic" style={{ display: 'grid', gridTemplateColumns: '1.2fr 0.8fr', gap: 24, marginBottom: 32 }}>
-            {/* VIP Customers table removed as requested */}
+          <div style={{ marginBottom: 32 }}>
             <SectionCard title="Expenses (Money Spent)" icon={IC.receipt} action={
               <button className="btn btn-primary" style={{ padding: '0.5rem 1rem' }} onClick={() => setShowExpenseModal(true)}>+ Add Expense</button>
             }>
-              <div className="table-wrap">
-                <table style={{ fontSize: '0.85rem' }}>
+              <div style={{ overflowX: 'auto', width: '100%' }}>
+                <table style={{ width: '100%', fontSize: '0.85rem', borderCollapse: 'collapse', tableLayout: 'fixed' }}>
+                  <colgroup>
+                    <col style={{ width: '40%' }} />
+                    <col style={{ width: '22%' }} />
+                    <col style={{ width: '20%' }} />
+                    <col style={{ width: '18%' }} />
+                  </colgroup>
                   <thead>
-                    <tr>
-                      <th>Title</th>
-                      <th>Category</th>
-                      <th>Date</th>
-                      <th style={{ textAlign: 'right' }}>Amount</th>
+                    <tr style={{ background: 'var(--surface-2)' }}>
+                      <th style={{ padding: '10px 14px', textAlign: 'left', fontWeight: 700, fontSize: '0.78rem', color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.04em', borderBottom: '1px solid var(--border)' }}>Title</th>
+                      <th style={{ padding: '10px 14px', textAlign: 'left', fontWeight: 700, fontSize: '0.78rem', color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.04em', borderBottom: '1px solid var(--border)' }}>Category</th>
+                      <th style={{ padding: '10px 14px', textAlign: 'center', fontWeight: 700, fontSize: '0.78rem', color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.04em', borderBottom: '1px solid var(--border)' }}>Date</th>
+                      <th style={{ padding: '10px 14px', textAlign: 'right', fontWeight: 700, fontSize: '0.78rem', color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.04em', borderBottom: '1px solid var(--border)' }}>Amount</th>
                     </tr>
                   </thead>
                   <tbody>
-                    {data.expenses.slice(-5).reverse().map((e, i) => {
-                      const dateStr = e.expense_date || (e as any).date || (e as any).occurred_at || (e as any).created_at;
-                      let displayDate = '-';
-                      try {
-                        if (dateStr) displayDate = new Date(String(dateStr)).toLocaleDateString();
-                      } catch (err) { displayDate = String(dateStr || '-'); }
-
-                      return (
-                      <tr key={i}>
-                        <td className="text-muted">{e.title}</td>
-                        <td className="text-muted">{e.category || '-'}</td>
-                        <td className="text-muted">{displayDate}</td>
-                        <td className="font-bold" style={{ textAlign: 'right' }}>{Rs(e.amount)}</td>
+                    {data.expenses.length === 0 ? (
+                      <tr>
+                        <td colSpan={5} style={{ textAlign: 'center', padding: '32px 20px', color: 'var(--text-muted)', fontSize: '0.85rem' }}>
+                          No expenses recorded yet.
+                        </td>
                       </tr>
-                    )})}
-                    {data.expenses.length === 0 && <tr><td colSpan={4} style={{ textAlign: 'center', padding: 20 }}>No costs recorded.</td></tr>}
+                    ) : (
+                      <>
+                        {[...data.expenses].reverse().map((e, i) => {
+                          const dateStr = e.expense_date || (e as any).date || (e as any).occurred_at || (e as any).created_at;
+                          let displayDate = '-';
+                          try { if (dateStr) displayDate = new Date(String(dateStr)).toLocaleDateString('en-PK', { day: '2-digit', month: 'short', year: 'numeric' }); }
+                          catch { displayDate = String(dateStr || '-'); }
+
+                          const catColors: Record<string, { bg: string; color: string }> = {
+                            'Rent':        { bg: '#ede9fe', color: '#6d28d9' },
+                            'Salaries':    { bg: '#dbeafe', color: '#1d4ed8' },
+                            'Utilities':   { bg: '#dcfce7', color: '#15803d' },
+                            'Marketing':   { bg: '#fef9c3', color: '#a16207' },
+                            'Logistics':   { bg: '#ffedd5', color: '#c2410c' },
+                            'Misc':        { bg: '#f1f5f9', color: '#475569' },
+                          };
+                          const cat = e.category || 'Misc';
+                          const chip = catColors[cat] || { bg: '#f1f5f9', color: '#475569' };
+
+                          return (
+                            <tr key={i} style={{ borderBottom: '1px solid var(--border)', transition: 'background 0.15s', cursor: 'pointer' }}
+                              onClick={() => setEditingExpense(e)}
+                              onMouseEnter={ev => (ev.currentTarget.style.background = 'var(--surface-2)')}
+                              onMouseLeave={ev => (ev.currentTarget.style.background = 'transparent')}
+                            >
+                              <td style={{ padding: '11px 14px', fontWeight: 600, color: 'var(--text-main)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{e.title}</td>
+                              <td style={{ padding: '11px 14px' }}>
+                                <span style={{ display: 'inline-block', padding: '2px 10px', borderRadius: 20, fontSize: '0.75rem', fontWeight: 700, background: chip.bg, color: chip.color, whiteSpace: 'nowrap' }}>{cat}</span>
+                              </td>
+                              <td style={{ padding: '11px 14px', textAlign: 'center', color: 'var(--text-muted)', fontSize: '0.82rem' }}>{displayDate}</td>
+                              <td style={{ padding: '11px 14px', textAlign: 'right', fontWeight: 800, color: 'var(--danger)', whiteSpace: 'nowrap' }}>−{Rs(e.amount)}</td>
+                            </tr>
+                          );
+                        })}
+                        <tr style={{ background: 'var(--surface-2)', borderTop: '2px solid var(--border)' }}>
+                          <td colSpan={3} style={{ padding: '11px 14px', fontWeight: 700, fontSize: '0.85rem', color: 'var(--text-main)' }}>
+                            Total — {data.expenses.length} expense{data.expenses.length !== 1 ? 's' : ''}
+                          </td>
+                          <td style={{ padding: '11px 14px', textAlign: 'right', fontWeight: 900, fontSize: '0.95rem', color: 'var(--danger)', whiteSpace: 'nowrap' }}>
+                            −{Rs(data.expenses.reduce((s, e) => s + (Number(e.amount) || 0), 0))}
+                          </td>
+                        </tr>
+                      </>
+                    )}
                   </tbody>
                 </table>
               </div>
@@ -1641,6 +1774,7 @@ const [loading, setLoading] = useState<boolean>(true);
                         productName: si.productName,
                         quantityAvailable: si.quantityRemaining,
                         sellingPrice: si.storeSellingPrice,
+                        ownerSupplyPrice: si.ownerSupplyPrice,
                       }))
                     )
                 : user.role === 'store'
@@ -1648,6 +1782,7 @@ const [loading, setLoading] = useState<boolean>(true);
                       productName: si.productName,
                       quantityAvailable: si.quantityRemaining,
                       sellingPrice: si.storeSellingPrice,
+                      ownerSupplyPrice: si.ownerSupplyPrice,
                     }))
                   : data.inventory
             }
@@ -1666,14 +1801,31 @@ const [loading, setLoading] = useState<boolean>(true);
           />
         )}
         {showExpenseModal && (
-          <div className="modal-overlay">
-            <div className="modal-box" style={{ maxWidth: '640px' }}>
+          <div className="modal-overlay" onClick={() => setShowExpenseModal(false)}>
+            <div className="modal-box" style={{ maxWidth: '640px' }} onClick={ev => ev.stopPropagation()}>
               <div className="modal-head" style={{ padding: '12px 20px' }}>
                 <h3 style={{ fontSize: '16px' }}>Add Expense</h3>
                 <button className="btn btn-sm" onClick={() => setShowExpenseModal(false)} style={{ border: 'none', fontSize: '16px' }}>✕</button>
               </div>
               <div className="modal-body" style={{ padding: 20 }}>
                 <AddExpenseForm onAdd={(e) => { handleAddExpense(e); setShowExpenseModal(false); }} />
+              </div>
+            </div>
+          </div>
+        )}
+        {editingExpense && (
+          <div className="modal-overlay" onClick={() => setEditingExpense(null)}>
+            <div className="modal-box" style={{ maxWidth: '640px' }} onClick={ev => ev.stopPropagation()}>
+              <div className="modal-head" style={{ padding: '12px 20px' }}>
+                <h3 style={{ fontSize: '16px' }}>Edit Expense</h3>
+                <button className="btn btn-sm" onClick={() => setEditingExpense(null)} style={{ border: 'none', fontSize: '16px' }}>✕</button>
+              </div>
+              <div className="modal-body" style={{ padding: 20 }}>
+                <AddExpenseForm
+                  key={editingExpense.id}
+                  initialData={editingExpense}
+                  onAdd={(e) => handleEditExpense(e as Partial<Expense> & { id?: string })}
+                />
               </div>
             </div>
           </div>

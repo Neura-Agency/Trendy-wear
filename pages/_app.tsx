@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from "react";
 import type { AppProps } from "next/app";
+import Head from "next/head";
 import "../styles/globals.css";
 import Layout from "../components/Layout";
 import { PopupProvider } from "../components/Popup";
@@ -16,6 +17,16 @@ interface ExtendedAppProps extends AppProps {
 export default function App({ Component, pageProps }: ExtendedAppProps) {
   const [hydrated, setHydrated] = useState<boolean>(false);
   const [user, setUser] = useState<User | null>(null);
+
+  // Auto-select number input content on focus so typing replaces 0 instead of appending
+  useEffect(() => {
+    const handler = (e: FocusEvent) => {
+      const target = e.target as HTMLInputElement;
+      if (target && (target.inputMode === 'numeric' || target.inputMode === 'decimal')) target.select();
+    };
+    document.addEventListener('focusin', handler);
+    return () => document.removeEventListener('focusin', handler);
+  }, []);
 
   useEffect(() => {
     setHydrated(true);
@@ -69,7 +80,16 @@ export default function App({ Component, pageProps }: ExtendedAppProps) {
     }
   }, []);
 
-  if (!hydrated) return <div className="loading">Loading...</div>;
+  const favicon = (
+    <Head>
+      <title>Trendy Wear</title>
+      <link rel="icon" type="image/jpeg" href="/logo.jpg" />
+      <link rel="apple-touch-icon" href="/logo.jpg" />
+      <meta name="application-name" content="Trendy Wear" />
+    </Head>
+  );
+
+  if (!hydrated) return <>{favicon}<div className="loading">Loading...</div></>;
 
   const page = (
     <Component
@@ -81,13 +101,16 @@ export default function App({ Component, pageProps }: ExtendedAppProps) {
   );
 
   // Only show the full app chrome (navbar/sidebar) once authenticated.
-  if (!user) return <PopupProvider>{page}</PopupProvider>;
+  if (!user) return <>{favicon}<PopupProvider>{page}</PopupProvider></>;
 
   return (
-    <PopupProvider>
-      <Layout user={user} onLogout={onLogout}>
-        {page}
-      </Layout>
-    </PopupProvider>
+    <>
+      {favicon}
+      <PopupProvider>
+        <Layout user={user} onLogout={onLogout}>
+          {page}
+        </Layout>
+      </PopupProvider>
+    </>
   );
 }

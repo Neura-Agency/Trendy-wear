@@ -14,18 +14,33 @@ interface NavItem {
 
 export default function Layout({ children, user, onLogout }: LayoutProps) {
   const [showMenu, setShowMenu] = useState<boolean>(false);
+  const [mobileNavOpen, setMobileNavOpen] = useState<boolean>(false);
   const router = useRouter();
   const currentPath = router.pathname;
 
   useEffect(() => {
     setShowMenu(false);
+    setMobileNavOpen(false);
   }, [currentPath]);
+
+  // Close mobile nav on resize if window becomes large
+  useEffect(() => {
+    const handleResize = () => {
+      if (window.innerWidth > 768) {
+        setMobileNavOpen(false);
+      }
+    };
+    window.addEventListener('resize', handleResize);
+    return () => window.removeEventListener('resize', handleResize);
+  }, []);
 
   // Clean mono-color SVG icons (currentColor inherits nav text color)
   const iconDashboard = <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="3" width="7" height="9" rx="1"/><rect x="14" y="3" width="7" height="5" rx="1"/><rect x="14" y="12" width="7" height="9" rx="1"/><rect x="3" y="16" width="7" height="5" rx="1"/></svg>;
   const iconInventory = <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d="M21 8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16Z"/><path d="m3.3 7 8.7 5 8.7-5"/><path d="M12 22V12"/></svg>;
   const iconCredentials = <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><circle cx="7.5" cy="15.5" r="5.5"/><path d="m11.5 11.5 4-4"/><path d="m15 8 2.5 2.5"/><path d="m18 5 2.5 2.5"/></svg>;
   const iconDirectSales = <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d="M6 2 3 6v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V6l-3-4Z"/><path d="M3 6h18"/><path d="M16 10a4 4 0 0 1-8 0"/></svg>;
+  const iconOwners  = <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>;
+  const iconReports = <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d="M15 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7Z"/><path d="M14 2v4a2 2 0 0 0 2 2h4"/><line x1="9" y1="12" x2="15" y2="12"/><line x1="9" y1="16" x2="15" y2="16"/></svg>;
 
   const navItems: NavItem[] = [
     { id: "home", icon: iconDashboard as any, label: "Main Dashboard", path: "/" },
@@ -49,6 +64,20 @@ export default function Layout({ children, user, onLogout }: LayoutProps) {
       path: "/direct-sales",
       superAdminOnly: true,
     },
+    {
+      id: "owners",
+      icon: iconOwners as any,
+      label: "Profit Partners",
+      path: "/owners",
+      superAdminOnly: true,
+    },
+    {
+      id: "reports",
+      icon: iconReports as any,
+      label: "Reports",
+      path: "/reports",
+      superAdminOnly: true,
+    },
   ];
 
   const filteredNavItems = navItems.filter((item) => {
@@ -59,9 +88,36 @@ export default function Layout({ children, user, onLogout }: LayoutProps) {
 
   return (
     <div className="page-wrap">
+      {/* ── MOBILE OVERLAY ── */}
+      <div 
+        className={`mobile-overlay ${mobileNavOpen ? 'show' : ''}`} 
+        onClick={() => setMobileNavOpen(false)}
+      />
+
       {/* ── TOP BAR ── */}
       <header className="topbar">
-        <div style={{ width: 1 }} />
+        {/* Mobile hamburger button */}
+        <button 
+          className="mobile-menu-btn"
+          onClick={() => setMobileNavOpen(v => !v)}
+          aria-label="Toggle navigation menu"
+        >
+          <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+            {mobileNavOpen ? (
+              <>
+                <line x1="18" y1="6" x2="6" y2="18" />
+                <line x1="6" y1="6" x2="18" y2="18" />
+              </>
+            ) : (
+              <>
+                <line x1="4" y1="6" x2="20" y2="6" />
+                <line x1="4" y1="12" x2="20" y2="12" />
+                <line x1="4" y1="18" x2="20" y2="18" />
+              </>
+            )}
+          </svg>
+        </button>
+        <div style={{ width: 1 }} className="hide-mobile" />
         <div className="topbar-right">
           <div className="topbar-user" onClick={() => setShowMenu((v) => !v)}>
             <div className="user-avatar">
@@ -93,7 +149,7 @@ export default function Layout({ children, user, onLogout }: LayoutProps) {
 
       <div className="page-body">
         {/* ── SIDEBAR ── */}
-        <nav className="sidebar">
+        <nav className={`sidebar ${mobileNavOpen ? 'mobile-open' : ''}`}>
           <div className="sidebar-brand">
             <img src="/logo.jpg" alt="Trendy Wear" className="brand-logo" />
           </div>
@@ -116,6 +172,7 @@ export default function Layout({ children, user, onLogout }: LayoutProps) {
                 key={item.id}
                 className={`nav-item ${currentPath === item.path ? "active" : ""}`}
                 style={{ textDecoration: "none" }}
+                onClick={() => setMobileNavOpen(false)}
               >
                 <span className="nav-icon">
                   {item.icon}
