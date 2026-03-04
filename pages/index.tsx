@@ -78,9 +78,9 @@ function TableFilter({ value, onChange }: TableFilterProps) {
   }
 
   return (
-    <div className="table-filter-wrap" style={{ display: 'flex', gap: 12, alignItems: 'center', background: 'var(--surface-2)', padding: '6px 16px', borderRadius: 8, border: '1px solid var(--border)' }}>
+    <div className="table-filter-wrap" style={{ display: 'flex', gap: 12, alignItems: 'center', flexWrap: 'wrap', background: 'var(--surface-2)', padding: '6px 16px', borderRadius: 8, border: '1px solid var(--border)' }}>
       <span style={{ fontWeight: 700, fontSize: '12px', color: 'var(--text-muted)', textTransform: 'uppercase' }}>Filter:</span>
-      <div style={{ width: 140 }}>
+      <div style={{ minWidth: 120, flex: '1 1 140px', maxWidth: 200 }}>
         <CustomSelect 
           value={mode} 
           onChange={handleModeChange} 
@@ -752,18 +752,18 @@ function StoresOverviewSection({ stores, orders, storeInventory, filter, getFilt
       </div>
 
       {isAdmin && (
-        <div style={{ display: 'flex', gap: 12, marginTop: 24 }}>
+        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 12, marginTop: 24 }}>
           {totalUnpaid > 0 && (
             <button
               className="btn btn-primary"
-              style={{ flex: 1, height: 48, background: 'var(--success)', borderColor: 'var(--success)', fontWeight: 700 }}
+              style={{ flex: '1 1 200px', height: 48, background: 'var(--success)', borderColor: 'var(--success)', fontWeight: 700 }}
               disabled={paying === 'ALL'}
               onClick={handlePayAll}
             >
               {paying === 'ALL' ? 'Processing...' : `Confirm & Mark All Paid (${Rs(totalUnpaid)})`}
             </button>
           )}
-          <button className="btn btn-primary" style={{ flex: 1, height: 48 }} onClick={() => onAssignItem(name)}>
+          <button className="btn btn-primary" style={{ flex: '1 1 200px', height: 48 }} onClick={() => onAssignItem(name)}>
             Stock Management (Send Goods)
           </button>
         </div>
@@ -790,8 +790,8 @@ function OrdersSection({ orders, overallOrders = [], isAdmin, canDelete, onCommi
     <div>
       {/* ── Edit modal ── */}
       {editing && (
-        <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.45)', zIndex: 1300, display: 'flex', alignItems: 'flex-start', justifyContent: 'center', padding: '80px 16px 16px', overflowY: 'auto' }}>
-          <div style={{ background: 'var(--surface)', borderRadius: 16, padding: 32, width: '100%', maxWidth: 480, boxShadow: '0 8px 40px rgba(0,0,0,0.25)' }}>
+        <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.45)', zIndex: 1300, display: 'flex', alignItems: 'flex-start', justifyContent: 'center', padding: '60px 12px 12px', overflowY: 'auto' }}>
+          <div style={{ background: 'var(--surface)', borderRadius: 16, padding: '20px', width: '100%', maxWidth: 480, boxShadow: '0 8px 40px rgba(0,0,0,0.25)' }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 24 }}>
               <h2 style={{ margin: 0, fontSize: '1.2rem', fontWeight: 800 }}>Edit Sale</h2>
               <button className="btn btn-glass" style={{ width: 32, height: 32, padding: 0 }} onClick={() => setEditing(null)}>✕</button>
@@ -838,7 +838,7 @@ function OrdersSection({ orders, overallOrders = [], isAdmin, canDelete, onCommi
                 />
               </label>
             </div>
-            <div style={{ display: 'flex', gap: 10, marginTop: 24 }}>
+            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 10, marginTop: 24 }}>
               {canDelete && (
                 <button className="btn" style={{ flex: '0 0 auto', background: 'var(--danger)', borderColor: 'var(--danger)', color: '#fff', fontWeight: 700, padding: '0 20px', height: 44 }}
                   onClick={async () => { if (await confirmDialog('Delete this sale? This cannot be undone.')) { onDelete(editing.id); setEditing(null); } }}
@@ -852,7 +852,7 @@ function OrdersSection({ orders, overallOrders = [], isAdmin, canDelete, onCommi
           </div>
         </div>
       )}
-      <div className="table-wrap">
+      <div style={{ overflowX: 'auto', overflowY: 'auto', maxHeight: 420, width: '100%', WebkitOverflowScrolling: 'touch' as any }}>
         <table>
         <thead>
           <tr>
@@ -915,7 +915,7 @@ function OrdersSection({ orders, overallOrders = [], isAdmin, canDelete, onCommi
       </table>
       </div>
 
-      <div style={{ marginTop: 12, display: 'flex', justifyContent: 'space-between', gap: 12, padding: '8px 12px', background: 'var(--surface-2)', borderRadius: 8 }}>
+      <div style={{ marginTop: 12, display: 'flex', flexWrap: 'wrap', justifyContent: 'space-between', gap: 8, padding: '8px 12px', background: 'var(--surface-2)', borderRadius: 8, fontSize: '12px' }}>
         <div style={{ fontWeight: 700 }}>
           Showing totals: Items: {filteredQty} — Gross: {Rs(filteredGross)} — Profit: {Rs(filteredProfit)}
         </div>
