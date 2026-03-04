@@ -540,7 +540,7 @@ h1, h2, h3, h4 {
 /* ── KPI Cards ──────────────────────────────────────── */
 .kpi-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(190px, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
   gap: 16px;
   margin-bottom: 32px;
 }
@@ -951,9 +951,9 @@ h1, h2, h3, h4 {
 .table-wrap {
   width: 100%;
   overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
   border: 1px solid var(--border);
   border-radius: var(--radius);
-  overflow: hidden;
 }
 
 table {
@@ -971,6 +971,7 @@ th {
   border-bottom: 1px solid var(--border);
   text-transform: uppercase;
   letter-spacing: 0.05em;
+  white-space: nowrap;
 }
 
 td {
@@ -1351,6 +1352,15 @@ input::placeholder {
     display: none;
   }
 
+  .sidebar-brand .brand-text {
+    display: none;
+  }
+
+  .sidebar-brand {
+    justify-content: center;
+    padding: 0 8px;
+  }
+
   .main-area {
     margin-left: 72px;
     width: calc(100% - 72px);
@@ -1422,6 +1432,23 @@ input::placeholder {
     transform: translateX(0);
   }
 
+  .sidebar.mobile-open .nav-label {
+    display: block;
+  }
+
+  .sidebar.mobile-open .sidebar-brand .brand-text {
+    display: block;
+  }
+
+  .sidebar.mobile-open .sidebar-brand {
+    justify-content: flex-start;
+    padding: 0 20px;
+  }
+
+  .sidebar.mobile-open .sidebar-footer {
+    display: block;
+  }
+
   /* Mobile overlay when sidebar is open */
   .mobile-overlay {
     display: none;
@@ -1461,6 +1488,7 @@ input::placeholder {
     width: 100%;
     padding: 16px;
     margin-top: var(--topbar-h);
+    overflow-x: hidden;
   }
 
   .topbar {
@@ -1575,21 +1603,25 @@ input::placeholder {
     width: calc(100% + 28px);
     border-left: none;
     border-right: none;
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
   }
 
   table {
-    font-size: 12px;
-    min-width: 600px;
+    font-size: 11px;
+    min-width: max-content;
   }
 
   th {
-    padding: 10px 12px;
-    font-size: 10px;
+    padding: 8px 10px;
+    font-size: 9px;
+    white-space: nowrap;
   }
 
   td {
-    padding: 10px 12px;
-    font-size: 12px;
+    padding: 8px 10px;
+    font-size: 11px;
+    white-space: nowrap;
   }
 
   /* Forms */
@@ -1679,10 +1711,17 @@ input::placeholder {
     margin: -12px;
     margin-top: 0;
     width: calc(100% + 24px);
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+  }
+
+  table {
+    min-width: max-content;
   }
 
   th, td {
-    padding: 8px 10px;
+    padding: 6px 8px;
+    font-size: 10px;
   }
 
   .btn {
@@ -1707,7 +1746,7 @@ input::placeholder {
 /* Extra small devices (400px and below) */
 @media (max-width: 400px) {
   .main-area {
-    padding: 10px;
+    padding: 8px;
   }
 
   .kpi-card {
@@ -1732,7 +1771,7 @@ input::placeholder {
   }
 
   .section-body {
-    padding: 10px;
+    padding: 8px;
   }
 
   .section-title {
@@ -1740,12 +1779,20 @@ input::placeholder {
   }
 
   table {
-    min-width: 500px;
+    min-width: max-content;
   }
 
   th, td {
     padding: 6px 8px;
-    font-size: 11px;
+    font-size: 10px;
+  }
+
+  .table-wrap {
+    margin: -8px;
+    margin-top: 0;
+    width: calc(100% + 16px);
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
   }
 }
 
@@ -1988,6 +2035,12 @@ input::placeholder {
   /* Prevent horizontal overflow from fixed-width inline styles */
   .section-body > * {
     max-width: 100%;
+  }
+
+  /* But allow table-wrap to scroll horizontally */
+  .section-body > .table-wrap,
+  .section-body .table-wrap {
+    max-width: none;
     overflow-x: auto;
   }
 }
@@ -2075,7 +2128,72 @@ input::placeholder {
 }
 
 /* -----------------------------------------------------------
-   PRINT / PDF STYLES � Reports page
+   MOBILE TABLE & INLINE-STYLE OVERRIDES
+   Catch inline flex containers, summary bars, etc.
+------------------------------------------------------------ */
+@media (max-width: 768px) {
+  /* Inline edit box */
+  .inline-edit-box {
+    gap: 2px !important;
+  }
+
+  .inline-edit-box input {
+    width: 48px !important;
+    height: 28px !important;
+    font-size: 11px !important;
+    padding: 2px 4px !important;
+  }
+
+  /* Table filter wrapper */
+  .table-filter-wrap {
+    flex-direction: column !important;
+    align-items: stretch !important;
+    gap: 8px !important;
+    padding: 8px 12px !important;
+  }
+
+  .table-filter-wrap > * {
+    width: 100% !important;
+  }
+
+  /* Store selector view */
+  .store-selector-view .table-wrap {
+    margin: 0 -14px;
+    width: calc(100% + 28px);
+    border-left: none;
+    border-right: none;
+    border-radius: 0;
+  }
+
+  /* KPI grid: always 2 columns on mobile */
+  .kpi-grid {
+    grid-template-columns: 1fr 1fr !important;
+    gap: 10px !important;
+  }
+}
+
+@media (max-width: 480px) {
+  /* KPI: single column on very small phones */
+  .kpi-grid {
+    grid-template-columns: 1fr !important;
+    gap: 8px !important;
+  }
+
+  .kpi-card {
+    padding: 10px !important;
+  }
+
+  .kpi-value {
+    font-size: 14px !important;
+  }
+
+  .kpi-label {
+    font-size: 9px !important;
+  }
+}
+
+/* -----------------------------------------------------------
+   PRINT / PDF STYLES  Reports page
 ------------------------------------------------------------ */
 @media print {
   /* Hide all navigation and interactive chrome */
