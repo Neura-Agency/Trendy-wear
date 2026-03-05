@@ -480,12 +480,13 @@ export default function InventoryPage({ user, onLogin }: PageProps) {
                                     <th>In Shop Stock</th>
                                     {isAdmin && <th>Shop Cut %</th>}
                                     <th style={{ textAlign: 'right' }}>Items Sold</th>
+                                    <th>Alloted By</th>
                                     {isAdmin && <th>Actions</th>}
                                 </tr>
                             </thead>
                             <tbody>
                                     {stockProvided.filter(s => isAdmin || s.storeName === user.storeName).length === 0 ? (
-                                    <tr><td colSpan={isAdmin ? 7 : 5} style={{ textAlign: 'center', padding: 40 }} className="text-muted">No stock available currently.</td></tr>
+                                    <tr><td colSpan={isAdmin ? 9 : 6} style={{ textAlign: 'center', padding: 40 }} className="text-muted">No stock available currently.</td></tr>
                                 ) : (
                                     stockProvided.filter(s => isAdmin || s.storeName === user.storeName).map((item, idx) => (
                                         <tr key={item.id || idx} id={`store-inv-row-${item.id || idx}`}>
@@ -503,6 +504,13 @@ export default function InventoryPage({ user, onLogin }: PageProps) {
                                                 <Badge type={item.quantityAssigned - item.quantityRemaining > 0 ? 'blue' : 'gray'}>
                                                     {item.quantityAssigned - item.quantityRemaining}
                                                 </Badge>
+                                            </td>
+                                            <td>
+                                                {item.alotedBy ? (
+                                                    <Badge type="purple">{item.alotedBy}</Badge>
+                                                ) : (
+                                                    <span className="text-muted" style={{ fontSize: '0.75rem' }}>—</span>
+                                                )}
                                             </td>
                                             {isAdmin && (
                                                 <td style={{ textAlign: 'right' }}>

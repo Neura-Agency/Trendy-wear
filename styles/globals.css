@@ -2193,6 +2193,382 @@ input::placeholder {
 }
 
 /* -----------------------------------------------------------
+   PARTNER STORE SALES – RESPONSIVE
+------------------------------------------------------------ */
+
+/* ── Orders section wrapper ── */
+.orders-section {
+  width: 100%;
+}
+
+/* ── Desktop table: visible by default, hidden on small ── */
+.orders-desktop-table {
+  display: block;
+  max-height: 420px;
+  overflow-y: auto;
+}
+
+/* ── Mobile cards: hidden by default ── */
+.orders-mobile-cards {
+  display: none;
+}
+
+.orders-mobile-empty {
+  text-align: center;
+  padding: 32px 16px;
+  color: var(--text-muted);
+  font-size: 0.85rem;
+}
+
+/* ── Summary bar ── */
+.orders-summary-bar {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  gap: 8px;
+  margin-top: 12px;
+  padding: 10px 14px;
+  background: var(--surface-2);
+  border-radius: var(--radius);
+  font-size: 12px;
+}
+
+.orders-summary-showing {
+  font-weight: 700;
+  color: var(--text-main);
+}
+
+.orders-summary-all {
+  color: var(--text-muted);
+  text-align: right;
+}
+
+/* ── Edit sale modal ── */
+.edit-sale-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.45);
+  z-index: 1300;
+  display: flex;
+  align-items: flex-start;
+  justify-content: center;
+  padding: 60px 16px 16px;
+  overflow-y: auto;
+}
+
+.edit-sale-modal {
+  background: var(--surface);
+  border-radius: 16px;
+  padding: 24px;
+  width: 100%;
+  max-width: 480px;
+  box-shadow: 0 8px 40px rgba(0, 0, 0, 0.25);
+}
+
+.edit-sale-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 24px;
+}
+
+.edit-sale-header h2 {
+  margin: 0;
+  font-size: 1.2rem;
+  font-weight: 800;
+}
+
+.edit-sale-close {
+  width: 32px;
+  height: 32px;
+  padding: 0;
+}
+
+.edit-sale-fields {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.edit-sale-fields label {
+  font-weight: 600;
+  font-size: 0.85rem;
+}
+
+.edit-sale-fields .form-input {
+  margin-top: 4px;
+  display: block;
+  width: 100%;
+}
+
+.edit-sale-readonly {
+  margin-top: 4px;
+  padding: 8px 12px;
+  background: var(--surface-2);
+  border-radius: 8px;
+  border: 1px solid var(--border);
+  color: var(--text-muted);
+}
+
+.edit-sale-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin-top: 24px;
+}
+
+.edit-sale-delete {
+  flex: 0 0 auto;
+  background: var(--danger);
+  border-color: var(--danger);
+  color: #fff;
+  font-weight: 700;
+  padding: 0 20px;
+  height: 44px;
+}
+
+.edit-sale-cancel {
+  flex: 1;
+  height: 44px;
+}
+
+.edit-sale-save {
+  flex: 1;
+  height: 44px;
+  font-weight: 700;
+}
+
+/* ── Mobile card layout ── */
+.order-card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 14px;
+  margin-bottom: 10px;
+  cursor: pointer;
+  transition: box-shadow 0.15s, border-color 0.15s;
+}
+
+.order-card:hover {
+  border-color: var(--acc);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
+}
+
+.order-card:last-child {
+  margin-bottom: 0;
+}
+
+.order-card-top {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 6px;
+}
+
+.order-card-store {
+  font-weight: 700;
+  color: var(--pri-700);
+  font-size: 0.85rem;
+}
+
+.order-card-date {
+  font-size: 0.72rem;
+  color: var(--text-muted);
+}
+
+.order-card-product {
+  font-weight: 700;
+  font-size: 0.9rem;
+  color: var(--text-main);
+  margin-bottom: 10px;
+  padding-bottom: 8px;
+  border-bottom: 1px solid var(--border);
+}
+
+.order-card-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px 12px;
+}
+
+.order-card-field {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.order-card-label {
+  font-size: 0.68rem;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  font-weight: 600;
+}
+
+.order-card-value {
+  font-size: 0.82rem;
+  color: var(--text-body);
+}
+
+/* ── Responsive: 768px ── */
+@media (max-width: 768px) {
+  .orders-desktop-table {
+    display: none !important;
+  }
+
+  .orders-mobile-cards {
+    display: block;
+    max-height: 400px;
+    overflow-y: auto;
+    -webkit-overflow-scrolling: touch;
+  }
+
+  .orders-summary-bar {
+    flex-direction: column;
+    gap: 4px;
+    text-align: left;
+    padding: 10px 12px;
+  }
+
+  .orders-summary-all {
+    text-align: left;
+  }
+
+  .edit-sale-overlay {
+    padding: 16px 10px 10px;
+  }
+
+  .edit-sale-modal {
+    max-width: 100%;
+    border-radius: 12px;
+    padding: 18px;
+  }
+
+  .edit-sale-header h2 {
+    font-size: 1rem;
+  }
+
+  .edit-sale-fields .form-input,
+  .edit-sale-fields input {
+    height: 42px;
+    font-size: 14px;
+  }
+
+  .edit-sale-fields label {
+    font-size: 0.82rem;
+  }
+
+  .edit-sale-actions {
+    flex-direction: column;
+  }
+
+  .edit-sale-delete,
+  .edit-sale-cancel,
+  .edit-sale-save {
+    width: 100%;
+    flex: none;
+  }
+
+  /* Store action buttons: full-width stack */
+  .store-action-buttons {
+    flex-direction: column !important;
+    gap: 10px !important;
+  }
+
+  .store-action-buttons .btn {
+    flex: 1 1 auto !important;
+    min-width: 0 !important;
+    width: 100% !important;
+  }
+}
+
+/* ── Responsive: 576px ── */
+@media (max-width: 576px) {
+  .orders-mobile-cards {
+    max-height: 340px;
+  }
+
+  .order-card {
+    padding: 12px;
+  }
+
+  .order-card-grid {
+    gap: 6px 10px;
+  }
+
+  .order-card-store {
+    font-size: 0.8rem;
+  }
+
+  .order-card-product {
+    font-size: 0.82rem;
+  }
+
+  .order-card-value {
+    font-size: 0.78rem;
+  }
+
+  .orders-summary-bar {
+    font-size: 11px;
+    padding: 8px 10px;
+  }
+
+  .edit-sale-overlay {
+    padding: 8px 6px 6px;
+  }
+
+  .edit-sale-modal {
+    padding: 14px;
+    border-radius: 10px;
+  }
+
+  .store-action-buttons {
+    gap: 8px !important;
+    margin-top: 16px !important;
+  }
+
+  .store-action-buttons .btn {
+    height: 44px !important;
+    font-size: 12px !important;
+  }
+}
+
+/* ── Responsive: 400px ── */
+@media (max-width: 400px) {
+  .orders-mobile-cards {
+    max-height: 300px;
+  }
+
+  .order-card {
+    padding: 10px;
+    border-radius: 8px;
+  }
+
+  .order-card-grid {
+    grid-template-columns: 1fr 1fr;
+    gap: 5px 8px;
+  }
+
+  .order-card-label {
+    font-size: 0.62rem;
+  }
+
+  .order-card-value {
+    font-size: 0.74rem;
+  }
+
+  .orders-summary-bar {
+    font-size: 10px;
+    padding: 6px 8px;
+    border-radius: 6px;
+  }
+
+  .edit-sale-modal {
+    padding: 10px;
+  }
+}
+
+/* -----------------------------------------------------------
    PRINT / PDF STYLES  Reports page
 ------------------------------------------------------------ */
 @media print {
