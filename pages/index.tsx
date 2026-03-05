@@ -78,9 +78,9 @@ function TableFilter({ value, onChange }: TableFilterProps) {
   }
 
   return (
-    <div className="table-filter-wrap" style={{ display: 'flex', gap: 12, alignItems: 'center', flexWrap: 'wrap', background: 'var(--surface-2)', padding: '6px 16px', borderRadius: 8, border: '1px solid var(--border)' }}>
-      <span style={{ fontWeight: 700, fontSize: '12px', color: 'var(--text-muted)', textTransform: 'uppercase' }}>Filter:</span>
-      <div style={{ minWidth: 120, flex: '1 1 140px', maxWidth: 200 }}>
+    <div className="table-filter-wrap">
+      <span className="tf-label">Filter:</span>
+      <div className="tf-mode-select">
         <CustomSelect
           value={mode}
           onChange={handleModeChange}
@@ -89,10 +89,14 @@ function TableFilter({ value, onChange }: TableFilterProps) {
         />
       </div>
       {mode === 'Weekly' && (
-        <WeekMonthPicker mode="Weekly" value={weekDate} onChange={(v) => handleWeekChange(v ? new Date(v) : null)} />
+        <div className="tf-picker-wrap">
+          <WeekMonthPicker mode="Weekly" value={weekDate} onChange={(v) => handleWeekChange(v ? new Date(v) : null)} />
+        </div>
       )}
       {mode === 'Monthly' && (
-        <WeekMonthPicker mode="Monthly" value={monthDate} onChange={(v) => handleMonthChange(v ? new Date(v) : null)} />
+        <div className="tf-picker-wrap">
+          <WeekMonthPicker mode="Monthly" value={monthDate} onChange={(v) => handleMonthChange(v ? new Date(v) : null)} />
+        </div>
       )}
     </div>
   );

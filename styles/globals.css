@@ -1730,17 +1730,6 @@ input::placeholder {
     font-size: 11px;
   }
 
-  /* Make filter wrap stack vertically */
-  .table-filter-wrap {
-    flex-direction: column !important;
-    align-items: stretch !important;
-    gap: 8px !important;
-    padding: 10px !important;
-  }
-
-  .table-filter-wrap > * {
-    width: 100% !important;
-  }
 }
 
 /* Extra small devices (400px and below) */
@@ -2144,18 +2133,6 @@ input::placeholder {
     padding: 2px 4px !important;
   }
 
-  /* Table filter wrapper */
-  .table-filter-wrap {
-    flex-direction: column !important;
-    align-items: stretch !important;
-    gap: 8px !important;
-    padding: 8px 12px !important;
-  }
-
-  .table-filter-wrap > * {
-    width: 100% !important;
-  }
-
   /* Store selector view */
   .store-selector-view .table-wrap {
     margin: 0 -14px;
@@ -2189,6 +2166,252 @@ input::placeholder {
 
   .kpi-label {
     font-size: 9px !important;
+  }
+}
+
+/* -----------------------------------------------------------
+   TABLE FILTER + WEEK/MONTH PICKER
+------------------------------------------------------------ */
+
+/* ── Base filter bar ── */
+.table-filter-wrap {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  align-items: center;
+  background: var(--surface-2);
+  padding: 8px 14px;
+  border-radius: var(--radius);
+  border: 1px solid var(--border);
+  width: 100%;
+  box-sizing: border-box;
+}
+
+.tf-label {
+  font-weight: 700;
+  font-size: 11px;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+
+.tf-mode-select {
+  min-width: 120px;
+  flex: 0 0 auto;
+}
+
+.tf-picker-wrap {
+  flex: 1 1 160px;
+  min-width: 0;
+}
+
+/* ── WeekMonthPicker trigger ── */
+.wmp-wrap {
+  position: relative;
+  width: 100%;
+}
+
+.wmp-trigger {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  width: 100%;
+  height: 36px;
+  padding: 0 12px;
+  border-radius: var(--radius);
+  border: 1px solid var(--border);
+  background: var(--surface);
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--text-main);
+  cursor: pointer;
+  transition: border-color 0.15s;
+  white-space: nowrap;
+  overflow: hidden;
+}
+
+.wmp-trigger:hover {
+  border-color: var(--acc);
+}
+
+.wmp-trigger-label {
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  text-align: left;
+  font-size: 13px;
+}
+
+.wmp-trigger-arrow {
+  font-size: 11px;
+  color: var(--text-muted);
+  flex-shrink: 0;
+}
+
+/* ── Dropdown panel ── */
+.wmp-dropdown {
+  position: absolute;
+  top: calc(100% + 6px);
+  right: 0;
+  z-index: 1200;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 14px;
+  width: min(300px, calc(100vw - 32px));
+  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.14);
+}
+
+/* Push left edge so it never clips off the left of the viewport */
+@supports (left: max(0px, 1px)) {
+  .wmp-dropdown {
+    right: auto;
+    left: max(0px, calc(100% - min(300px, calc(100vw - 32px))));
+  }
+}
+
+/* ── Navigation row ── */
+.wmp-nav {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 12px;
+}
+
+.wmp-nav-btn {
+  flex-shrink: 0;
+  width: 34px;
+  height: 34px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--surface-2);
+  font-size: 18px;
+  line-height: 1;
+  cursor: pointer;
+  color: var(--text-main);
+  transition: background 0.15s;
+}
+
+.wmp-nav-btn:hover {
+  background: var(--border);
+}
+
+.wmp-nav-label {
+  flex: 1;
+  text-align: center;
+  font-weight: 700;
+  font-size: 13px;
+  color: var(--text-main);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* ── Action buttons row ── */
+.wmp-actions {
+  display: flex;
+  gap: 8px;
+}
+
+.wmp-btn {
+  flex: 1;
+  height: 36px;
+  border-radius: 8px;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  border: 1px solid var(--border);
+  transition: opacity 0.15s;
+  white-space: nowrap;
+}
+
+.wmp-btn:hover { opacity: 0.85; }
+
+.wmp-btn-ghost {
+  background: var(--surface-2);
+  color: var(--text-main);
+  border-color: var(--border);
+}
+
+.wmp-btn-danger {
+  background: #fff2f0;
+  color: #e53935;
+  border-color: #ffccc7;
+}
+
+.wmp-btn-primary {
+  background: var(--acc);
+  color: #fff;
+  border-color: var(--acc);
+  font-weight: 700;
+}
+
+/* ── Responsive: stack filter on ≤768px ── */
+@media (max-width: 768px) {
+  .table-filter-wrap {
+    flex-direction: column !important;
+    align-items: stretch !important;
+    gap: 8px !important;
+    padding: 10px 12px !important;
+  }
+
+  .tf-label {
+    display: none; /* saves vertical space on tiny screens */
+  }
+
+  .tf-mode-select {
+    width: 100%;
+    flex: none;
+  }
+
+  .tf-picker-wrap {
+    width: 100%;
+    flex: none;
+  }
+
+  .wmp-dropdown {
+    /* On small screens use the full available width, anchored left */
+    left: 0;
+    right: 0;
+    width: auto;
+  }
+
+  .wmp-nav-label {
+    font-size: 12px;
+  }
+
+  .wmp-btn {
+    font-size: 11px;
+    height: 38px;
+  }
+}
+
+@media (max-width: 400px) {
+  .wmp-trigger {
+    font-size: 12px;
+    height: 38px;
+    padding: 0 10px;
+  }
+
+  .wmp-dropdown {
+    padding: 12px;
+    border-radius: 10px;
+  }
+
+  .wmp-nav-btn {
+    width: 30px;
+    height: 30px;
+    font-size: 16px;
+  }
+
+  .wmp-nav-label {
+    font-size: 11px;
   }
 }
 
