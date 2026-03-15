@@ -275,8 +275,9 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 
       // ── Calculate financials ─────────────────────────────────────────────
       const grossAmount = price * qty
-      const commissionAmount = Math.round(grossAmount * commissionPercent) / 100
-      const adminTake = grossAmount - commissionAmount - totalDeductions
+      const amountReceived = grossAmount - totalDeductions
+      const commissionAmount = Math.round(amountReceived * commissionPercent) / 100
+      const adminTake = amountReceived - commissionAmount
       const profit = adminTake - costPrice * qty
 
       // ── Insert order ─────────────────────────────────────────────────────
@@ -376,8 +377,9 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       const grossAmount     = num(existing.selling_price) * num(existing.quantity)
       const totalDeductions = num(existing.shipment_cost)
       const costPrice       = num(existing.cost_price) * num(existing.quantity)
-      const commissionAmount = Math.round(grossAmount * newPct) / 100
-      const adminTake        = grossAmount - commissionAmount - totalDeductions
+      const amountReceived   = grossAmount - totalDeductions
+      const commissionAmount = Math.round(amountReceived * newPct) / 100
+      const adminTake        = amountReceived - commissionAmount
       const profit           = adminTake - costPrice
 
       const { error: updateErr } = await supabaseAdmin
@@ -422,8 +424,9 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       const totalDeductions = ship + extra
       const costPrice      = num(existing.cost_price) * qty
       const commPct        = num(existing.commission_percent)
-      const commissionAmount = Math.round(grossAmount * commPct) / 100
-      const adminTake      = grossAmount - commissionAmount - totalDeductions
+      const amountReceived = grossAmount - totalDeductions
+      const commissionAmount = Math.round(amountReceived * commPct) / 100
+      const adminTake      = amountReceived - commissionAmount
       const profit         = adminTake - costPrice
 
       const { error: updateErr } = await supabaseAdmin

@@ -36,7 +36,9 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
             id,
             owner_name,
             contact,
-            account
+            account,
+            associate_owner,
+            owners:associate_owner ( id, name )
           )
         `)
         .order('created_at', { ascending: true })
@@ -67,7 +69,9 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       stores.forEach((store: any) => {
         storesMap[store.name] = {
           name: store.name,
-          commission: Number(store.commission) || 0
+          commission: Number(store.commission) || 0,
+          associateOwnerId: store.store_owners?.associate_owner ?? null,
+          associateOwnerName: store.store_owners?.owners?.name ?? null,
         }
       })
 

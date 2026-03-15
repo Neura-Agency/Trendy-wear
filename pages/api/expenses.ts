@@ -16,7 +16,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     if (req.method === 'GET') {
       const { data, error } = await supabaseAdmin
         .from(TABLES.EXPENSES)
-        .select('id, title, amount, category, expense_date, notes, created_at')
+        .select('id, title, amount, category, expense_date, notes, created_at, paid_by_owner_id, from_acc, expense_type, owners:paid_by_owner_id ( name )')
         .order('expense_date', { ascending: false })
 
       if (error) throw error
@@ -29,6 +29,10 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
         expense_date: r.expense_date ?? '',
         notes: r.notes ?? null,
         created_at: r.created_at,
+        paid_by_owner_id: r.paid_by_owner_id ?? null,
+        paid_by_owner_name: r.owners?.name ?? null,
+        from_acc: r.from_acc ?? null,
+        expense_type: r.expense_type ?? null,
       }))
 
       return res.status(200).json({ expenses })
@@ -40,7 +44,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
         return res.status(403).json({ error: 'Only super-admins can add expenses' })
       }
 
-      const { title, amount, category, expense_date, notes } = req.body || {}
+      const { title, amount, category, expense_date, notes, paid_by_owner_id, from_acc, expense_type } = req.body || {}
 
       if (!title || typeof title !== 'string' || !title.trim()) {
         return res.status(400).json({ error: 'Title is required' })
@@ -59,8 +63,11 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
           category: (category || 'Misc').trim(),
           expense_date: expense_date || new Date().toISOString().slice(0, 10),
           notes: notes ?? null,
+          paid_by_owner_id: paid_by_owner_id || null,
+          from_acc: from_acc || null,
+          expense_type: expense_type || 'operational',
         })
-        .select('id, title, amount, category, expense_date, notes, created_at')
+        .select('id, title, amount, category, expense_date, notes, created_at, paid_by_owner_id, from_acc, expense_type')
         .single()
 
       if (error) throw error
@@ -74,6 +81,9 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
           expense_date: inserted.expense_date ?? '',
           notes: inserted.notes ?? null,
           created_at: inserted.created_at,
+          paid_by_owner_id: inserted.paid_by_owner_id ?? null,
+          from_acc: inserted.from_acc ?? null,
+          expense_type: inserted.expense_type ?? null,
         },
       })
     }
@@ -84,7 +94,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
         return res.status(403).json({ error: 'Only super-admins can edit expenses' })
       }
 
-      const { id, title, amount, category, expense_date, notes } = req.body || {}
+      const { id, title, amount, category, expense_date, notes, paid_by_owner_id, from_acc, expense_type } = req.body || {}
       if (!id) return res.status(400).json({ error: 'Expense id is required' })
 
       const updates: Record<string, any> = {}
@@ -93,12 +103,15 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       if (category !== undefined)     updates.category     = String(category).trim()
       if (expense_date !== undefined) updates.expense_date = expense_date
       if (notes !== undefined)        updates.notes        = notes ?? null
+      if (paid_by_owner_id !== undefined) updates.paid_by_owner_id = paid_by_owner_id || null
+      if (from_acc !== undefined)     updates.from_acc     = from_acc || null
+      if (expense_type !== undefined) updates.expense_type = expense_type || 'operational'
 
       const { data: updated, error } = await supabaseAdmin
         .from(TABLES.EXPENSES)
         .update(updates)
         .eq('id', id)
-        .select('id, title, amount, category, expense_date, notes, created_at')
+        .select('id, title, amount, category, expense_date, notes, created_at, paid_by_owner_id, from_acc, expense_type')
         .single()
 
       if (error) throw error
@@ -112,6 +125,9 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
           expense_date: updated.expense_date ?? '',
           notes: updated.notes ?? null,
           created_at: updated.created_at,
+          paid_by_owner_id: updated.paid_by_owner_id ?? null,
+          from_acc: updated.from_acc ?? null,
+          expense_type: updated.expense_type ?? null,
         },
       })
     }
