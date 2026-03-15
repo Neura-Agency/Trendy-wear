@@ -203,6 +203,128 @@ function PayoutModal({
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
+// Transfer Modal
+// ─────────────────────────────────────────────────────────────────────────────
+function TransferModal({
+  owners,
+  defaultToOwnerId,
+  loggedInUsername,
+  onClose,
+  onSaved,
+}: {
+  owners: Owner[];
+  defaultToOwnerId?: string;
+  loggedInUsername?: string;
+  onClose: () => void;
+  onSaved: () => void;
+}) {
+  const { toast } = usePopup();
+
+  // Find the owner that matches the logged-in user's username (case-insensitive)
+  const loggedInOwner = loggedInUsername
+    ? owners.find(o => o.name.toLowerCase() === loggedInUsername.toLowerCase())
+    : null;
+
+  // To Owner options exclude the logged-in owner
+  const availableToOwners = loggedInOwner
+    ? owners.filter(o => o.id !== loggedInOwner.id)
+    : owners;
+
+  // If defaultToOwnerId is provided, use it; otherwise use first available
+  const initialToOwnerId = defaultToOwnerId || availableToOwners[0]?.id || '';
+
+  const [form, setForm] = useState({
+    fromOwnerId: loggedInOwner?.id || owners[0]?.id || '',
+    toOwnerId: initialToOwnerId,
+    amount: '',
+    description: '',
+  });
+  const [saving, setSaving] = useState(false);
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!form.fromOwnerId || !form.toOwnerId) return toast.error('Select both owners');
+    if (form.fromOwnerId === form.toOwnerId) return toast.error('Cannot transfer to self');
+    if (!form.amount || Number(form.amount) <= 0) return toast.error('Enter a valid amount');
+    setSaving(true);
+    try {
+      const res = await fetch('/api/owner-transfers', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          fromOwnerId: form.fromOwnerId,
+          toOwnerId: form.toOwnerId,
+          amount: Number(form.amount),
+          description: form.description || null,
+        }),
+      });
+      const d = await res.json();
+      if (!res.ok) throw new Error(d.error || 'Failed');
+      toast.success('Transfer recorded');
+      onSaved();
+      onClose();
+    } catch (err: any) {
+      toast.error(err.message);
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const toOwnerObj = owners.find(o => o.id === form.toOwnerId);
+
+  return (
+    <div className="modal-overlay" onClick={onClose}>
+      <div className="modal-box" style={{ maxWidth: 460 }} onClick={e => e.stopPropagation()}>
+        <div className="modal-head">
+          <h3>Record Transfer</h3>
+          <button className="btn btn-sm" onClick={onClose} style={{ border: 'none', fontSize: 18, lineHeight: 1 }}>✕</button>
+        </div>
+        <div className="modal-body">
+          <form onSubmit={handleSubmit} style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+            <div className="input-group">
+              <label>From Owner *</label>
+              {loggedInOwner ? (
+                <input
+                  type="text"
+                  value={loggedInOwner.name}
+                  disabled
+                  style={{ background: '#f3f4f6', cursor: 'not-allowed' }}
+                />
+              ) : (
+                <select value={form.fromOwnerId} onChange={e => setForm(p => ({ ...p, fromOwnerId: e.target.value }))}>
+                  {owners.map(o => (
+                    <option key={o.id} value={o.id}>{o.name}</option>
+                  ))}
+                </select>
+              )}
+            </div>
+            <div className="input-group">
+              <label>To Owner *</label>
+              <select value={form.toOwnerId} onChange={e => setForm(p => ({ ...p, toOwnerId: e.target.value }))}>
+                {availableToOwners.map(o => (
+                  <option key={o.id} value={o.id}>{o.name}</option>
+                ))}
+              </select>
+            </div>
+            <div className="input-group">
+              <label>Amount (Rs) *</label>
+              <input type="text" inputMode="numeric" value={form.amount} onChange={e => setForm(p => ({ ...p, amount: e.target.value }))} placeholder="e.g. 10000" required />
+            </div>
+            <div className="input-group">
+              <label>Description</label>
+              <textarea rows={2} value={form.description} onChange={e => setForm(p => ({ ...p, description: e.target.value }))} placeholder="Optional…" />
+            </div>
+            <button type="submit" className="btn btn-primary btn-full" disabled={saving} style={{ marginTop: 4 }}>
+              {saving ? 'Saving…' : toOwnerObj ? `Transfer to ${toOwnerObj.name}` : 'Record Transfer'}
+            </button>
+          </form>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
 // Main Page
 // ─────────────────────────────────────────────────────────────────────────────
 export default function OwnersPage({ user, onLogin }: PageProps) {
@@ -218,36 +340,50 @@ export default function OwnersPage({ user, onLogin }: PageProps) {
   const [showPayout, setShowPayout] = useState(false);
   const [payoutDefaultOwner, setPayoutDefaultOwner] = useState<string | undefined>(undefined);
   const [expandedOwner, setExpandedOwner] = useState<string | null>(null);
+  const [showTransfer, setShowTransfer] = useState(false);
+  const [transferToOwner, setTransferToOwner] = useState<string | undefined>(undefined);
+  const [transfers, setTransfers] = useState<any[]>([]);
+  const [stores, setStores] = useState<Record<string, any>>({});
+  const [orders, setOrders] = useState<any[]>([]);
+  const [expenses, setExpenses] = useState<any[]>([]);
 
   // ── Fetch everything in parallel ─────────────────────────────────────
   const refresh = useCallback(async () => {
     try {
-      const [ownersRes, payoutsRes, ordersRes, expensesRes] = await Promise.all([
+      const [ownersRes, payoutsRes, ordersRes, expensesRes, transfersRes, storesRes] = await Promise.all([
         fetch('/api/owners'),
         fetch('/api/owners?payouts=1'),
         fetch('/api/orders'),
         fetch('/api/expenses'),
+        fetch('/api/owner-transfers'),
+        fetch('/api/store'),
       ]);
-      const [ownersData, payoutsData, ordersData, expensesData] = await Promise.all([
+      const [ownersData, payoutsData, ordersData, expensesData, transfersData, storesData] = await Promise.all([
         ownersRes.json(),
         payoutsRes.json(),
         ordersRes.json(),
         expensesRes.json(),
+        transfersRes.json(),
+        storesRes.json(),
       ]);
 
       setOwners(ownersData.owners || []);
       setPayouts(payoutsData.payouts || []);
+      setTransfers(transfersData.transactions || []);
+      setStores(storesData.stores || {});
+      setOrders(ordersData.orders || []);
+      setExpenses(expensesData.expenses || []);
 
-      const orders: any[] = ordersData.orders || [];
-      const expenses: any[] = expensesData.expenses || [];
+      const ordersList: any[] = ordersData.orders || [];
+      const expensesList: any[] = expensesData.expenses || [];
 
       // Revenue = gross sales
-      const totalGross = orders.reduce((s: number, o: any) => s + ((o.sellingPrice || 0) * (o.quantity || 1)), 0);
+      const totalGross = ordersList.reduce((s: number, o: any) => s + ((o.sellingPrice || 0) * (o.quantity || 1)), 0);
       // All expenses = recorded expenses + COGS + shipping + store commissions
-      const supabaseExpenses = expenses.reduce((s: number, e: any) => s + (Number(e.amount) || 0), 0);
-      const totalCostPrice = orders.reduce((s: number, o: any) => s + ((o.costPrice || 0) * (o.quantity || 1)), 0);
-      const totalShipping = orders.reduce((s: number, o: any) => s + (o.shipmentCost || 0), 0);
-      const totalShopCut = orders.reduce((s: number, o: any) => s + (o.commissionAmount || 0), 0);
+      const supabaseExpenses = expensesList.reduce((s: number, e: any) => s + (Number(e.amount) || 0), 0);
+      const totalCostPrice = ordersList.reduce((s: number, o: any) => s + ((o.costPrice || 0) * (o.quantity || 1)), 0);
+      const totalShipping = ordersList.reduce((s: number, o: any) => s + (o.shipmentCost || 0), 0);
+      const totalShopCut = ordersList.reduce((s: number, o: any) => s + (o.commissionAmount || 0), 0);
       const allExpenses = supabaseExpenses + totalCostPrice + totalShipping + totalShopCut;
       // Net Profit = Revenue - Expenses
       const netProfit = totalGross - allExpenses;
@@ -285,6 +421,45 @@ export default function OwnersPage({ user, onLogin }: PageProps) {
   payouts.forEach(p => {
     if (!ownerPayoutsMap[p.ownerId]) ownerPayoutsMap[p.ownerId] = [];
     ownerPayoutsMap[p.ownerId].push(p);
+  });
+
+  // ── Revenue Attribution by Owner ────────────────────────────────────
+  // Build store->owner mapping from stores data
+  const storeToOwner: Record<string, string> = {};
+  Object.values(stores).forEach((s: any) => {
+    if (s.associateOwnerId) {
+      storeToOwner[s.name] = s.associateOwnerId;
+    }
+  });
+
+  // Per-owner revenue from orders (attributed via store ownership)
+  const ownerRevenue: Record<string, number> = {};
+  const ownerOrderCount: Record<string, number> = {};
+  orders.forEach((o: any) => {
+    const ownerId = storeToOwner[o.storeName];
+    if (ownerId) {
+      ownerRevenue[ownerId] = (ownerRevenue[ownerId] || 0) + ((o.sellingPrice || 0) * (o.quantity || 1));
+      ownerOrderCount[ownerId] = (ownerOrderCount[ownerId] || 0) + 1;
+    }
+  });
+
+  // Per-owner expenses (from paid_by_owner_id)
+  const ownerExpensesPaid: Record<string, number> = {};
+  expenses.forEach((e: any) => {
+    if (e.paid_by_owner_id) {
+      ownerExpensesPaid[e.paid_by_owner_id] = (ownerExpensesPaid[e.paid_by_owner_id] || 0) + (Number(e.amount) || 0);
+    }
+  });
+
+  // Per-owner transfers (in and out)
+  const ownerTransferOut: Record<string, number> = {};
+  const ownerTransferIn: Record<string, number> = {};
+  transfers.forEach((t: any) => {
+    if (t.transactionType === 'internal_transfer_out') {
+      ownerTransferOut[t.ownerId] = (ownerTransferOut[t.ownerId] || 0) + (Number(t.amount) || 0);
+    } else if (t.transactionType === 'internal_transfer_in') {
+      ownerTransferIn[t.ownerId] = (ownerTransferIn[t.ownerId] || 0) + (Number(t.amount) || 0);
+    }
   });
 
   // ── Handlers ──────────────────────────────────────────────────────────
@@ -342,9 +517,32 @@ export default function OwnersPage({ user, onLogin }: PageProps) {
     }
   };
 
+  const handleDeleteTransfer = async (transfer: any) => {
+    const confirmed = await confirmDialog(`Delete this transfer of ${Rs(transfer.amount)}? Both the outgoing and incoming records will be removed.`);
+    if (!confirmed) return;
+    try {
+      const res = await fetch('/api/owner-transfers', {
+        method: 'DELETE',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ id: transfer.id }),
+      });
+      const d = await res.json();
+      if (!res.ok) throw new Error(d.error || 'Failed');
+      toast.success('Transfer deleted');
+      refresh();
+    } catch (err: any) {
+      toast.error(err.message);
+    }
+  };
+
   const openPayout = (ownerId?: string) => {
     setPayoutDefaultOwner(ownerId);
     setShowPayout(true);
+  };
+
+  const openTransfer = (toOwnerId?: string) => {
+    setTransferToOwner(toOwnerId);
+    setShowTransfer(true);
   };
 
   return (
@@ -362,6 +560,15 @@ export default function OwnersPage({ user, onLogin }: PageProps) {
           owners={activeOwners}
           defaultOwnerId={payoutDefaultOwner}
           onClose={() => setShowPayout(false)}
+          onSaved={refresh}
+        />
+      )}
+      {showTransfer && (
+        <TransferModal
+          owners={activeOwners}
+          defaultToOwnerId={transferToOwner}
+          loggedInUsername={user?.username}
+          onClose={() => { setShowTransfer(false); setTransferToOwner(undefined); }}
           onSaved={refresh}
         />
       )}
@@ -464,6 +671,57 @@ export default function OwnersPage({ user, onLogin }: PageProps) {
           </SectionCard>
         )}
 
+        {/* ── Revenue Attribution by Owner ── */}
+        {activeOwners.length > 0 && (
+          <SectionCard title="Revenue Attribution by Owner" icon={iconProfit}>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(260px, 1fr))', gap: 14 }}>
+              {activeOwners.map((o, idx) => {
+                const clrs = ['#7c3aed', '#2563eb', '#16a34a', '#ea580c'];
+                const bgs = ['#f5f3ff', '#eff6ff', '#f0fdf4', '#fff7ed'];
+                const rev = ownerRevenue[o.id] || 0;
+                const exp = ownerExpensesPaid[o.id] || 0;
+                const net = rev - exp;
+                const orderCount = ownerOrderCount[o.id] || 0;
+                const ownedStores = Object.entries(storeToOwner)
+                  .filter(([, oid]) => oid === o.id)
+                  .map(([name]) => name);
+                const color = clrs[idx % clrs.length];
+                const bg = bgs[idx % bgs.length];
+
+                return (
+                  <div key={o.id} style={{ borderRadius: 12, border: `1.5px solid ${color}30`, background: bg, overflow: 'hidden' }}>
+                    <div style={{ height: 5, background: color }} />
+                    <div style={{ padding: '14px 16px' }}>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                          <div style={{ width: 34, height: 34, borderRadius: '50%', background: color, color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 800, fontSize: 15 }}>
+                            {o.name.charAt(0)}
+                          </div>
+                          <span style={{ fontWeight: 700, fontSize: 15 }}>{o.name}</span>
+                        </div>
+                        <span style={{ fontSize: 12, color: 'var(--text-muted)' }}>{orderCount} order{orderCount !== 1 ? 's' : ''}</span>
+                      </div>
+                      <div style={{ fontSize: 11, color: 'var(--text-muted)', marginBottom: 10 }}>
+                        Stores: {ownedStores.length > 0 ? ownedStores.join(', ') : <span style={{ fontStyle: 'italic' }}>None assigned</span>}
+                      </div>
+                      {[
+                        { label: 'Revenue', value: Rs(rev), valueColor: '#16a34a' },
+                        { label: 'Expenses Paid', value: Rs(exp), valueColor: '#dc2626' },
+                        { label: 'Net Contribution', value: Rs(net), valueColor: net >= 0 ? '#16a34a' : '#dc2626' },
+                      ].map(row => (
+                        <div key={row.label} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '5px 0', borderBottom: '1px solid #0000000a' }}>
+                          <span style={{ fontSize: 12, color: 'var(--text-muted)' }}>{row.label}</span>
+                          <span style={{ fontSize: 13, fontWeight: 700, color: row.valueColor }}>{row.value}</span>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </SectionCard>
+        )}
+
         {/* ── Owner Cards ── */}
         <SectionCard title="Partners" icon={iconOwner}
           action={
@@ -539,6 +797,14 @@ export default function OwnersPage({ user, onLogin }: PageProps) {
                         disabled={!owner.isActive}
                       >
                         + Payout
+                      </button>
+                      <button
+                        className="btn btn-secondary btn-sm"
+                        style={{ flex: 1 }}
+                        onClick={() => openTransfer(owner.id)}
+                        disabled={!owner.isActive}
+                      >
+                        Transfer
                       </button>
                       <button className="btn btn-secondary btn-sm" onClick={() => setEditOwner(owner)}>Edit</button>
                       <button
@@ -668,6 +934,129 @@ export default function OwnersPage({ user, onLogin }: PageProps) {
                 </tfoot>
               </table>
             </div>
+          )}
+        </SectionCard>
+
+        {/* ── Owner Transfers ── */}
+        <SectionCard title="Owner Transfers" icon={iconPayout}
+          action={
+            <button className="btn btn-primary btn-sm" onClick={() => setShowTransfer(true)}>+ Record Transfer</button>
+          }
+        >
+          {/* Per-owner transfer summary cards */}
+          {activeOwners.length > 0 && (
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(260px, 1fr))', gap: 14, marginBottom: 20 }}>
+              {activeOwners.map((o, idx) => {
+                const clrs = ['#7c3aed', '#2563eb', '#16a34a', '#ea580c'];
+                const bgs = ['#f5f3ff', '#eff6ff', '#f0fdf4', '#fff7ed'];
+                const transferOut = ownerTransferOut[o.id] || 0;
+                const transferIn = ownerTransferIn[o.id] || 0;
+                const netTransfer = transferIn - transferOut;
+                const color = clrs[idx % clrs.length];
+                const bg = bgs[idx % bgs.length];
+
+                return (
+                  <div key={o.id} style={{ borderRadius: 12, border: `1.5px solid ${color}30`, background: bg, overflow: 'hidden' }}>
+                    <div style={{ height: 5, background: color }} />
+                    <div style={{ padding: '14px 16px' }}>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                          <div style={{ width: 34, height: 34, borderRadius: '50%', background: color, color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 800, fontSize: 15 }}>
+                            {o.name.charAt(0)}
+                          </div>
+                          <span style={{ fontWeight: 700, fontSize: 15 }}>{o.name}</span>
+                        </div>
+                      </div>
+                      {[
+                        { label: 'Transfer Out', value: Rs(transferOut), valueColor: '#dc2626' },
+                        { label: 'Transfer In', value: Rs(transferIn), valueColor: '#16a34a' },
+                        { label: 'Net Transfer', value: Rs(Math.abs(netTransfer)), valueColor: netTransfer >= 0 ? '#16a34a' : '#dc2626', prefix: netTransfer >= 0 ? '+' : '-' },
+                      ].map(row => (
+                        <div key={row.label} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '5px 0', borderBottom: '1px solid #0000000a' }}>
+                          <span style={{ fontSize: 12, color: 'var(--text-muted)' }}>{row.label}</span>
+                          <span style={{ fontSize: 13, fontWeight: 700, color: row.valueColor }}>{row.prefix || ''}{row.value}</span>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+
+          {/* Individual transfer records */}
+          {transfers.filter((t: any) => t.transactionType === 'internal_transfer_out').length === 0 ? (
+            <p style={{ color: 'var(--text-muted)', padding: '16px 0', textAlign: 'center' }}>No transfers recorded yet.</p>
+          ) : (
+            <>
+              <div style={{ fontSize: 12, fontWeight: 600, color: 'var(--text-muted)', marginBottom: 10, textTransform: 'uppercase', letterSpacing: '0.04em' }}>Transfer History</div>
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: 14 }}>
+                {transfers
+                  .filter((t: any) => t.transactionType === 'internal_transfer_out')
+                  .map((t: any) => {
+                    const fromIdx = owners.findIndex(o => o.id === t.ownerId);
+                    const toIdx = owners.findIndex(o => o.id === t.counterpartOwnerId);
+                    const clrs = ['#7c3aed', '#2563eb', '#16a34a', '#ea580c'];
+                    const bgs = ['#f5f3ff', '#eff6ff', '#f0fdf4', '#fff7ed'];
+                    const fromColor = clrs[fromIdx % clrs.length] || '#6b7280';
+                    const toColor = clrs[toIdx % clrs.length] || '#6b7280';
+                    const cardBg = bgs[fromIdx % bgs.length] || '#f9fafb';
+
+                    return (
+                      <div key={t.id} style={{ borderRadius: 12, border: `1.5px solid ${fromColor}30`, background: cardBg, overflow: 'hidden' }}>
+                        <div style={{ height: 5, background: `linear-gradient(90deg, ${fromColor}, ${toColor})` }} />
+                        <div style={{ padding: '14px 16px' }}>
+                          {/* From -> To row */}
+                          <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 12 }}>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                              <div style={{ width: 32, height: 32, borderRadius: '50%', background: fromColor, color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 800, fontSize: 14 }}>
+                                {(t.ownerName || '?').charAt(0).toUpperCase()}
+                              </div>
+                              <span style={{ fontWeight: 700, fontSize: 14 }}>{t.ownerName}</span>
+                            </div>
+                            <span style={{ fontSize: 16, color: 'var(--text-muted)' }}>→</span>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                              <div style={{ width: 32, height: 32, borderRadius: '50%', background: toColor, color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 800, fontSize: 14 }}>
+                                {(t.counterpartOwnerName || '?').charAt(0).toUpperCase()}
+                              </div>
+                              <span style={{ fontWeight: 700, fontSize: 14 }}>{t.counterpartOwnerName}</span>
+                            </div>
+                          </div>
+
+                          {/* Amount */}
+                          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '6px 0', borderBottom: '1px solid #0000000a' }}>
+                            <span style={{ fontSize: 12, color: 'var(--text-muted)' }}>Amount</span>
+                            <span style={{ fontSize: 15, fontWeight: 800, color: '#16a34a' }}>{Rs(t.amount)}</span>
+                          </div>
+
+                          {/* Date */}
+                          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '6px 0', borderBottom: '1px solid #0000000a' }}>
+                            <span style={{ fontSize: 12, color: 'var(--text-muted)' }}>Date</span>
+                            <span style={{ fontSize: 12, fontWeight: 600 }}>{new Date(t.occurredAt).toLocaleDateString('en-PK', { day: '2-digit', month: 'short', year: 'numeric' })}</span>
+                          </div>
+
+                          {/* Description */}
+                          {t.description && (
+                            <div style={{ padding: '6px 0', borderBottom: '1px solid #0000000a' }}>
+                              <span style={{ fontSize: 11, color: 'var(--text-muted)' }}>Note: </span>
+                              <span style={{ fontSize: 12, color: 'var(--text-main)' }}>{t.description}</span>
+                            </div>
+                          )}
+
+                          {/* Delete button */}
+                          <div style={{ marginTop: 10, textAlign: 'right' }}>
+                            <button
+                              className="btn btn-secondary btn-sm"
+                              style={{ color: 'var(--red-500, #ef4444)', padding: '4px 12px', fontSize: 12 }}
+                              onClick={() => handleDeleteTransfer(t)}
+                            >Delete</button>
+                          </div>
+                        </div>
+                      </div>
+                    );
+                  })}
+              </div>
+            </>
           )}
         </SectionCard>
       </div>

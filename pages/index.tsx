@@ -1059,22 +1059,27 @@ export default function Home({ user, onLogin }: PageProps) {
   const [partnerFilter, setPartnerFilter] = useState<string>('All');
   const [partnerStore, setPartnerStore] = useState<string>('All');
   const [kpiFilter, setKpiFilter] = useState<string>('All');
+  const [owners, setOwners] = useState<Array<{ id: string; name: string }>>([]);
 
   const refresh = useCallback(async () => {
     setLoading(true);
     try {
-      const [storesRes, storeInvRes, invRes, ordersRes, expensesRes] = await Promise.all([
+      const [storesRes, storeInvRes, invRes, ordersRes, expensesRes, ownersRes] = await Promise.all([
         fetch('/api/store'),
         fetch('/api/storeInventory'),
         fetch('/api/inventory'),
         fetch('/api/orders'),
         fetch('/api/expenses'),
+        fetch('/api/owners'),
       ]);
       const storesData = await storesRes.json()
       const storeInvData = await storeInvRes.json()
       const invData = await invRes.json()
       const ordersData = await ordersRes.json()
       const expensesData = await expensesRes.json()
+      const ownersData   = await ownersRes.json()
+
+      setOwners((ownersData?.owners || []).map((o: any) => ({ id: o.id, name: o.name })));
 
       setData({
         orders: ordersData?.orders || [],
@@ -1753,17 +1758,21 @@ export default function Home({ user, onLogin }: PageProps) {
               <button className="btn btn-primary" style={{ padding: '0.5rem 1rem' }} onClick={() => setShowExpenseModal(true)}>+ Add Expense</button>
             }>
               <div style={{ overflowX: 'auto', width: '100%' }}>
-                <table style={{ width: '100%', fontSize: '0.85rem', borderCollapse: 'collapse', tableLayout: 'fixed' }}>
+                <table style={{ width: '100%', fontSize: '0.85rem', borderCollapse: 'collapse', tableLayout: 'fixed', minWidth: 700 }}>
                   <colgroup>
-                    <col style={{ width: '40%' }} />
-                    <col style={{ width: '22%' }} />
-                    <col style={{ width: '20%' }} />
+                    <col style={{ width: '25%' }} />
+                    <col style={{ width: '14%' }} />
+                    <col style={{ width: '14%' }} />
+                    <col style={{ width: '14%' }} />
+                    <col style={{ width: '15%' }} />
                     <col style={{ width: '18%' }} />
                   </colgroup>
                   <thead>
                     <tr style={{ background: 'var(--surface-2)' }}>
                       <th style={{ padding: '10px 14px', textAlign: 'left', fontWeight: 700, fontSize: '0.78rem', color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.04em', borderBottom: '1px solid var(--border)' }}>Title</th>
                       <th style={{ padding: '10px 14px', textAlign: 'left', fontWeight: 700, fontSize: '0.78rem', color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.04em', borderBottom: '1px solid var(--border)' }}>Category</th>
+                      <th style={{ padding: '10px 14px', textAlign: 'left', fontWeight: 700, fontSize: '0.78rem', color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.04em', borderBottom: '1px solid var(--border)' }}>Paid By</th>
+                      <th style={{ padding: '10px 14px', textAlign: 'left', fontWeight: 700, fontSize: '0.78rem', color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.04em', borderBottom: '1px solid var(--border)' }}>From Acc</th>
                       <th style={{ padding: '10px 14px', textAlign: 'center', fontWeight: 700, fontSize: '0.78rem', color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.04em', borderBottom: '1px solid var(--border)' }}>Date</th>
                       <th style={{ padding: '10px 14px', textAlign: 'right', fontWeight: 700, fontSize: '0.78rem', color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.04em', borderBottom: '1px solid var(--border)' }}>Amount</th>
                     </tr>
@@ -1804,13 +1813,15 @@ export default function Home({ user, onLogin }: PageProps) {
                               <td style={{ padding: '11px 14px' }}>
                                 <span style={{ display: 'inline-block', padding: '2px 10px', borderRadius: 20, fontSize: '0.75rem', fontWeight: 700, background: chip.bg, color: chip.color, whiteSpace: 'nowrap' }}>{cat}</span>
                               </td>
+                              <td style={{ padding: '11px 14px', fontSize: '0.82rem', color: 'var(--text-muted)' }}>{e.paid_by_owner_name || '—'}</td>
+                              <td style={{ padding: '11px 14px', fontSize: '0.82rem', color: 'var(--text-muted)' }}>{e.from_acc || '—'}</td>
                               <td style={{ padding: '11px 14px', textAlign: 'center', color: 'var(--text-muted)', fontSize: '0.82rem' }}>{displayDate}</td>
                               <td style={{ padding: '11px 14px', textAlign: 'right', fontWeight: 800, color: 'var(--danger)', whiteSpace: 'nowrap' }}>−{Rs(e.amount)}</td>
                             </tr>
                           );
                         })}
                         <tr style={{ background: 'var(--surface-2)', borderTop: '2px solid var(--border)' }}>
-                          <td colSpan={3} style={{ padding: '11px 14px', fontWeight: 700, fontSize: '0.85rem', color: 'var(--text-main)' }}>
+                          <td colSpan={5} style={{ padding: '11px 14px', fontWeight: 700, fontSize: '0.85rem', color: 'var(--text-main)' }}>
                             Total — {data.expenses.length} expense{data.expenses.length !== 1 ? 's' : ''}
                           </td>
                           <td style={{ padding: '11px 14px', textAlign: 'right', fontWeight: 900, fontSize: '0.95rem', color: 'var(--danger)', whiteSpace: 'nowrap' }}>
@@ -1871,7 +1882,7 @@ export default function Home({ user, onLogin }: PageProps) {
                 <button className="btn btn-sm" onClick={() => setShowExpenseModal(false)} style={{ border: 'none', fontSize: '16px' }}>✕</button>
               </div>
               <div className="modal-body" style={{ padding: 20 }}>
-                <AddExpenseForm onAdd={(e) => { handleAddExpense(e); setShowExpenseModal(false); }} />
+                <AddExpenseForm owners={owners} onAdd={(e) => { handleAddExpense(e); setShowExpenseModal(false); }} />
               </div>
             </div>
           </div>
@@ -1887,6 +1898,7 @@ export default function Home({ user, onLogin }: PageProps) {
                 <AddExpenseForm
                   key={editingExpense.id}
                   initialData={editingExpense}
+                  owners={owners}
                   onAdd={(e) => handleEditExpense(e as Partial<Expense> & { id?: string })}
                 />
               </div>

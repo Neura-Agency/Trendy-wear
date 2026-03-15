@@ -37,7 +37,8 @@ export const TABLES = {
   SETTINGS: 'settings',
   AUDIT_LOGS: 'audit_logs',
   OWNERS: 'owners',
-  OWNER_PAYOUTS: 'owner_payouts'
+  OWNER_PAYOUTS: 'owner_payouts',
+  OWNER_TRANSACTIONS: 'owner_transactions',
 } as const
 
 // Helper function to handle Supabase errors

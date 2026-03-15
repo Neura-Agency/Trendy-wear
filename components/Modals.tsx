@@ -143,11 +143,6 @@ export function SaleModal({ inventory, storeName, isAdmin, storeNames, onAdd, on
     const handleSubmit = (e: React.FormEvent) => {
         e.preventDefault();
         const finalPrice = currency === 'GBP' ? sale.sellingPrice * gbpRate : sale.sellingPrice;
-        if (!isAdmin && selectedItem?.ownerSupplyPrice) {
-            if (finalPrice < selectedItem.ownerSupplyPrice) {
-                return toast.error(`Selling price cannot be less than the supply price (Rs ${selectedItem.ownerSupplyPrice.toLocaleString()})`);
-            }
-        }
         onAdd({
             ...sale,
             type: 'Sale',
@@ -161,7 +156,7 @@ export function SaleModal({ inventory, storeName, isAdmin, storeNames, onAdd, on
 
     const currentPriceInPKR = currency === 'GBP' ? sale.sellingPrice * gbpRate : sale.sellingPrice;
     const totalBill = (currentPriceInPKR * sale.quantity);
-    const totalDeductions = (sale.shipmentCost || 0) + (sale.extraCharges || 0);
+    const totalDeductions = (isAdmin ? (sale.shipmentCost || 0) : 0) + (sale.extraCharges || 0);
     const netPayable = totalBill - totalDeductions;
     const totalDispatch = (sale.quantity || 0) + (sale.extraQty || 0);
 
@@ -240,11 +235,6 @@ export function SaleModal({ inventory, storeName, isAdmin, storeNames, onAdd, on
                                     onChange={e => setSale({ ...sale, sellingPrice: parseFloat(e.target.value) || 0 })}
                                     style={{ fontWeight: 700 }}
                                 />
-                                {!isAdmin && selectedItem?.ownerSupplyPrice ? (
-                                    <div style={{ fontSize: 11, marginTop: 4, fontWeight: 600, color: currentPriceInPKR < selectedItem.ownerSupplyPrice ? 'var(--danger)' : 'var(--success)' }}>
-                                        Min: Rs {selectedItem.ownerSupplyPrice.toLocaleString()} (supply price)
-                                    </div>
-                                ) : null}
                                 {currency === 'GBP' && (
                                     <div style={{ fontSize: '10px', color: 'var(--success)', marginTop: 4, fontWeight: 600 }}>
                                         ≈ Rs {currentPriceInPKR.toLocaleString()} (Rate: {gbpRate})
@@ -252,6 +242,7 @@ export function SaleModal({ inventory, storeName, isAdmin, storeNames, onAdd, on
                                 )}
                             </div>
 
+                            {isAdmin && (
                             <div className="input-group">
                                 <label style={{ color: 'var(--danger)', fontWeight: 700 }}>Shipment Cost (PKR)</label>
                                 <input
@@ -263,6 +254,7 @@ export function SaleModal({ inventory, storeName, isAdmin, storeNames, onAdd, on
                                     style={{ border: '1px solid var(--danger)' }}
                                 />
                             </div>
+                            )}
 
                             <div className="input-group">
                                 <label style={{ color: 'var(--danger)', fontWeight: 700 }}>Extra Charges (PKR)</label>

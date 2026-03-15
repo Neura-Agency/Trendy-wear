@@ -134,6 +134,23 @@ export interface Expense {
   expense_date: string; // date in YYYY-MM-DD format
   notes?: string | null;
   created_at?: string;
+  paid_by_owner_id?: string | null;
+  paid_by_owner_name?: string | null;
+  from_acc?: string | null;
+  expense_type?: string | null;
+}
+
+export interface OwnerTransaction {
+  id: string;
+  ownerId: string;
+  ownerName?: string;
+  transactionType: string;
+  amount: number;
+  description?: string | null;
+  counterpartOwnerId?: string | null;
+  counterpartOwnerName?: string | null;
+  occurredAt: string;
+  createdAt: string;
 }
 
 export interface Client {

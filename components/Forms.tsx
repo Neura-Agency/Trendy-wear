@@ -254,9 +254,10 @@ export function AddPurchaseForm({ onAdd }: AddPurchaseFormProps) {
 interface AddExpenseFormProps {
   onAdd: (expense: Partial<Expense>) => void;
   initialData?: Partial<Expense> & { id?: string };
+  owners?: Array<{ id: string; name: string }>;
 }
 
-export function AddExpenseForm({ onAdd, initialData }: AddExpenseFormProps) {
+export function AddExpenseForm({ onAdd, initialData, owners }: AddExpenseFormProps) {
   const { toast } = usePopup();
   const isEdit = Boolean(initialData?.id);
   const [formData, setFormData] = useState<Partial<Expense>>({
@@ -264,7 +265,10 @@ export function AddExpenseForm({ onAdd, initialData }: AddExpenseFormProps) {
     category:     initialData?.category     ?? 'Misc',
     amount:       initialData?.amount       ?? 0,
     expense_date: initialData?.expense_date ?? new Date().toISOString().slice(0, 10),
-    notes:        initialData?.notes        ?? ''
+    notes:        initialData?.notes        ?? '',
+    paid_by_owner_id: initialData?.paid_by_owner_id ?? '',
+    from_acc:     initialData?.from_acc     ?? 'Trendy Wear',
+    expense_type: initialData?.expense_type ?? 'operational',
   });
 
   const handleSubmit = (e: React.FormEvent) => {
@@ -279,7 +283,10 @@ export function AddExpenseForm({ onAdd, initialData }: AddExpenseFormProps) {
       category: String(formData.category),
       amount: amount,
       expense_date: String(formData.expense_date),
-      notes: formData.notes || null
+      notes: formData.notes || null,
+      paid_by_owner_id: formData.paid_by_owner_id || null,
+      from_acc: formData.from_acc || null,
+      expense_type: formData.expense_type || 'operational',
     });
   };
 
@@ -326,6 +333,43 @@ export function AddExpenseForm({ onAdd, initialData }: AddExpenseFormProps) {
             value={formData.expense_date as string}
             onChange={(e) => setFormData({ ...formData, expense_date: e.target.value })}
           />
+        </div>
+
+        <div className="input-group">
+          <label>Expense Type</label>
+          <select
+            value={formData.expense_type as string}
+            onChange={(e) => setFormData({ ...formData, expense_type: e.target.value })}
+          >
+            <option value="operational">Operational</option>
+            <option value="investment">Investment</option>
+            <option value="direct_debit">Direct Debit</option>
+            <option value="misc">Misc</option>
+          </select>
+        </div>
+
+        <div className="input-group">
+          <label>Paid By</label>
+          <select
+            value={formData.paid_by_owner_id as string}
+            onChange={(e) => setFormData({ ...formData, paid_by_owner_id: e.target.value })}
+          >
+            <option value="">-- Select Owner --</option>
+            {(owners || []).map(o => (
+              <option key={o.id} value={o.id}>{o.name}</option>
+            ))}
+          </select>
+        </div>
+
+        <div className="input-group">
+          <label>From Account</label>
+          <select
+            value={formData.from_acc as string}
+            onChange={(e) => setFormData({ ...formData, from_acc: e.target.value })}
+          >
+            <option value="Trendy Wear">Trendy Wear</option>
+            <option value="Personal">Personal</option>
+          </select>
         </div>
       </div>
 
