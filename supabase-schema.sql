@@ -320,6 +320,10 @@ create table if not exists public.expenses (
   title text not null,
   amount numeric(12,2) not null,
   category text,
+  expense_date date,
+  paid_by_owner_id uuid references public.owners(id) on delete set null,
+  from_acc text,
+  expense_type text,
   occurred_at timestamptz not null default now(),
   created_by uuid references public.accounts(id) on delete set null,
   created_at timestamptz not null default now(),
@@ -328,6 +332,7 @@ create table if not exists public.expenses (
 
 create index if not exists idx_expenses_occurred_at on public.expenses(occurred_at);
 create index if not exists idx_expenses_category on public.expenses(category);
+create index if not exists idx_expenses_paid_by_owner_id on public.expenses(paid_by_owner_id);
 
 drop trigger if exists trg_expenses_updated_at on public.expenses;
 create trigger trg_expenses_updated_at

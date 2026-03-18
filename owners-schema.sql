@@ -75,3 +75,26 @@ select
 from public.owners o
 left join public.owner_payouts p on p.owner_id = o.id
 group by o.id, o.name, o.profit_share_percent, o.is_active;
+
+-- ─────────────────────────────────────────────
+-- 4) OWNER TRANSACTIONS
+--    Tracks various owner transactions:
+--    - 'internal_transfer_out' / 'internal_transfer_in' = owner-to-owner transfers
+--    - 'owner_advance' = owner paid from personal account (money owed back to owner)
+-- ─────────────────────────────────────────────
+create table if not exists public.owner_transactions (
+  id                   uuid primary key default gen_random_uuid(),
+  owner_id             uuid not null references public.owners(id) on delete cascade,
+  transaction_type     text not null,  -- 'internal_transfer_out', 'internal_transfer_in', 'owner_advance'
+  amount               numeric(12,2) not null check (amount >= 0),
+  description          text,
+  counterpart_owner_id uuid references public.owners(id) on delete set null,
+  occurred_at          timestamptz not null default now(),
+  created_at           timestamptz not null default now()
+);
+
+create index if not exists idx_owner_transactions_owner_id on public.owner_transactions(owner_id);
+create index if not exists idx_owner_transactions_type on public.owner_transactions(transaction_type);
+create index if not exists idx_owner_transactions_occurred_at on public.owner_transactions(occurred_at);
+
+alter table public.owner_transactions enable row level security;

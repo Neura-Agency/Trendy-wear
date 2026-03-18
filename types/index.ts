@@ -14,6 +14,8 @@ export interface Owner {
   totalPaidOut?: number;
   payoutCount?: number;
   lastPayoutAt?: string | null;
+  /** Aggregated from owner_transactions type='owner_advance' (returned by GET /api/owners) */
+  totalAdvances?: number;
 }
 
 export interface OwnerPayout {

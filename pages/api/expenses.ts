@@ -72,6 +72,20 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 
       if (error) throw error
 
+      // If owner paid from personal account, create owner_advance transaction
+      if (paid_by_owner_id && from_acc === 'Personal' && amt > 0) {
+        const expenseDate = expense_date || new Date().toISOString().slice(0, 10)
+        await supabaseAdmin
+          .from(TABLES.OWNER_TRANSACTIONS)
+          .insert({
+            owner_id: paid_by_owner_id,
+            transaction_type: 'owner_advance',
+            amount: amt,
+            description: `Personal advance for: ${title.trim()}`,
+            occurred_at: new Date(expenseDate + 'T00:00:00Z').toISOString(),
+          })
+      }
+
       return res.status(201).json({
         expense: {
           id: inserted.id,
@@ -97,6 +111,13 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       const { id, title, amount, category, expense_date, notes, paid_by_owner_id, from_acc, expense_type } = req.body || {}
       if (!id) return res.status(400).json({ error: 'Expense id is required' })
 
+      // Fetch the current expense to check for transaction changes
+      const { data: currentExpense } = await supabaseAdmin
+        .from(TABLES.EXPENSES)
+        .select('*')
+        .eq('id', id)
+        .single()
+
       const updates: Record<string, any> = {}
       if (title !== undefined)        updates.title        = String(title).trim()
       if (amount !== undefined)       updates.amount       = num(amount)
@@ -115,6 +136,64 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
         .single()
 
       if (error) throw error
+
+      // Handle owner_advance transaction updates
+      const newOwnerId = paid_by_owner_id !== undefined ? paid_by_owner_id : currentExpense?.paid_by_owner_id
+      const newFromAcc = from_acc !== undefined ? from_acc : currentExpense?.from_acc
+      const newAmount = amount !== undefined ? num(amount) : currentExpense?.amount
+      const newExpenseDate = expense_date !== undefined ? expense_date : currentExpense?.expense_date
+      const oldOwnerId = currentExpense?.paid_by_owner_id
+      const oldFromAcc = currentExpense?.from_acc
+      const oldAmount = currentExpense?.amount
+
+      // Determine if we need to delete the old transaction
+      const hadOldTransaction = oldOwnerId && oldFromAcc === 'Personal' && oldAmount > 0
+      const hasNewTransaction = newOwnerId && newFromAcc === 'Personal' && newAmount > 0
+
+      if (hadOldTransaction && !hasNewTransaction) {
+        // Delete the transaction if the expense is no longer a personal advance
+        await supabaseAdmin
+          .from(TABLES.OWNER_TRANSACTIONS)
+          .delete()
+          .eq('owner_id', oldOwnerId)
+          .eq('transaction_type', 'owner_advance')
+          .eq('amount', oldAmount)
+          .gte('created_at', new Date(new Date().getTime() - 60 * 60 * 1000).toISOString())
+      } else if (!hadOldTransaction && hasNewTransaction) {
+        // Create a new transaction if the expense is now a personal advance
+        const expenseDate = newExpenseDate || new Date().toISOString().slice(0, 10)
+        await supabaseAdmin
+          .from(TABLES.OWNER_TRANSACTIONS)
+          .insert({
+            owner_id: newOwnerId,
+            transaction_type: 'owner_advance',
+            amount: newAmount,
+            description: `Personal advance for: ${updated.title}`,
+            occurred_at: new Date(expenseDate + 'T00:00:00Z').toISOString(),
+          })
+      } else if (hadOldTransaction && hasNewTransaction) {
+        // If both old and new are personal advances, delete old and create new (in case owner or amount changed)
+        if (oldOwnerId !== newOwnerId || oldAmount !== newAmount) {
+          await supabaseAdmin
+            .from(TABLES.OWNER_TRANSACTIONS)
+            .delete()
+            .eq('owner_id', oldOwnerId)
+            .eq('transaction_type', 'owner_advance')
+            .eq('amount', oldAmount)
+            .gte('created_at', new Date(new Date().getTime() - 60 * 60 * 1000).toISOString())
+
+          const expenseDate = newExpenseDate || new Date().toISOString().slice(0, 10)
+          await supabaseAdmin
+            .from(TABLES.OWNER_TRANSACTIONS)
+            .insert({
+              owner_id: newOwnerId,
+              transaction_type: 'owner_advance',
+              amount: newAmount,
+              description: `Personal advance for: ${updated.title}`,
+              occurred_at: new Date(expenseDate + 'T00:00:00Z').toISOString(),
+            })
+        }
+      }
 
       return res.status(200).json({
         expense: {
@@ -141,12 +220,31 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       const { id } = req.body || {}
       if (!id) return res.status(400).json({ error: 'Expense id is required' })
 
+      // Fetch the expense to check if it has an owner_advance transaction
+      const { data: expense } = await supabaseAdmin
+        .from(TABLES.EXPENSES)
+        .select('paid_by_owner_id, from_acc, amount, expense_date')
+        .eq('id', id)
+        .single()
+
+      // Delete the expense
       const { error } = await supabaseAdmin
         .from(TABLES.EXPENSES)
         .delete()
         .eq('id', id)
 
       if (error) throw error
+
+      // Delete any corresponding owner_advance transaction
+      if (expense && expense.paid_by_owner_id && expense.from_acc === 'Personal' && num(expense.amount) > 0) {
+        await supabaseAdmin
+          .from(TABLES.OWNER_TRANSACTIONS)
+          .delete()
+          .eq('owner_id', expense.paid_by_owner_id)
+          .eq('transaction_type', 'owner_advance')
+          .eq('amount', num(expense.amount))
+          .gte('created_at', new Date(new Date().getTime() - 60 * 60 * 1000).toISOString())
+      }
 
       return res.status(200).json({ deleted: true })
     }
