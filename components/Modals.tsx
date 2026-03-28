@@ -126,6 +126,7 @@ export function SaleModal({ inventory, storeName, isAdmin, storeNames, onAdd, on
     const [sale, setSale] = useState<any>({
         productName: '',
         quantity: 1,
+        size: '',
         extraQty: 0,
         sellingPrice: 0,
         shipmentCost: 0,
@@ -139,9 +140,29 @@ export function SaleModal({ inventory, storeName, isAdmin, storeNames, onAdd, on
     const gbpRate = 360; // 1 GBP = 360 PKR (Default)
 
     const selectedItem = inventory.find(i => i.productName === sale.productName);
+    const sizeQuantitiesRemaining = selectedItem?.sizeQuantitiesRemaining;
+    const hasSizeTracking = sizeQuantitiesRemaining && Object.keys(sizeQuantitiesRemaining).length > 0;
+    const availableSizes = hasSizeTracking ? Object.entries(sizeQuantitiesRemaining).filter(([_, qty]) => (qty as number) > 0) : [];
 
     const handleSubmit = (e: React.FormEvent) => {
         e.preventDefault();
+        
+        // Validate size if tracking is enabled
+        if (hasSizeTracking && !sale.size) {
+            toast.error('Please select a size');
+            return;
+        }
+        
+        // Validate quantity against size-specific stock
+        if (hasSizeTracking && sale.size) {
+            const availableForSize = (sizeQuantitiesRemaining[sale.size] as number) || 0;
+            const totalDispatch = (sale.quantity || 0) + (sale.extraQty || 0);
+            if (totalDispatch > availableForSize) {
+                toast.error(`Only ${availableForSize} units available for size ${sale.size}`);
+                return;
+            }
+        }
+        
         const finalPrice = currency === 'GBP' ? sale.sellingPrice * gbpRate : sale.sellingPrice;
         onAdd({
             ...sale,
@@ -190,7 +211,7 @@ export function SaleModal({ inventory, storeName, isAdmin, storeNames, onAdd, on
                                     value={sale.productName}
                                     onChange={e => {
                                         const item = inventory.find(i => i.productName === e.target.value);
-                                        setSale({ ...sale, productName: e.target.value, sellingPrice: item?.sellingPrice || 0 });
+                                        setSale({ ...sale, productName: e.target.value, sellingPrice: item?.sellingPrice || 0, size: '' });
                                         setCurrency('PKR'); // Reset to PKR on item select
                                     }}
                                     required
@@ -203,6 +224,25 @@ export function SaleModal({ inventory, storeName, isAdmin, storeNames, onAdd, on
                                     ))}
                                 </select>
                             </div>
+
+                            {hasSizeTracking && (
+                                <div className="input-group full-width">
+                                    <label>Select Size</label>
+                                    <select
+                                        value={sale.size}
+                                        onChange={e => setSale({ ...sale, size: e.target.value })}
+                                        required
+                                        style={{ fontWeight: 700 }}
+                                    >
+                                        <option value="">Choose size...</option>
+                                        {availableSizes.map(([size, qty]) => (
+                                            <option key={size} value={size}>
+                                                {size} - {qty} available
+                                            </option>
+                                        ))}
+                                    </select>
+                                </div>
+                            )}
 
                             <div className="input-group">
                                 <label>Qty Sold</label>
@@ -950,6 +990,7 @@ export function AddInventoryModal({ onSave, onClose, stores, products }: AddInve
         quantity: 1,
         pricePerPiece: 0,
         picture: '',
+        sizeQuantities: {} as Record<string, number>
     });
 
     const [newProduct, setNewProduct] = useState<{
@@ -985,15 +1026,47 @@ export function AddInventoryModal({ onSave, onClose, stores, products }: AddInve
     };
 
     const toggleSize = (size: string) => {
-        setSizes(prev => prev.includes(size) ? prev.filter(s => s !== size) : [...prev, size]);
+        setSizes(prev => {
+            const newSizes = prev.includes(size) ? prev.filter(s => s !== size) : [...prev, size];
+            // Initialize size quantity when adding a size
+            if (!prev.includes(size)) {
+                setItem(curr => ({
+                    ...curr,
+                    sizeQuantities: { ...curr.sizeQuantities, [size]: 0 }
+                }));
+            } else {
+                // Remove size quantity when removing a size
+                setItem(curr => {
+                    const newSizeQuantities = { ...curr.sizeQuantities };
+                    delete newSizeQuantities[size];
+                    return { ...curr, sizeQuantities: newSizeQuantities };
+                });
+            }
+            return newSizes;
+        });
     };
 
     const handleAddCustomSize = () => {
         if (customSize && !sizes.includes(customSize)) {
-            setSizes([...sizes, customSize.toUpperCase()]);
+            const upperSize = customSize.toUpperCase();
+            setSizes([...sizes, upperSize]);
             setCustomSize('');
+            // Initialize size quantity for custom size
+            setItem(curr => ({
+                ...curr,
+                sizeQuantities: { ...curr.sizeQuantities, [upperSize]: 0 }
+            }));
         }
     };
+
+    const updateSizeQuantity = (size: string, qty: number) => {
+        setItem(curr => ({
+            ...curr,
+            sizeQuantities: { ...curr.sizeQuantities, [size]: Math.max(0, qty) }
+        }));
+    };
+
+    const totalQuantity = Object.values(item.sizeQuantities).reduce((sum, qty) => sum + qty, 0);
 
     const toggleStore = (store: string) => {
         setAllotedStores(prev => prev.includes(store) ? prev.filter(s => s !== store) : [...prev, store]);
@@ -1017,10 +1090,16 @@ export function AddInventoryModal({ onSave, onClose, stores, products }: AddInve
         if (productMode === 'new') {
             const pn = newProduct.productName.trim();
             if (!pn) return toast.error('Enter product name');
+            
+            // Validate size quantities
+            if (sizes.length > 0 && totalQuantity === 0) {
+                return toast.error('Enter quantities for at least one size');
+            }
         }
 
         onSave({
             ...item,
+            quantity: sizes.length > 0 ? totalQuantity : item.quantity,
             productId: productMode === 'select' ? selectedProductId : undefined,
             allotedStores,
             newProduct: productMode === 'new'
@@ -1177,10 +1256,12 @@ export function AddInventoryModal({ onSave, onClose, stores, products }: AddInve
                                 <label>Price Per Piece (Cost)</label>
                                 <input type="text" inputMode="decimal" required placeholder="0.00" value={item.pricePerPiece} onChange={e => setItem({ ...item, pricePerPiece: parseFloat(e.target.value) })} />
                             </div>
-                            <div className="input-group">
-                                <label>Total Quantity</label>
-                                <input type="text" inputMode="numeric" required value={item.quantity} onChange={e => setItem({ ...item, quantity: parseInt(e.target.value) })} />
-                            </div>
+                            {(productMode === 'select' || (productMode === 'new' && sizes.length === 0)) && (
+                                <div className="input-group">
+                                    <label>Total Quantity</label>
+                                    <input type="text" inputMode="numeric" required value={item.quantity} onChange={e => setItem({ ...item, quantity: parseInt(e.target.value) })} />
+                                </div>
+                            )}
                         </div>
 
                         <div className="input-group" style={{ marginBottom: 20 }}>
@@ -1251,7 +1332,7 @@ export function AddInventoryModal({ onSave, onClose, stores, products }: AddInve
                                             </button>
                                         ))}
                                     </div>
-                                    <div style={{ display: 'flex', gap: 8 }}>
+                                    <div style={{ display: 'flex', gap: 8, marginBottom: 12 }}>
                                         <input 
                                             placeholder="Add custom size (e.g. 3XL)..." 
                                             value={customSize} 
@@ -1261,12 +1342,37 @@ export function AddInventoryModal({ onSave, onClose, stores, products }: AddInve
                                         <button type="button" className="btn btn-sm" onClick={handleAddCustomSize} style={{ whiteSpace: 'nowrap' }}>+ Custom Size</button>
                                     </div>
                                     {sizes.some(s => !availableSizes.includes(s)) && (
-                                        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginTop: 8 }}>
+                                        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginTop: 8, marginBottom: 12 }}>
                                             {sizes.filter(s => !availableSizes.includes(s)).map(s => (
                                                 <Badge key={s} type="purple">
                                                     {s} <span style={{ cursor: 'pointer', marginLeft: 4 }} onClick={() => setSizes(sizes.filter(x => x !== s))}>×</span>
                                                 </Badge>
                                             ))}
+                                        </div>
+                                    )}
+                                    
+                                    {sizes.length > 0 && (
+                                        <div style={{ marginTop: 16, padding: 16, background: 'var(--surface-2)', borderRadius: 10, border: '1px solid var(--border)' }}>
+                                            <div style={{ fontSize: 13, fontWeight: 800, marginBottom: 12, color: 'var(--text)' }}>
+                                                Quantity per Size
+                                            </div>
+                                            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(120px, 1fr))', gap: 12 }}>
+                                                {sizes.map(s => (
+                                                    <div key={s} style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+                                                        <label style={{ fontSize: 11, fontWeight: 700, color: 'var(--text-muted)' }}>{s}</label>
+                                                        <input 
+                                                            type="number" 
+                                                            min="0"
+                                                            value={item.sizeQuantities[s] || 0}
+                                                            onChange={e => updateSizeQuantity(s, parseInt(e.target.value) || 0)}
+                                                            style={{ padding: '8px 12px', fontSize: 14 }}
+                                                        />
+                                                    </div>
+                                                ))}
+                                            </div>
+                                            <div style={{ marginTop: 12, padding: '8px 12px', background: 'var(--primary)', color: 'white', borderRadius: 6, fontSize: 13, fontWeight: 800, textAlign: 'center' }}>
+                                                Total: {totalQuantity} units
+                                            </div>
                                         </div>
                                     )}
                                 </>
@@ -1320,14 +1426,46 @@ export function AllotToStoreModal({ onSave, onClose, stores, inventory, allotedQ
         ownerSupplyPrice: 0,
         commissionPercent: 0,
         extraQty: 0,
+        sizeQuantitiesAssigned: {} as Record<string, number>
     });
 
     const selectedInv = (inventory || []).find(i => i.batchNumber === form.batchNumber);
     const productName = selectedInv?.productName || '';
+    const sizeQuantities = selectedInv?.sizeQuantities;
+    const hasSizeTracking = sizeQuantities && Object.keys(sizeQuantities).length > 0;
+    
     // Key by inventory.id (batch-level) to avoid mixing up different batches of same product
     const allotedQty = allotedQtyByProduct?.[selectedInv?.id || ''] || 0;
     const totalQty = Number(selectedInv?.quantityAvailable) || 0;
     const maxQty = Math.max(0, totalQty - allotedQty);
+
+    const updateSizeQuantity = (size: string, qty: number) => {
+        const maxForSize = (sizeQuantities?.[size] as number) || 0;
+        setForm(curr => ({
+            ...curr,
+            sizeQuantitiesAssigned: { 
+                ...curr.sizeQuantitiesAssigned, 
+                [size]: Math.max(0, Math.min(qty, maxForSize))
+            }
+        }));
+    };
+
+    const distributeEqually = () => {
+        if (!hasSizeTracking) return;
+        const sizes = Object.keys(sizeQuantities);
+        if (sizes.length === 0) return;
+        
+        const qtyPerSize = Math.floor(form.quantity / sizes.length);
+        const newSizeQuantities: Record<string, number> = {};
+        sizes.forEach(size => {
+            const maxForSize = (sizeQuantities[size] as number) || 0;
+            newSizeQuantities[size] = Math.min(qtyPerSize, maxForSize);
+        });
+        setForm(curr => ({ ...curr, sizeQuantitiesAssigned: newSizeQuantities }));
+        toast.success('Distributed equally across sizes');
+    };
+
+    const totalSizeQuantity = Object.values(form.sizeQuantitiesAssigned).reduce((sum, qty) => sum + qty, 0);
 
     React.useEffect(() => {
         if (!form.storeName && stores?.length) {
@@ -1352,9 +1490,17 @@ export function AllotToStoreModal({ onSave, onClose, stores, inventory, allotedQ
 
         if (!form.storeName) return toast.error('Select store');
         if (!form.batchNumber) return toast.error('Select item');
-        if (!form.quantity || form.quantity < 1) return toast.error('Enter quantity');
+        
+        let finalQuantity = form.quantity;
+        if (hasSizeTracking) {
+            finalQuantity = totalSizeQuantity;
+            if (finalQuantity === 0) return toast.error('Enter quantities for at least one size');
+        } else {
+            if (!form.quantity || form.quantity < 1) return toast.error('Enter quantity');
+        }
+        
         const extraQty = Number(form.extraQty) || 0;
-        if (form.quantity + extraQty > maxQty) return toast.error(`Total (qty + extra) cannot exceed available stock (${maxQty})`);
+        if (finalQuantity + extraQty > maxQty) return toast.error(`Total (qty + extra) cannot exceed available stock (${maxQty})`);
         const warehouseCost = Number(selectedInv?.costPrice) || 0;
         if (warehouseCost > 0 && Number(form.ownerSupplyPrice) < warehouseCost) {
             return toast.error(`New price cannot be less than warehouse cost (Rs ${warehouseCost.toLocaleString()})`);
@@ -1363,7 +1509,8 @@ export function AllotToStoreModal({ onSave, onClose, stores, inventory, allotedQ
         onSave({
             storeName: form.storeName,
             batchNumber: form.batchNumber,
-            quantity: Number(form.quantity),
+            quantity: finalQuantity,
+            sizeQuantitiesAssigned: hasSizeTracking ? form.sizeQuantitiesAssigned : undefined,
             ownerSupplyPrice: Number(form.ownerSupplyPrice) || 0,
             commissionPercent: Number(form.commissionPercent) || 0,
             extraQty,
@@ -1407,13 +1554,23 @@ export function AllotToStoreModal({ onSave, onClose, stores, inventory, allotedQ
                         <div className="form-grid-2" style={{ marginBottom: 16 }}>
                             <div className="input-group">
                                 <label>Quantity (Max {maxQty})</label>
-                                <input
-                                    type="text"
-                                    inputMode="numeric"
-                                    value={form.quantity}
-                                    onChange={(e) => setForm({ ...form, quantity: parseInt(e.target.value) || 0 })}
-                                    required
-                                />
+                                {hasSizeTracking ? (
+                                    <input
+                                        type="text"
+                                        inputMode="numeric"
+                                        value={form.quantity}
+                                        onChange={(e) => setForm({ ...form, quantity: parseInt(e.target.value) || 0 })}
+                                        placeholder="Enter total for equal distribution"
+                                    />
+                                ) : (
+                                    <input
+                                        type="text"
+                                        inputMode="numeric"
+                                        value={form.quantity}
+                                        onChange={(e) => setForm({ ...form, quantity: parseInt(e.target.value) || 0 })}
+                                        required
+                                    />
+                                )}
                                 <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 6 }}>
                                     Total Qty: <b>{totalQty}</b> · Aloted Qty: <b>{allotedQty}</b> · Available: <b>{maxQty}</b>
                                 </div>
@@ -1424,6 +1581,44 @@ export function AllotToStoreModal({ onSave, onClose, stores, inventory, allotedQ
                                 <input readOnly value={Rs(Number(selectedInv?.costPrice) || 0)} style={{ background: 'var(--surface-2)', fontWeight: 800 }} />
                             </div>
                         </div>
+
+                        {hasSizeTracking && (
+                            <div style={{ marginBottom: 16, padding: 16, background: 'var(--surface-2)', borderRadius: 10, border: '1px solid var(--border)' }}>
+                                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
+                                    <div style={{ fontSize: 13, fontWeight: 800, color: 'var(--text)' }}>
+                                        Quantity per Size
+                                    </div>
+                                    <button 
+                                        type="button" 
+                                        className="btn btn-sm btn-primary"
+                                        onClick={distributeEqually}
+                                        style={{ padding: '4px 12px', fontSize: 11 }}
+                                    >
+                                        Equal Distribution
+                                    </button>
+                                </div>
+                                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(100px, 1fr))', gap: 12 }}>
+                                    {Object.entries(sizeQuantities).map(([size, availableQty]) => (
+                                        <div key={size} style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+                                            <label style={{ fontSize: 11, fontWeight: 700, color: 'var(--text-muted)' }}>
+                                                {size} <span style={{ fontSize: 10, color: 'var(--text-muted)' }}>(max: {availableQty})</span>
+                                            </label>
+                                            <input 
+                                                type="number" 
+                                                min="0"
+                                                max={availableQty as number}
+                                                value={form.sizeQuantitiesAssigned[size] || 0}
+                                                onChange={e => updateSizeQuantity(size, parseInt(e.target.value) || 0)}
+                                                style={{ padding: '8px 10px', fontSize: 13 }}
+                                            />
+                                        </div>
+                                    ))}
+                                </div>
+                                <div style={{ marginTop: 12, padding: '8px 12px', background: totalSizeQuantity > 0 ? 'var(--primary)' : 'var(--surface-1)', color: totalSizeQuantity > 0 ? 'white' : 'var(--text-muted)', borderRadius: 6, fontSize: 13, fontWeight: 800, textAlign: 'center' }}>
+                                    Total: {totalSizeQuantity} units
+                                </div>
+                            </div>
+                        )}
 
                         <div className="form-grid-2" style={{ marginBottom: 18 }}>
                             <div className="input-group">

@@ -81,6 +81,8 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
           storeSellingPrice: num(row.store_selling_price),
           quantityAssigned: qtyAssigned,
           quantityRemaining: qtyRemaining,
+          sizeQuantitiesAssigned: null,
+          sizeQuantitiesRemaining: null,
           extraQty: num(row['extra_Qty'] ?? 0),
           created_at: row.created_at,
           updated_at: row.updated_at
@@ -97,16 +99,11 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     }
 
     if (req.method === 'POST') {
-      const { storeName, batchNumber, quantity, ownerSupplyPrice, commissionPercent, extraQty: rawExtra } = req.body || {}
+      const { storeName, batchNumber, quantity, sizeQuantitiesAssigned, ownerSupplyPrice, commissionPercent, extraQty: rawExtra } = req.body || {}
       const extraQty = num(rawExtra)
 
       if (!storeName || !batchNumber) {
         return res.status(400).json({ error: 'storeName and batchNumber are required' })
-      }
-
-      const qty = num(quantity)
-      if (!qty || qty < 1) {
-        return res.status(400).json({ error: 'quantity must be >= 1' })
       }
 
       const { data: store, error: storeErr } = await supabaseAdmin
@@ -123,7 +120,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 
       const { data: inv, error: invErr } = await supabaseAdmin
         .from(TABLES.INVENTORY)
-        .select('id, product_id, quantity_available, cost_price, products:product_id(product_name)')
+        .select('id, product_id, quantity_available, size_quantities, cost_price, products:product_id(product_name)')
         .eq('batch_number', String(batchNumber))
         .maybeSingle()
 
@@ -133,6 +130,30 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       }
       if (!inv) return res.status(404).json({ error: 'Inventory batch not found' })
       if (!inv.product_id) return res.status(400).json({ error: 'Inventory batch is missing product_id' })
+
+      // Calculate total quantity from sizeQuantitiesAssigned if provided
+      let qty = num(quantity)
+      if (sizeQuantitiesAssigned && typeof sizeQuantitiesAssigned === 'object') {
+        qty = Object.values(sizeQuantitiesAssigned).reduce((sum: number, q: any) => sum + (Number(q) || 0), 0)
+      }
+
+      // Validate quantity
+      if (!qty || qty < 1) {
+        return res.status(400).json({ error: 'quantity must be >= 1' })
+      }
+
+      // Validate size quantities against available inventory
+      if (sizeQuantitiesAssigned && inv.size_quantities) {
+        // Check each size
+        for (const [size, requestedQty] of Object.entries(sizeQuantitiesAssigned)) {
+          const availableQty = (inv.size_quantities as any)[size] || 0
+          if (Number(requestedQty) > availableQty) {
+            return res.status(400).json({ 
+              error: `Size ${size}: requested ${requestedQty} exceeds available ${availableQty}` 
+            })
+          }
+        }
+      }
 
       // Server-side availability guard (per batch)
       const { data: assignedRows, error: assignedErr } = await supabaseAdmin

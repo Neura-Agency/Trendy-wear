@@ -81,6 +81,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
           orderCode: row.order_code,
           productName: row.product_name,
           quantity: num(row.quantity),
+          size: null,
           sellingPrice: num(row.selling_price),
           shipmentCost: num(row.shipment_cost),
           storeName: row.stores?.name ?? '',
@@ -107,6 +108,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       const {
         productName,
         quantity,
+        size,
         extraQty,       // bonus/free units dispatched (stock deducted but not billed)
         sellingPrice,
         shipmentCost,
@@ -184,6 +186,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
         if (invErr2) throw invErr2
 
         const warehouseRows = (invRows2 || []).filter((r: any) => num(r.quantity_available) > 0)
+        
         const totalAvailableWarehouse = warehouseRows.reduce((s: number, r: any) => s + num(r.quantity_available), 0)
 
         if (totalAvailableWarehouse < totalDispatch) {
@@ -234,6 +237,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
           if (remaining <= 0) break
           const rowQty = num((row as any).quantity_available)
           const deduct = Math.min(rowQty, remaining)
+          
           await supabaseAdmin
             .from(TABLES.INVENTORY)
             .update({ quantity_available: rowQty - deduct })
@@ -262,6 +266,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       if (invErr) throw invErr
 
       const rows = (invRows || []).filter((r: any) => num(r.quantity_remaining) > 0)
+      
       const totalAvailable = rows.reduce((s: number, r: any) => s + num(r.quantity_remaining), 0)
       if (totalAvailable < totalDispatch) {
         return res.status(400).json({ error: `Insufficient stock. Only ${totalAvailable} unit(s) available (need ${totalDispatch}: ${qty} sold + ${bonusQty} bonus).` })
@@ -316,6 +321,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
         if (remaining <= 0) break
         const rowQty = num((row as any).quantity_remaining)
         const deduct = Math.min(rowQty, remaining)
+        
         const { error: updErr } = await supabaseAdmin
           .from(TABLES.STORE_INVENTORY)
           .update({ quantity_remaining: rowQty - deduct })

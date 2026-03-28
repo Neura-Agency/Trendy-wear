@@ -22,6 +22,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       const {
         itemId,
         quantity,
+        sizeQuantities,
         pricePerPiece,
         picture,
         productId,
@@ -100,6 +101,12 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
           .eq('id', finalProductId)
       }
 
+      // Calculate total quantity from size quantities if provided
+      let totalQuantity = quantity
+      if (sizeQuantities && typeof sizeQuantities === 'object') {
+        totalQuantity = Object.values(sizeQuantities).reduce((sum: number, qty: any) => sum + (Number(qty) || 0), 0)
+      }
+
       // Insert into inventory
       const { data: inventoryItem, error: inventoryError } = await supabaseAdmin
         .from(TABLES.INVENTORY)
@@ -108,7 +115,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
           batch_number: itemId,
           cost_price: pricePerPiece,
           selling_price: 0, // Default, can be set later
-          quantity_available: quantity,
+          quantity_available: totalQuantity,
           owner: user.username,
           low_stock_warning: 5
         })
@@ -161,6 +168,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
           brand: p.brand_name ?? '',
           size: p.sizes ?? [],
           color: p.colors ?? [],
+          sizeQuantities: null,
           otherVariants: {},
           batchNumber: row.batch_number,
           costPrice: Number(row.cost_price) || 0,
