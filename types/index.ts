@@ -169,6 +169,7 @@ export interface Account {
   scope?: 'all';
   storeName?: string;
   managedStores?: string[];
+  isActive?: boolean;
 }
 
 export interface AppData {

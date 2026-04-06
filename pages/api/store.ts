@@ -55,7 +55,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 
       const { data: accounts, error: accountsError } = await supabaseAdmin
         .from(TABLES.ACCOUNTS)
-        .select('id, username, plain_password, role, scope, managed_stores')
+        .select('id, username, plain_password, role, scope, managed_stores, is_active')
         .in('id', accountIds.length > 0 ? accountIds : ['00000000-0000-0000-0000-000000000000']) // Dummy UUID if no accounts
         .order('created_at', { ascending: true })
 
@@ -88,7 +88,8 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
           role: account.role,
           scope: account.scope,
           storeName: store.name,
-          managedStores: account.managed_stores || []
+          managedStores: account.managed_stores || [],
+          isActive: account.is_active ?? true
         }
       })
 

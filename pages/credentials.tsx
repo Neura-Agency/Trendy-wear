@@ -4,12 +4,22 @@ import Badge from '../components/Badge';
 import Login from '../components/Login';
 import { PageProps, Account, Store } from '../types';
 
+interface EditingAccount {
+    username: string;
+    password?: string;
+    role?: 'admin' | 'store';
+    isActive?: boolean;
+}
+
 // ── SVG Icon (mono-color, inherits currentColor) ──
 const keyIcon = <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d="m15.5 7.5 2.3 2.3a1 1 0 0 0 1.4 0l2.1-2.1a1 1 0 0 0 0-1.4L19 4"/><path d="m21 2-9.6 9.6"/><circle cx="7.5" cy="15.5" r="5.5"/></svg>;
 
 export default function ShopCredentials({ user, onLogin }: PageProps) {
     const [data, setData] = useState<{ accounts: Record<string, Account>; stores: Record<string, Store> }>({ accounts: {}, stores: {} });
     const [loading, setLoading] = useState<boolean>(true);
+    const [editingAccount, setEditingAccount] = useState<EditingAccount | null>(null);
+    const [saving, setSaving] = useState<boolean>(false);
+    const [accountStatuses, setAccountStatuses] = useState<Record<string, boolean>>({});
 
     const refresh = useCallback(async () => {
         try {
@@ -19,6 +29,13 @@ export default function ShopCredentials({ user, onLogin }: PageProps) {
                 accounts: d.accounts || {},
                 stores: d.stores || {}
             });
+            
+            // Initialize account statuses from API data
+            const statuses: Record<string, boolean> = {};
+            Object.entries(d.accounts || {}).forEach(([username, account]: [string, any]) => {
+                statuses[username] = account.isActive ?? true;
+            });
+            setAccountStatuses(statuses);
         } catch (e) {
             console.error(e);
             setData({ accounts: {}, stores: {} });
@@ -35,6 +52,67 @@ export default function ShopCredentials({ user, onLogin }: PageProps) {
         }
         refresh();
     }, [user, refresh]);
+
+    const handleEdit = (username: string, account: Account) => {
+        setEditingAccount({
+            username,
+            password: '',
+            role: account.role,
+            isActive: accountStatuses[username] ?? true
+        });
+    };
+
+    const handleSave = async () => {
+        if (!editingAccount) return;
+        
+        setSaving(true);
+        try {
+            const updates: any = {
+                username: editingAccount.username
+            };
+
+            if (editingAccount.password && editingAccount.password.trim() !== '') {
+                updates.password = editingAccount.password;
+            }
+
+            if (editingAccount.role) {
+                updates.role = editingAccount.role;
+            }
+
+            if (typeof editingAccount.isActive === 'boolean') {
+                updates.isActive = editingAccount.isActive;
+            }
+
+            const res = await fetch('/api/accounts', {
+                method: 'PATCH',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(updates)
+            });
+
+            if (!res.ok) {
+                const error = await res.json();
+                throw new Error(error.error || 'Failed to update account');
+            }
+
+            // Update local state
+            setAccountStatuses(prev => ({
+                ...prev,
+                [editingAccount.username]: editingAccount.isActive ?? true
+            }));
+
+            // Refresh data
+            await refresh();
+            setEditingAccount(null);
+        } catch (e: any) {
+            alert(e.message || 'Failed to update account');
+        } finally {
+            setSaving(false);
+        }
+    };
+
+    const handleCancel = () => {
+        setEditingAccount(null);
+    };
 
     if (!user) return <Login onLogin={onLogin} />;
     if (loading) return <div className="loading">Loading...</div>;
@@ -75,11 +153,12 @@ export default function ShopCredentials({ user, onLogin }: PageProps) {
                                     <th>Password</th>
                                     <th>Role</th>
                                     <th>Status</th>
+                                    <th>Actions</th>
                                 </tr>
                             </thead>
                             <tbody>
                                 {filteredAccounts.length === 0 ? (
-                                    <tr><td colSpan={5} style={{ textAlign: 'center', padding: 40 }} className="text-muted">No managed store accounts found.</td></tr>
+                                    <tr><td colSpan={6} style={{ textAlign: 'center', padding: 40 }} className="text-muted">No managed store accounts found.</td></tr>
                                 ) : (
                                     filteredAccounts.map(([username, acc]) => (
                                         <tr key={username}>
@@ -93,7 +172,19 @@ export default function ShopCredentials({ user, onLogin }: PageProps) {
                                             <td>
                                                 <Badge type={acc.role === 'admin' ? 'blue' : 'purple'}>{acc.role}</Badge>
                                             </td>
-                                            <td><Badge type="green">Active</Badge></td>
+                                            <td>
+                                                <Badge type={accountStatuses[username] !== false ? 'green' : 'red'}>
+                                                    {accountStatuses[username] !== false ? 'Active' : 'Inactive'}
+                                                </Badge>
+                                            </td>
+                                            <td>
+                                                <button 
+                                                    className="edit-btn"
+                                                    onClick={() => handleEdit(username, acc)}
+                                                >
+                                                    Edit
+                                                </button>
+                                            </td>
                                         </tr>
                                     ))
                                 )}
@@ -102,6 +193,73 @@ export default function ShopCredentials({ user, onLogin }: PageProps) {
                     </div>
                 </SectionCard>
             </div>
+
+            {/* Edit Account Modal */}
+            {editingAccount && (
+                <div className="modal-overlay" onClick={handleCancel}>
+                    <div className="modal-content" onClick={(e) => e.stopPropagation()}>
+                        <h2>Edit Account - {editingAccount.username}</h2>
+                        
+                        <div className="form-group">
+                            <label>New Password (leave blank to keep current)</label>
+                            <input
+                                type="text"
+                                placeholder="Enter new password"
+                                value={editingAccount.password || ''}
+                                onChange={(e) => setEditingAccount({
+                                    ...editingAccount,
+                                    password: e.target.value
+                                })}
+                            />
+                        </div>
+
+                        <div className="form-group">
+                            <label>Role</label>
+                            <select
+                                value={editingAccount.role}
+                                onChange={(e) => setEditingAccount({
+                                    ...editingAccount,
+                                    role: e.target.value as 'admin' | 'store'
+                                })}
+                            >
+                                <option value="store">Store</option>
+                                <option value="admin">Admin</option>
+                            </select>
+                        </div>
+
+                        <div className="form-group">
+                            <label>Status</label>
+                            <select
+                                value={editingAccount.isActive ? 'active' : 'inactive'}
+                                onChange={(e) => setEditingAccount({
+                                    ...editingAccount,
+                                    isActive: e.target.value === 'active'
+                                })}
+                            >
+                                <option value="active">Active</option>
+                                <option value="inactive">Inactive</option>
+                            </select>
+                        </div>
+
+                        <div className="modal-actions">
+                            <button 
+                                className="cancel-btn" 
+                                onClick={handleCancel}
+                                disabled={saving}
+                            >
+                                Cancel
+                            </button>
+                            <button 
+                                className="save-btn" 
+                                onClick={handleSave}
+                                disabled={saving}
+                            >
+                                {saving ? 'Saving...' : 'Save Changes'}
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            )}
 
             <style jsx>{`
                 .credentials-page {
@@ -129,6 +287,115 @@ export default function ShopCredentials({ user, onLogin }: PageProps) {
                     color: var(--acc);
                     border-color: var(--acc-soft);
                     background: var(--acc-soft);
+                }
+                .edit-btn {
+                    padding: 6px 12px;
+                    border-radius: 6px;
+                    border: 1px solid var(--border);
+                    background: var(--surface-2);
+                    color: var(--text-body);
+                    font-size: 13px;
+                    font-weight: 500;
+                    cursor: pointer;
+                    transition: all 0.2s;
+                }
+                .edit-btn:hover {
+                    background: var(--surface-3);
+                    border-color: var(--acc);
+                    color: var(--acc);
+                }
+                .modal-overlay {
+                    position: fixed;
+                    top: 0;
+                    left: 0;
+                    right: 0;
+                    bottom: 0;
+                    background: rgba(0, 0, 0, 0.5);
+                    display: flex;
+                    align-items: center;
+                    justify-content: center;
+                    z-index: 1000;
+                    animation: fadeIn 0.2s;
+                }
+                @keyframes fadeIn {
+                    from { opacity: 0; }
+                    to { opacity: 1; }
+                }
+                .modal-content {
+                    background: white;
+                    border-radius: 12px;
+                    padding: 24px;
+                    width: 90%;
+                    max-width: 500px;
+                    box-shadow: 0 10px 40px rgba(0, 0, 0, 0.2);
+                    animation: slideUp 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+                }
+                .modal-content h2 {
+                    margin: 0 0 20px 0;
+                    font-size: 20px;
+                    color: #111;
+                }
+                .form-group {
+                    margin-bottom: 16px;
+                }
+                .form-group label {
+                    display: block;
+                    margin-bottom: 6px;
+                    font-size: 13px;
+                    font-weight: 500;
+                    color: #555;
+                }
+                .form-group input,
+                .form-group select {
+                    width: 100%;
+                    padding: 10px 12px;
+                    border-radius: 6px;
+                    border: 1px solid #ddd;
+                    background: #f9f9f9;
+                    color: #333;
+                    font-size: 14px;
+                    font-family: inherit;
+                }
+                .form-group input:focus,
+                .form-group select:focus {
+                    outline: none;
+                    border-color: #4f46e5;
+                }
+                .modal-actions {
+                    display: flex;
+                    gap: 12px;
+                    justify-content: flex-end;
+                    margin-top: 24px;
+                }
+                .cancel-btn,
+                .save-btn {
+                    padding: 10px 20px;
+                    border-radius: 6px;
+                    font-size: 14px;
+                    font-weight: 500;
+                    cursor: pointer;
+                    transition: all 0.2s;
+                    border: none;
+                }
+                .cancel-btn {
+                    background: #f3f4f6;
+                    color: #374151;
+                    border: 1px solid #d1d5db;
+                }
+                .cancel-btn:hover {
+                    background: #e5e7eb;
+                }
+                .save-btn {
+                    background: #4f46e5;
+                    color: white;
+                }
+                .save-btn:hover {
+                    opacity: 0.9;
+                }
+                .save-btn:disabled,
+                .cancel-btn:disabled {
+                    opacity: 0.5;
+                    cursor: not-allowed;
                 }
             `}</style>
         </>
