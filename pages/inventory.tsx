@@ -12,7 +12,7 @@ import {
     Product,
   User 
 } from "../types";
-import { AddInventoryModal, AllotToStoreModal, EditStoreInventoryModal } from "../components/Modals";
+import { AddInventoryModal, AllotToStoreModal, EditInventoryModal, EditStoreInventoryModal } from "../components/Modals";
 
 // ── SVG Icon Components (mono-color, inherits currentColor) ──
 const IC = {
@@ -24,50 +24,6 @@ const IC = {
 };
 
 const Rs = (n: number) => "Rs " + (Number(n) || 0).toLocaleString();
-
-// Premium Quantity Editor for Warehouse
-interface QuantityEditorProps {
-  current: number;
-    onSave: (quantityDelta: number) => void;
-}
-
-function QuantityEditor({ current, onSave }: QuantityEditorProps) {
-    const [editing, setEditing] = useState<boolean>(false);
-    const [val, setVal] = useState<number>(0);
-
-    if (!editing) return (
-        <button className="btn btn-sm btn-glass" onClick={() => { setVal(0); setEditing(true); }} style={{ fontWeight: 700 }}>
-            Edit Stock
-        </button>
-    );
-
-    return (
-        <div style={{ display: 'flex', gap: 6, alignItems: 'center', background: 'var(--surface-2)', padding: '4px 8px', borderRadius: 8, border: '1px solid var(--border)' }}>
-            <input
-                type="text"
-                inputMode="numeric"
-                placeholder="+/-"
-                autoFocus
-                style={{ width: 64, height: 32, padding: '0 8px', fontSize: '12px', fontWeight: 800 }}
-                onChange={(e: React.ChangeEvent<HTMLInputElement>) => setVal(parseInt(e.target.value) || 0)}
-            />
-            <button
-                className="btn btn-primary"
-                style={{ width: 28, height: 28, padding: 0, background: 'var(--success)', borderColor: 'var(--success)' }}
-                onClick={() => { if (val !== 0) onSave(val); setEditing(false); }}
-            >
-                ✓
-            </button>
-            <button
-                className="btn btn-glass"
-                style={{ width: 28, height: 28, padding: 0 }}
-                onClick={() => setEditing(false)}
-            >
-                ✕
-            </button>
-        </div>
-    );
-}
 
 export default function InventoryPage({ user, onLogin }: PageProps) {
     const { toast } = usePopup();
@@ -87,11 +43,12 @@ export default function InventoryPage({ user, onLogin }: PageProps) {
     // Track inventory ownership: each admin can only see/manage their own
     // Assume each inventory item has an 'owner' field (username)
     const [loading, setLoading] = useState<boolean>(true);
-    const [editModal, setEditModal] = useState<{ item: any; field: string } | null>(null); // { item, field } or null
     const [showAddInventoryModal, setShowAddInventoryModal] = useState(false);
     const [showAllotModal, setShowAllotModal] = useState(false);
     const [showEditModalUI, setShowEditModalUI] = useState(false);
     const [editingRow, setEditingRow] = useState<any | null>(null);
+    const [showEditInventoryModal, setShowEditInventoryModal] = useState(false);
+    const [editingInventoryItem, setEditingInventoryItem] = useState<InventoryItem | null>(null);
     const [showAlerts, setShowAlerts] = useState(false);
 
     const refresh = useCallback(async () => {
@@ -162,15 +119,24 @@ export default function InventoryPage({ user, onLogin }: PageProps) {
         }
     };
 
-    const handleUpdateItem = async (productName: string, batchNumber: string, fields: any) => {
-        // No-op: database removed
-        refresh();
-    };
+    const handleUpdateInventory = async (item: InventoryItem, fields: any) => {
+        if (!item?.id) return toast.error('Missing inventory id')
+        try {
+            const response = await fetch('/api/inventory', {
+                method: 'PATCH',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ id: item.id, productId: item.productId, fields })
+            })
 
-    const handleAdjustQuantity = async (productName: string, batchNumber: string, quantityDelta: number) => {
-        // No-op: database removed
-        refresh();
-    };
+            const result = await response.json()
+            if (!response.ok) throw new Error(result.error || 'Failed to update inventory')
+
+            toast.success('✅ Inventory updated')
+            refresh()
+        } catch (e: any) {
+            toast.error(e?.message || 'Update failed')
+        }
+    }
 
     // Flatten store inventory for the table
     const stockProvided = [];
@@ -370,7 +336,7 @@ export default function InventoryPage({ user, onLogin }: PageProps) {
                                 </thead>
                                 <tbody>
                                     {data.inventory.map((item, idx) => {
-                                        const picture = (item as any)?.otherVariants?.picture as string | undefined;
+                                        const picture = item.productImage || (item as any)?.otherVariants?.picture as string | undefined;
                                         const pictureSrc = (typeof picture === 'string' && picture.trim().length > 0) ? picture : '/images/size_L.webp';
                                         const allotedStores = Object.entries(data.storeInventory || {})
                                             .filter(([, items]) => Object.values(items as any).some((si: any) => si.inventoryId === item.id))
@@ -448,10 +414,13 @@ export default function InventoryPage({ user, onLogin }: PageProps) {
                                                     )}
                                                 </td>
                                                 <td>
-                                                    <QuantityEditor
-                                                        current={item.quantityAvailable}
-                                                        onSave={(delta) => handleAdjustQuantity(item.productName, item.batchNumber, delta)}
-                                                    />
+                                                    <button
+                                                        className="btn btn-sm btn-glass"
+                                                        style={{ fontWeight: 700 }}
+                                                        onClick={() => { setEditingInventoryItem(item); setShowEditInventoryModal(true); }}
+                                                    >
+                                                        Edit Stock
+                                                    </button>
                                                 </td>
                                             </tr>
                                         );
@@ -643,6 +612,19 @@ export default function InventoryPage({ user, onLogin }: PageProps) {
                             }
                         }}
                         onClose={() => { setShowEditModalUI(false); setEditingRow(null); }}
+                    />
+                )}
+
+                {showEditInventoryModal && editingInventoryItem && (
+                    <EditInventoryModal
+                        item={editingInventoryItem}
+                        minQuantity={editingInventoryItem.id ? (allotedQtyByProduct[editingInventoryItem.id] || 0) : 0}
+                        onSave={async (payload: any) => {
+                            await handleUpdateInventory(editingInventoryItem, payload)
+                            setShowEditInventoryModal(false)
+                            setEditingInventoryItem(null)
+                        }}
+                        onClose={() => { setShowEditInventoryModal(false); setEditingInventoryItem(null); }}
                     />
                 )}
             </div>

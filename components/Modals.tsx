@@ -120,6 +120,388 @@ export function EditStoreInventoryModal({ item, storeNames, onSave, onClose }: {
     );
 }
 
+export function EditInventoryModal({ item, minQuantity, onSave, onClose }: { item: InventoryItem; minQuantity?: number; onSave: (fields: any) => void; onClose: () => void }) {
+    const { toast } = usePopup();
+    const itemTypes = ['T-shirt', 'Jacket', 'Sweatshirt', 'Jeans', 'Hoodie', 'Other'];
+    const availableSizes = ['XS', 'S', 'M', 'L', 'XL', 'XXL'];
+
+    const initialColors = Array.isArray(item.color) ? item.color : item.color ? [item.color] : [];
+    const initialSizes = Array.isArray(item.size) ? item.size : item.size ? [item.size] : [];
+    const initialSizeQuantities = (item.sizeQuantities && typeof item.sizeQuantities === 'object') ? item.sizeQuantities : {};
+    const hasSizeQuantities = Object.keys(initialSizeQuantities).length > 0;
+    const hasCustomType = item.category && !itemTypes.includes(item.category);
+
+    const [form, setForm] = useState({
+        productName: item.productName || '',
+        brandName: item.brand || '',
+        productType: hasCustomType ? 'Other' : (item.category || 'T-shirt'),
+        customType: hasCustomType ? item.category : '',
+        batchNumber: item.batchNumber || '',
+        costPrice: item.costPrice || 0,
+        sellingPrice: item.sellingPrice || 0,
+        lowStockWarning: item.lowStockWarning || 5,
+        quantityAvailable: item.quantityAvailable || 0,
+    });
+
+    const [colors, setColors] = useState<string[]>(initialColors);
+    const [colorInput, setColorInput] = useState('');
+    const [sizes, setSizes] = useState<string[]>(initialSizes);
+    const [customSize, setCustomSize] = useState('');
+    const [useSizeQuantities, setUseSizeQuantities] = useState<boolean>(hasSizeQuantities);
+    const [sizeQuantities, setSizeQuantities] = useState<Record<string, number>>(hasSizeQuantities ? initialSizeQuantities : {});
+    const [newPicture, setNewPicture] = useState<string | null>(null);
+
+    const previewImage = newPicture || item.productImage || (item.otherVariants?.picture as string | undefined) || '';
+
+    React.useEffect(() => {
+        if (!useSizeQuantities) return;
+        setSizeQuantities((curr) => {
+            const next = { ...curr };
+            sizes.forEach((s) => {
+                if (next[s] === undefined) next[s] = 0;
+            });
+            Object.keys(next).forEach((s) => {
+                if (!sizes.includes(s)) delete next[s];
+            });
+            return next;
+        });
+    }, [sizes, useSizeQuantities]);
+
+    const totalQuantity = useSizeQuantities
+        ? Object.values(sizeQuantities).reduce((sum, qty) => sum + (Number(qty) || 0), 0)
+        : (Number(form.quantityAvailable) || 0);
+
+    const handleAddColor = () => {
+        const color = colorInput.trim();
+        if (!color) return;
+        const normalized = color.toLowerCase();
+        if (!colors.includes(normalized)) {
+            setColors([...colors, normalized]);
+        }
+        setColorInput('');
+    };
+
+    const toggleSize = (size: string) => {
+        setSizes(prev => {
+            const next = prev.includes(size) ? prev.filter(s => s !== size) : [...prev, size];
+            if (useSizeQuantities) {
+                setSizeQuantities((curr) => {
+                    const updated = { ...curr };
+                    if (!prev.includes(size)) {
+                        updated[size] = updated[size] ?? 0;
+                    } else {
+                        delete updated[size];
+                    }
+                    return updated;
+                });
+            }
+            return next;
+        });
+    };
+
+    const handleAddCustomSize = () => {
+        const custom = customSize.trim();
+        if (!custom) return;
+        const upperSize = custom.toUpperCase();
+        if (!sizes.includes(upperSize)) {
+            setSizes([...sizes, upperSize]);
+            if (useSizeQuantities) {
+                setSizeQuantities((curr) => ({ ...curr, [upperSize]: curr[upperSize] ?? 0 }));
+            }
+        }
+        setCustomSize('');
+    };
+
+    const updateSizeQuantity = (size: string, qty: number) => {
+        setSizeQuantities(curr => ({
+            ...curr,
+            [size]: Math.max(0, qty)
+        }));
+    };
+
+    const handleImageChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+        const file = e.target.files?.[0];
+        if (!file) return;
+        const reader = new FileReader();
+        reader.onloadend = () => {
+            setNewPicture(reader.result as string);
+        };
+        reader.readAsDataURL(file);
+    };
+
+    const handleSubmit = (e: React.FormEvent) => {
+        e.preventDefault();
+
+        const productName = form.productName.trim();
+        if (!productName) return toast.error('Enter product name');
+
+        const productType = form.productType === 'Other'
+            ? form.customType.trim()
+            : form.productType.trim();
+        if (!productType) return toast.error('Select product type');
+
+        const batchNumber = form.batchNumber.trim();
+        if (!batchNumber) return toast.error('Enter batch number');
+
+        const minQty = Number(minQuantity) || 0;
+        if (totalQuantity < minQty) {
+            return toast.error(`Quantity cannot be below assigned (${minQty})`);
+        }
+
+        if (useSizeQuantities && sizes.length === 0) {
+            return toast.error('Add at least one size for size tracking');
+        }
+
+        const payload: any = {
+            inventory: {
+                batchNumber,
+                costPrice: Number(form.costPrice) || 0,
+                sellingPrice: Number(form.sellingPrice) || 0,
+                lowStockWarning: Number(form.lowStockWarning) || 0,
+                quantityAvailable: totalQuantity,
+                sizeQuantities: useSizeQuantities ? sizeQuantities : null,
+            },
+            product: {
+                productName,
+                brandName: form.brandName.trim(),
+                productType,
+                colors: colors.filter(Boolean),
+                sizes: sizes.filter(Boolean),
+            }
+        };
+
+        if (newPicture && newPicture.startsWith('data:image')) {
+            payload.picture = newPicture;
+        }
+
+        onSave(payload);
+        onClose();
+    };
+
+    return (
+        <div className="modal-overlay">
+            <div className="modal-box" style={{ maxWidth: '640px', width: '95%' }}>
+                <div className="modal-head" style={{ padding: '16px 20px' }}>
+                    <h3 style={{ fontSize: '18px', fontWeight: 800 }}>Edit Inventory</h3>
+                    <button className="btn btn-sm" onClick={onClose} style={{ border: 'none', fontSize: '18px' }}>✕</button>
+                </div>
+                <div className="modal-body" style={{ padding: '22px 20px' }}>
+                    <form onSubmit={handleSubmit}>
+                        <div className="input-group" style={{ marginBottom: 20, display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
+                            <label style={{ marginBottom: 12 }}>Item Picture</label>
+                            <div
+                                style={{
+                                    width: '100px',
+                                    height: '100px',
+                                    border: '2px dashed var(--border)',
+                                    borderRadius: '50%',
+                                    display: 'flex',
+                                    flexDirection: 'column',
+                                    alignItems: 'center',
+                                    justifyContent: 'center',
+                                    background: 'var(--surface-2)',
+                                    cursor: 'pointer',
+                                    overflow: 'hidden',
+                                    position: 'relative'
+                                }}
+                                onClick={() => document.getElementById('edit-item-pic-input')?.click()}
+                            >
+                                {previewImage ? (
+                                    <img src={previewImage} alt="Preview" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                                ) : (
+                                    <span style={{ fontSize: '24px', color: 'var(--text-faint)' }}>+</span>
+                                )}
+                                <input
+                                    id="edit-item-pic-input"
+                                    type="file"
+                                    accept="image/*"
+                                    style={{ display: 'none' }}
+                                    onChange={handleImageChange}
+                                />
+                            </div>
+                            {!previewImage && <span style={{ fontSize: '11px', color: 'var(--text-muted)', marginTop: 8 }}>Click to upload</span>}
+                        </div>
+
+                        <div className="form-grid-2" style={{ marginBottom: 12 }}>
+                            <div className="input-group">
+                                <label>Product Name</label>
+                                <input value={form.productName} onChange={e => setForm({ ...form, productName: e.target.value })} required />
+                            </div>
+                            <div className="input-group">
+                                <label>Brand Name</label>
+                                <input value={form.brandName} onChange={e => setForm({ ...form, brandName: e.target.value })} />
+                            </div>
+                        </div>
+
+                        <div className="form-grid-2" style={{ marginBottom: 12 }}>
+                            <div className="input-group">
+                                <label>Product Type</label>
+                                <select value={form.productType} onChange={e => setForm({ ...form, productType: e.target.value })}>
+                                    {itemTypes.map(t => <option key={t} value={t}>{t}</option>)}
+                                </select>
+                                {form.productType === 'Other' && (
+                                    <input
+                                        style={{ marginTop: 8 }}
+                                        placeholder="Enter custom type..."
+                                        value={form.customType}
+                                        onChange={e => setForm({ ...form, customType: e.target.value })}
+                                        required
+                                    />
+                                )}
+                            </div>
+                            <div className="input-group">
+                                <label>Item ID (Batch)</label>
+                                <input value={form.batchNumber} onChange={e => setForm({ ...form, batchNumber: e.target.value })} />
+                            </div>
+                        </div>
+
+                        <div className="form-grid-2" style={{ marginBottom: 12 }}>
+                            <div className="input-group">
+                                <label>Cost Per Piece</label>
+                                <input type="text" inputMode="decimal" value={form.costPrice} onChange={e => setForm({ ...form, costPrice: parseFloat(e.target.value) || 0 })} />
+                            </div>
+                            <div className="input-group">
+                                <label>Selling Price</label>
+                                <input type="text" inputMode="decimal" value={form.sellingPrice} onChange={e => setForm({ ...form, sellingPrice: parseFloat(e.target.value) || 0 })} />
+                            </div>
+                        </div>
+
+                        <div className="form-grid-2" style={{ marginBottom: 12 }}>
+                            <div className="input-group">
+                                <label>Low Stock Warning</label>
+                                <input type="text" inputMode="numeric" value={form.lowStockWarning} onChange={e => setForm({ ...form, lowStockWarning: parseInt(e.target.value) || 0 })} />
+                            </div>
+                            <div className="input-group" style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                                <label>Quantity Mode</label>
+                                <button
+                                    type="button"
+                                    className={`btn btn-sm ${useSizeQuantities ? 'btn-primary' : 'btn-glass'}`}
+                                    onClick={() => setUseSizeQuantities(!useSizeQuantities)}
+                                    style={{ width: 'fit-content' }}
+                                >
+                                    {useSizeQuantities ? 'Using Size Quantities' : 'Use Size Quantities'}
+                                </button>
+                                {minQuantity ? (
+                                    <div style={{ fontSize: 11, color: 'var(--text-muted)' }}>Assigned to stores: {minQuantity}</div>
+                                ) : null}
+                            </div>
+                        </div>
+
+                        {!useSizeQuantities && (
+                            <div className="input-group" style={{ marginBottom: 12 }}>
+                                <label>Total Quantity</label>
+                                <input type="text" inputMode="numeric" value={form.quantityAvailable} onChange={e => setForm({ ...form, quantityAvailable: parseInt(e.target.value) || 0 })} />
+                            </div>
+                        )}
+
+                        <div className="input-group" style={{ marginBottom: 12 }}>
+                            <label>Colors</label>
+                            <div style={{ display: 'flex', gap: 8, marginBottom: 8 }}>
+                                <input
+                                    placeholder="Add color (e.g. red, navy, #ffaa00)..."
+                                    value={colorInput}
+                                    onChange={e => setColorInput(e.target.value)}
+                                    onKeyPress={e => e.key === 'Enter' && (e.preventDefault(), handleAddColor())}
+                                />
+                                <button type="button" className="btn btn-primary" onClick={handleAddColor}>Add</button>
+                            </div>
+                            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
+                                {colors.map(c => (
+                                    <div
+                                        key={c}
+                                        style={{
+                                            padding: '6px 12px',
+                                            borderRadius: '20px',
+                                            background: 'var(--surface-2)',
+                                            border: '1px solid var(--border)',
+                                            color: c,
+                                            fontWeight: 800,
+                                            fontSize: '12px',
+                                            display: 'flex',
+                                            alignItems: 'center',
+                                            gap: '8px',
+                                            textTransform: 'capitalize'
+                                        }}
+                                    >
+                                        <span style={{ width: 8, height: 8, borderRadius: '50%', background: c }}></span>
+                                        {c}
+                                        <span style={{ cursor: 'pointer', opacity: 0.6 }} onClick={() => setColors(colors.filter(x => x !== c))}>×</span>
+                                    </div>
+                                ))}
+                                {colors.length === 0 && (
+                                    <div style={{ fontSize: 11, color: 'var(--text-muted)' }}>No colors set.</div>
+                                )}
+                            </div>
+                        </div>
+
+                        <div className="input-group" style={{ marginBottom: 12 }}>
+                            <label>Sizes</label>
+                            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, marginBottom: 12 }}>
+                                {availableSizes.map(s => (
+                                    <button
+                                        key={s}
+                                        type="button"
+                                        className={`btn btn-sm ${sizes.includes(s) ? 'btn-primary' : 'btn-glass'}`}
+                                        style={{ minWidth: 44 }}
+                                        onClick={() => toggleSize(s)}
+                                    >
+                                        {s}
+                                    </button>
+                                ))}
+                            </div>
+                            <div style={{ display: 'flex', gap: 8, marginBottom: 12 }}>
+                                <input
+                                    placeholder="Add custom size (e.g. 3XL)..."
+                                    value={customSize}
+                                    onChange={e => setCustomSize(e.target.value)}
+                                    onKeyPress={e => e.key === 'Enter' && (e.preventDefault(), handleAddCustomSize())}
+                                />
+                                <button type="button" className="btn btn-sm" onClick={handleAddCustomSize} style={{ whiteSpace: 'nowrap' }}>+ Custom Size</button>
+                            </div>
+                            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
+                                {sizes.map(s => (
+                                    <Badge key={s} type="gray">{s}</Badge>
+                                ))}
+                                {sizes.length === 0 && <div style={{ fontSize: 11, color: 'var(--text-muted)' }}>No sizes set.</div>}
+                            </div>
+                        </div>
+
+                        {useSizeQuantities && sizes.length > 0 && (
+                            <div style={{ marginBottom: 16, padding: 16, background: 'var(--surface-2)', borderRadius: 10, border: '1px solid var(--border)' }}>
+                                <div style={{ fontSize: 13, fontWeight: 800, marginBottom: 12, color: 'var(--text)' }}>
+                                    Quantity per Size
+                                </div>
+                                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(120px, 1fr))', gap: 12 }}>
+                                    {sizes.map(s => (
+                                        <div key={s} style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+                                            <label style={{ fontSize: 11, fontWeight: 700, color: 'var(--text-muted)' }}>{s}</label>
+                                            <input
+                                                type="number"
+                                                min="0"
+                                                value={sizeQuantities[s] || 0}
+                                                onChange={e => updateSizeQuantity(s, parseInt(e.target.value) || 0)}
+                                                style={{ padding: '8px 12px', fontSize: 14 }}
+                                            />
+                                        </div>
+                                    ))}
+                                </div>
+                                <div style={{ marginTop: 12, padding: '8px 12px', background: 'var(--primary)', color: 'white', borderRadius: 6, fontSize: 13, fontWeight: 800, textAlign: 'center' }}>
+                                    Total: {totalQuantity} units
+                                </div>
+                            </div>
+                        )}
+
+                        <div style={{ display: 'flex', gap: 8 }}>
+                            <button type="submit" className="btn btn-primary">Save Changes</button>
+                            <button type="button" className="btn btn-glass" onClick={onClose}>Cancel</button>
+                        </div>
+                    </form>
+                </div>
+            </div>
+        </div>
+    );
+}
+
 export function SaleModal({ inventory, storeName, isAdmin, storeNames, onAdd, onClose }: SaleModalPropsLocal) {
     const { toast } = usePopup();
     const todayIso = new Date().toISOString().slice(0, 10);

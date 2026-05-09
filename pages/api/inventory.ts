@@ -12,6 +12,44 @@ export const config = {
 
 const PRODUCT_IMAGES_BUCKET = process.env.SUPABASE_PRODUCT_IMAGES_BUCKET || 'Trendy Wear'
 
+function num(v: any): number {
+  const n = Number(v)
+  return Number.isFinite(n) ? n : 0
+}
+
+async function uploadProductImage(picture: string): Promise<string | null> {
+  if (!picture || !picture.startsWith('data:image')) return null
+
+  // Extract base64 data
+  const base64Data = picture.split(',')[1]
+  const mimeType = picture.split(';')[0].split(':')[1]
+  const fileExt = mimeType.split('/')[1]
+
+  // Convert base64 to buffer
+  const buffer = Buffer.from(base64Data, 'base64')
+
+  // Generate unique filename
+  const fileName = `${Date.now()}-${Math.random().toString(36).substr(2, 9)}.${fileExt}`
+
+  // Upload to Supabase storage bucket
+  const { error: uploadError } = await supabaseAdmin.storage
+    .from(PRODUCT_IMAGES_BUCKET)
+    .upload(fileName, buffer, {
+      contentType: mimeType,
+      upsert: false
+    })
+
+  if (uploadError) {
+    throw new Error('Failed to upload image')
+  }
+
+  const { data: urlData } = supabaseAdmin.storage
+    .from(PRODUCT_IMAGES_BUCKET)
+    .getPublicUrl(fileName)
+
+  return urlData.publicUrl
+}
+
 export default async function handler(req: NextApiRequest, res: NextApiResponse) {
   try {
     const session = await requireSession(req, res)
@@ -35,36 +73,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       // Handle image upload if picture exists
       if (picture && picture.startsWith('data:image')) {
         try {
-          // Extract base64 data
-          const base64Data = picture.split(',')[1]
-          const mimeType = picture.split(';')[0].split(':')[1]
-          const fileExt = mimeType.split('/')[1]
-          
-          // Convert base64 to buffer
-          const buffer = Buffer.from(base64Data, 'base64')
-          
-          // Generate unique filename
-          const fileName = `${Date.now()}-${Math.random().toString(36).substr(2, 9)}.${fileExt}`
-          
-          // Upload to Supabase storage bucket "Trendy Wear"
-          const { data: uploadData, error: uploadError } = await supabaseAdmin.storage
-            .from(PRODUCT_IMAGES_BUCKET)
-            .upload(fileName, buffer, {
-              contentType: mimeType,
-              upsert: false
-            })
-
-          if (uploadError) {
-            console.error('Upload error:', uploadError)
-            return res.status(500).json({ error: 'Failed to upload image' })
-          }
-
-          // Get public URL
-          const { data: urlData } = supabaseAdmin.storage
-            .from(PRODUCT_IMAGES_BUCKET)
-            .getPublicUrl(fileName)
-          
-          productImageUrl = urlData.publicUrl
+          productImageUrl = await uploadProductImage(picture)
         } catch (err) {
           console.error('Image processing error:', err)
           return res.status(500).json({ error: 'Failed to process image' })
@@ -116,6 +125,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
           cost_price: pricePerPiece,
           selling_price: 0, // Default, can be set later
           quantity_available: totalQuantity,
+          size_quantities: sizeQuantities && typeof sizeQuantities === 'object' ? sizeQuantities : null,
           owner: user.username,
           low_stock_warning: 5
         })
@@ -168,8 +178,9 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
           brand: p.brand_name ?? '',
           size: p.sizes ?? [],
           color: p.colors ?? [],
-          sizeQuantities: null,
-          otherVariants: {},
+          sizeQuantities: row.size_quantities ?? null,
+          otherVariants: { picture: p.product_image ?? null },
+          productImage: p.product_image ?? null,
           batchNumber: row.batch_number,
           costPrice: Number(row.cost_price) || 0,
           sellingPrice: Number(row.selling_price) || 0,
@@ -180,6 +191,154 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       })
 
       return res.json({ inventory: formattedInventory })
+    }
+
+    if (req.method === 'PATCH') {
+      const { id, productId, fields } = req.body || {}
+
+      if (!id) return res.status(400).json({ error: 'id is required' })
+      if (!fields || typeof fields !== 'object') return res.status(400).json({ error: 'fields are required' })
+
+      const inventoryFields = fields.inventory || {}
+      const productFields = fields.product || {}
+      const picture = fields.picture
+
+      const inventoryUpdate: Record<string, any> = {}
+      const productUpdate: Record<string, any> = {}
+
+      if (inventoryFields.batchNumber !== undefined) {
+        const bn = String(inventoryFields.batchNumber).trim()
+        if (!bn) return res.status(400).json({ error: 'batchNumber cannot be empty' })
+        inventoryUpdate.batch_number = bn
+      }
+      if (inventoryFields.costPrice !== undefined) inventoryUpdate.cost_price = num(inventoryFields.costPrice)
+      if (inventoryFields.sellingPrice !== undefined) inventoryUpdate.selling_price = num(inventoryFields.sellingPrice)
+      if (inventoryFields.lowStockWarning !== undefined) {
+        const warn = num(inventoryFields.lowStockWarning)
+        if (warn < 0) return res.status(400).json({ error: 'lowStockWarning must be >= 0' })
+        inventoryUpdate.low_stock_warning = warn
+      }
+
+      const rawSizeQuantities = inventoryFields.sizeQuantities
+      if (rawSizeQuantities !== undefined) {
+        if (rawSizeQuantities === null) {
+          inventoryUpdate.size_quantities = null
+        } else if (typeof rawSizeQuantities === 'object') {
+          const normalized: Record<string, number> = {}
+          Object.entries(rawSizeQuantities).forEach(([size, qty]) => {
+            normalized[size] = Math.max(0, num(qty))
+          })
+          const total = Object.values(normalized).reduce((sum, qty) => sum + num(qty), 0)
+          inventoryUpdate.size_quantities = normalized
+          inventoryUpdate.quantity_available = total
+        } else {
+          return res.status(400).json({ error: 'sizeQuantities must be an object or null' })
+        }
+      }
+
+      if (inventoryFields.quantityAvailable !== undefined && inventoryUpdate.quantity_available === undefined) {
+        inventoryUpdate.quantity_available = Math.max(0, num(inventoryFields.quantityAvailable))
+      }
+
+      if (productFields.productName !== undefined) {
+        const pn = String(productFields.productName).trim()
+        if (!pn) return res.status(400).json({ error: 'productName cannot be empty' })
+        productUpdate.product_name = pn
+      }
+      if (productFields.brandName !== undefined) {
+        const bn = String(productFields.brandName).trim()
+        productUpdate.brand_name = bn || null
+      }
+      if (productFields.productType !== undefined) {
+        const pt = String(productFields.productType).trim()
+        if (!pt) return res.status(400).json({ error: 'productType cannot be empty' })
+        productUpdate.product_type = pt
+      }
+      if (productFields.colors !== undefined) {
+        if (!Array.isArray(productFields.colors)) return res.status(400).json({ error: 'colors must be an array' })
+        productUpdate.colors = productFields.colors
+      }
+      if (productFields.sizes !== undefined) {
+        if (!Array.isArray(productFields.sizes)) return res.status(400).json({ error: 'sizes must be an array' })
+        productUpdate.sizes = productFields.sizes
+      }
+
+      if (picture && typeof picture === 'string' && picture.startsWith('data:image')) {
+        try {
+          const uploadedUrl = await uploadProductImage(picture)
+          if (uploadedUrl) productUpdate.product_image = uploadedUrl
+        } catch (err) {
+          console.error('Image processing error:', err)
+          return res.status(500).json({ error: 'Failed to process image' })
+        }
+      }
+
+      if (Object.keys(inventoryUpdate).length === 0 && Object.keys(productUpdate).length === 0) {
+        return res.status(400).json({ error: 'no updatable fields provided' })
+      }
+
+      if (inventoryUpdate.quantity_available !== undefined) {
+        const { data: assignedRows, error: assignedErr } = await supabaseAdmin
+          .from(TABLES.STORE_INVENTORY)
+          .select('quantity_assigned')
+          .eq('inventory_id', id)
+
+        if (assignedErr) {
+          console.error('assigned sum error:', assignedErr)
+          return res.status(500).json({ error: 'Failed to validate available quantity' })
+        }
+
+        const alreadyAssigned = (assignedRows || []).reduce((acc: number, r: any) => acc + num(r.quantity_assigned), 0)
+        if (inventoryUpdate.quantity_available < alreadyAssigned) {
+          return res.status(400).json({ error: `quantityAvailable cannot be below assigned total (${alreadyAssigned})` })
+        }
+      }
+
+      let resolvedProductId: string | null = productId || null
+      if (!resolvedProductId && Object.keys(productUpdate).length > 0) {
+        const { data: invRow, error: invErr } = await supabaseAdmin
+          .from(TABLES.INVENTORY)
+          .select('product_id')
+          .eq('id', id)
+          .maybeSingle()
+        if (invErr) {
+          console.error('inventory lookup error:', invErr)
+          return res.status(500).json({ error: 'Failed to lookup inventory' })
+        }
+        resolvedProductId = invRow?.product_id || null
+      }
+
+      let updatedInventory = null
+      if (Object.keys(inventoryUpdate).length > 0) {
+        const { data: updated, error: invUpdateErr } = await supabaseAdmin
+          .from(TABLES.INVENTORY)
+          .update(inventoryUpdate)
+          .eq('id', id)
+          .select()
+          .maybeSingle()
+        if (invUpdateErr) {
+          console.error('inventory update error:', invUpdateErr)
+          return res.status(500).json({ error: 'Failed to update inventory' })
+        }
+        updatedInventory = updated
+      }
+
+      let updatedProduct = null
+      if (resolvedProductId && Object.keys(productUpdate).length > 0) {
+        const { data: updated, error: prodUpdateErr } = await supabaseAdmin
+          .from(TABLES.PRODUCTS)
+          .update(productUpdate)
+          .eq('id', resolvedProductId)
+          .select()
+          .maybeSingle()
+        if (prodUpdateErr) {
+          console.error('product update error:', prodUpdateErr)
+          return res.status(500).json({ error: 'Failed to update product' })
+        }
+        updatedProduct = updated
+      }
+
+      return res.json({ success: true, inventory: updatedInventory, product: updatedProduct })
     }
 
     return res.status(405).json({ error: 'Method not allowed' })

@@ -105,6 +105,8 @@ export interface InventoryItem {
   size: string | string[];
   color: string | string[];
   otherVariants?: any;
+  productImage?: string | null;
+  sizeQuantities?: Record<string, number> | null;
   batchNumber: string;
   costPrice: number;
   sellingPrice: number;
