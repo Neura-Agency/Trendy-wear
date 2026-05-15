@@ -449,6 +449,7 @@ export default function InventoryPage({ user, onLogin }: PageProps) {
                                     <th>In Shop Stock</th>
                                     {isAdmin && <th>Shop Cut %</th>}
                                     <th style={{ textAlign: 'right' }}>Items Sold</th>
+                                    <th>Alloted By</th>
                                     {isAdmin && <th>Actions</th>}
                                 </tr>
                             </thead>
@@ -472,6 +473,9 @@ export default function InventoryPage({ user, onLogin }: PageProps) {
                                                 <Badge type={item.quantityAssigned - item.quantityRemaining > 0 ? 'blue' : 'gray'}>
                                                     {item.quantityAssigned - item.quantityRemaining}
                                                 </Badge>
+                                            </td>
+                                            <td>
+                                                <Badge type="purple">{item.owner || '—'}</Badge>
                                             </td>
                                             {isAdmin && (
                                                 <td style={{ textAlign: 'right' }}>

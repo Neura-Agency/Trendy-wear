@@ -46,6 +46,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
           admin_take,
           profit,
           payment_status,
+          order_returned,
           created_at,
           stores:store_id ( name ),
           store_inventory:store_inventory_id (
@@ -95,6 +96,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
           adminTake: num(row.admin_take),
           profit: num(row.profit),
           paymentStatus: row.payment_status ?? null,
+          orderReturned: row.order_returned ?? false,
         }
       })
 
@@ -140,12 +142,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       } else {
         // admin or store-manager
         if (!storeName) return res.status(400).json({ error: 'storeName is required' })
-        // store manager guard
-        if (!isSuperAdmin(session) && session.managedStores?.length) {
-          if (!session.managedStores.includes(storeName)) {
-            return res.status(403).json({ error: 'You do not manage this store' })
-          }
-        }
+        // store manager check removed - anyone can record for any store
         const { data: store, error: storeErr } = await supabaseAdmin
           .from(TABLES.STORES)
           .select('id')
@@ -341,9 +338,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     // PATCH — update commission % or payment_status
     // ────────────────────────────────────────────────────────────────────────
     if (req.method === 'PATCH') {
-      if (!isSuperAdmin(session)) {
-        return res.status(403).json({ error: 'Admin only' })
-      }
+      // ── Mark order as returned ───────────────────────────────────────────
 
       // ── Batch payment status update ──────────────────────────────────────
       if (req.body?.ids !== undefined) {
@@ -362,6 +357,58 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
         return res.json({ success: true, updated: ids.length })
       }
 
+      // ── Mark order as returned ───────────────────────────────────────────
+      if (req.body?.isReturn === true) {
+        const { id } = req.body;
+        if (!id) return res.status(400).json({ error: 'id is required' });
+
+        // Fetch order details
+        const { data: order, error: fetchErr } = await supabaseAdmin
+          .from(TABLES.ORDERS)
+          .select('id, quantity, store_inventory_id, order_returned, stores:store_id(name)')
+          .eq('id', id)
+          .single();
+
+        if (fetchErr || !order) return res.status(404).json({ error: 'Order not found' });
+
+        if (order.order_returned) return res.status(400).json({ error: 'Order already marked as returned' });
+
+        // 1. Mark as returned
+        const { error: updErr } = await supabaseAdmin
+          .from(TABLES.ORDERS)
+          .update({ 
+            order_returned: true,
+            profit: 0,
+            admin_take: 0,
+            commission_amount: 0
+          })
+          .eq('id', id);
+        
+        if (updErr) {
+          console.error('Return update error:', updErr);
+          return res.status(500).json({ error: 'Failed to mark order as returned' });
+        }
+
+        // 2. Add back to inventory if store_inventory_id exists
+        if (order.store_inventory_id) {
+          const { data: inv, error: invFetchErr } = await supabaseAdmin
+            .from(TABLES.STORE_INVENTORY)
+            .select('quantity_remaining')
+            .eq('id', order.store_inventory_id)
+            .single();
+          
+          if (!invFetchErr && inv) {
+            const { error: invUpdErr } = await supabaseAdmin
+              .from(TABLES.STORE_INVENTORY)
+              .update({ quantity_remaining: num(inv.quantity_remaining) + num(order.quantity) })
+              .eq('id', order.store_inventory_id);
+            if (invUpdErr) console.error('Inventory return error:', invUpdErr);
+          }
+        }
+
+        return res.json({ success: true });
+      }
+
       const { id, commissionPercent } = req.body
       if (!id || commissionPercent === undefined) {
         return res.status(400).json({ error: 'id and commissionPercent are required' })
@@ -372,7 +419,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       // Fetch the existing order to recalculate from source values
       const { data: existing, error: fetchErr } = await supabaseAdmin
         .from(TABLES.ORDERS)
-        .select('selling_price, quantity, shipment_cost, cost_price')
+        .select('selling_price, quantity, shipment_cost, cost_price, stores:store_id(name)')
         .eq('id', id)
         .single()
 

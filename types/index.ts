@@ -76,6 +76,7 @@ export interface Order {
   adminTake: number;
   profit: number;
   paymentStatus?: boolean | null;
+  orderReturned?: boolean;
 }
 
 export interface Purchase {

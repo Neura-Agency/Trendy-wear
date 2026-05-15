@@ -1,4 +1,4 @@
-﻿import { useEffect, useState, useCallback } from "react";
+import { useEffect, useState, useCallback } from "react";
 import { useRouter } from "next/router";
 // DatePicker removed
 import Login from "../components/Login";
@@ -773,7 +773,7 @@ function StoresOverviewSection({ stores, orders, storeInventory, filter, getFilt
 }
 
 // ─── ORDERS SECTION ──────────────────────────────────────────────────
-function OrdersSection({ orders, overallOrders = [], isAdmin, canDelete, onCommissionEdit, onTogglePayout, onEdit, onDelete, confirmDialog }: any) {
+function OrdersSection({ orders, overallOrders = [], isAdmin, canDelete, onCommissionEdit, onTogglePayout, onEdit, onDelete, onReturn, confirmDialog }: any) {
   const [editing, setEditing] = useState<any>(null);
 
   const filteredQty = orders.reduce((s, o) => s + (o.quantity || 0), 0);
@@ -844,6 +844,14 @@ function OrdersSection({ orders, overallOrders = [], isAdmin, canDelete, onCommi
                   onClick={async () => { if (await confirmDialog('Delete this sale? This cannot be undone.')) { onDelete(editing.id); setEditing(null); } }}
                 ><svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{verticalAlign:'middle',marginRight:4}}><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>Delete</button>
               )}
+              {!editing.orderReturned && (
+                <button className="btn" style={{ flex: '0 0 auto', background: '#f59e0b', borderColor: '#f59e0b', color: '#fff', fontWeight: 700, padding: '0 20px', height: 44 }}
+                  onClick={async () => { if (await confirmDialog('Mark this order as RETURNED? This will add stock back to inventory.')) { onReturn(editing.id); setEditing(null); } }}
+                >
+                  <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{verticalAlign:'middle',marginRight:6}}><polyline points="9 14 4 9 9 4"/><path d="M20 20v-7a4 4 0 0 0-4-4H4"/></svg>
+                  Return
+                </button>
+              )}
               <button className="btn btn-glass" style={{ flex: 1, height: 44 }} onClick={() => setEditing(null)}>Cancel</button>
               <button className="btn btn-primary" style={{ flex: 1, height: 44, fontWeight: 700 }}
                 onClick={() => { onEdit({ ...editing, quantity: Number(editing.quantity), sellingPrice: Number(editing.sellingPrice), shipmentCost: Number(editing.shipmentCost) }); setEditing(null); }}
@@ -871,6 +879,7 @@ function OrdersSection({ orders, overallOrders = [], isAdmin, canDelete, onCommi
                 <th>Profit</th>
               </>
             )}
+            <th>Actions</th>
           </tr>
         </thead>
         <tbody>
@@ -880,10 +889,13 @@ function OrdersSection({ orders, overallOrders = [], isAdmin, canDelete, onCommi
             const netAmount = gross - shipment;
             const totalCost = (o.costPrice || 0) * o.quantity;
             return (
-              <tr key={idx} style={{ cursor: 'pointer' }}
+              <tr key={idx} style={{ cursor: 'pointer', opacity: o.orderReturned ? 0.6 : 1, background: o.orderReturned ? 'rgba(0,0,0,0.05)' : 'transparent' }}
                 onClick={() => setEditing({ ...o })}
               >
-                <td className="text-muted" style={{ fontSize: '0.75rem' }}>{new Date(o.date).toLocaleDateString()}</td>
+                <td className="text-muted" style={{ fontSize: '0.75rem' }}>
+                  {new Date(o.date).toLocaleDateString()}
+                  {o.orderReturned && <div style={{ color: 'var(--danger)', fontWeight: 800, fontSize: '9px', marginTop: 2 }}>RETURNED</div>}
+                </td>
                 <td className="font-bold" style={{ color: 'var(--pri-700)' }}>{o.storeName}</td>
                 <td className="font-bold">{o.productName}</td>
                 <td>{o.quantity}</td>
@@ -907,6 +919,18 @@ function OrdersSection({ orders, overallOrders = [], isAdmin, canDelete, onCommi
                     <td className="font-bold" style={{ color: 'var(--success)', fontSize: '1.1rem' }}>{Rs(o.profit)}</td>
                   </>
                 )}
+                <td>
+                  {!o.orderReturned && (
+                    <button 
+                      className="btn btn-sm" 
+                      style={{ padding: '4px 8px', fontSize: '10px', background: '#f59e0b', color: '#fff', border: 'none' }}
+                      onClick={(e) => { e.stopPropagation(); onReturn(o.id); }}
+                      title="Mark as Returned"
+                    >
+                      ↩
+                    </button>
+                  )}
+                </td>
               </tr>
             );
           })}
@@ -1463,6 +1487,23 @@ const [loading, setLoading] = useState<boolean>(true);
     }
   };
 
+  const handleReturnOrder = async (id: string) => {
+    try {
+      const res = await fetch('/api/orders', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ id, isReturn: true }),
+      });
+      const result = await res.json();
+      if (!res.ok) toast.error(result.error || 'Failed to process return');
+      else toast.success('✅ Order marked as returned and stock updated');
+    } catch (e: any) {
+      toast.error(e?.message || 'Failed to process return');
+    } finally {
+      refresh();
+    }
+  };
+
   return (
     <>
       <div className="home-dashboard">
@@ -1652,7 +1693,7 @@ const [loading, setLoading] = useState<boolean>(true);
                 }
               }}
               onTogglePayout={(id, inc) => { refresh(); }}
-              canDelete={isStoreManager || user.role === 'store'}
+              canDelete={true}
               onEdit={async (order: any) => {
                 try {
                   const res = await fetch('/api/orders', {
@@ -1684,6 +1725,8 @@ const [loading, setLoading] = useState<boolean>(true);
                   else refresh();
                 } catch (e: any) { toast.error(e?.message || 'Failed to delete sale'); }
               }}
+              onReturn={handleReturnOrder}
+              confirmDialog={confirmDialog}
             />
           </SectionCard>
 

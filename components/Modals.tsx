@@ -51,6 +51,15 @@ export function EditStoreInventoryModal({ item, storeNames, onSave, onClose }: {
         onClose();
     };
 
+    const sold = (item?.quantityAssigned || 0) - (item?.quantityRemaining || 0);
+
+    const handleAssignedChange = (val: string) => {
+        const newAssigned = parseInt(val) || 0;
+        // Keep sold count constant: newRemaining = newAssigned - currentSold
+        const newRemaining = Math.max(0, newAssigned - sold);
+        setForm({ ...form, quantityAssigned: newAssigned, quantityRemaining: newRemaining });
+    };
+
     return (
         <div className="modal-overlay">
             <div className="modal-box" style={{ maxWidth: '560px', width: '95%' }}>
@@ -60,6 +69,11 @@ export function EditStoreInventoryModal({ item, storeNames, onSave, onClose }: {
                 </div>
                 <div className="modal-body" style={{ padding: '22px 20px' }}>
                     <form onSubmit={handleSubmit}>
+                        <div style={{ marginBottom: 16, padding: '10px 14px', background: 'var(--surface-2)', borderRadius: 8, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                            <span style={{ fontSize: '0.85rem', fontWeight: 600, color: 'var(--text-muted)' }}>Current Status:</span>
+                            <Badge type={sold > 0 ? 'blue' : 'gray'}>Items Sold: {sold}</Badge>
+                        </div>
+
                         <div className="form-grid-2" style={{ marginBottom: 12 }}>
                             <div className="input-group">
                                 <label>Store</label>
@@ -82,26 +96,27 @@ export function EditStoreInventoryModal({ item, storeNames, onSave, onClose }: {
                                 <input type="text" inputMode="decimal" value={form.ownerSupplyPrice} onChange={(e) => setForm({ ...form, ownerSupplyPrice: parseFloat(e.target.value) || 0 })} />
                             </div>
                             <div className="input-group">
-                                <label>Store Selling Price</label>
-                                <input type="text" inputMode="decimal" value={form.storeSellingPrice} onChange={(e) => setForm({ ...form, storeSellingPrice: parseFloat(e.target.value) || 0 })} />
+                                <label>Quantity Assigned (Total Sent)</label>
+                                <input type="text" inputMode="numeric" value={form.quantityAssigned} onChange={(e) => handleAssignedChange(e.target.value)} />
+                                <div style={{ fontSize: '10px', color: 'var(--text-muted)', marginTop: 4 }}>Increasing this will also increase In-Shop Stock</div>
                             </div>
                         </div>
 
                         <div className="form-grid-2" style={{ marginBottom: 12 }}>
                             <div className="input-group">
-                                <label>Quantity Assigned</label>
-                                <input type="text" inputMode="numeric" value={form.quantityAssigned} onChange={(e) => setForm({ ...form, quantityAssigned: parseInt(e.target.value) || 0 })} />
+                                <label>Quantity Remaining (In Shop Stock)</label>
+                                <input type="text" inputMode="numeric" value={form.quantityRemaining} onChange={(e) => setForm({ ...form, quantityRemaining: parseInt(e.target.value) || 0 })} />
                             </div>
                             <div className="input-group">
-                                <label>Quantity Remaining</label>
-                                <input type="text" inputMode="numeric" value={form.quantityRemaining} onChange={(e) => setForm({ ...form, quantityRemaining: parseInt(e.target.value) || 0 })} />
+                                <label>Partner Commission %</label>
+                                <input type="text" inputMode="decimal" value={form.commissionPercent} onChange={(e) => setForm({ ...form, commissionPercent: parseFloat(e.target.value) || 0 })} />
                             </div>
                         </div>
 
                         <div className="form-grid-2" style={{ marginBottom: 16 }}>
                             <div className="input-group">
-                                <label>Partner Commission %</label>
-                                <input type="text" inputMode="decimal" value={form.commissionPercent} onChange={(e) => setForm({ ...form, commissionPercent: parseFloat(e.target.value) || 0 })} />
+                                <label>Store Selling Price</label>
+                                <input type="text" inputMode="decimal" value={form.storeSellingPrice} onChange={(e) => setForm({ ...form, storeSellingPrice: parseFloat(e.target.value) || 0 })} />
                             </div>
                             <div className="input-group">
                                 <label>Inventory ID</label>
