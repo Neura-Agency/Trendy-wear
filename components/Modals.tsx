@@ -36,8 +36,9 @@ export function EditStoreInventoryModal({ item, storeNames, onSave, onClose }: {
         e.preventDefault();
         const assigned = Number(form.quantityAssigned) || 0;
         const remaining = Number(form.quantityRemaining) || 0;
-        if (assigned < 0 || remaining < 0) return toast.error('Quantities must be >= 0');
-        if (remaining > assigned) return toast.error('Remaining cannot exceed assigned');
+        if (assigned < 1) return toast.error('Total items sent must be at least 1');
+        if (remaining < 0) return toast.error('Remaining quantity cannot be less than 0');
+        if (remaining > assigned) return toast.error('Remaining cannot exceed total sent');
 
         const fields: any = {};
         if (form.ownerSupplyPrice !== undefined) fields.owner_supply_price = Number(form.ownerSupplyPrice) || 0;

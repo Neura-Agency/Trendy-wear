@@ -238,8 +238,14 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       if (fields.owner_supply_price !== undefined) allowed.owner_supply_price = fields.owner_supply_price
       if (fields.commission_percent !== undefined) allowed.commission_percent = fields.commission_percent
       if (fields.store_selling_price !== undefined) allowed.store_selling_price = fields.store_selling_price
-      if (fields.quantity_assigned !== undefined) allowed.quantity_assigned = fields.quantity_assigned
-      if (fields.quantity_remaining !== undefined) allowed.quantity_remaining = fields.quantity_remaining
+      if (fields.quantity_assigned !== undefined) {
+        if (Number(fields.quantity_assigned) < 1) return res.status(400).json({ error: 'Quantity assigned must be at least 1' })
+        allowed.quantity_assigned = fields.quantity_assigned
+      }
+      if (fields.quantity_remaining !== undefined) {
+        if (Number(fields.quantity_remaining) < 0) return res.status(400).json({ error: 'Quantity remaining cannot be negative' })
+        allowed.quantity_remaining = fields.quantity_remaining
+      }
 
       // Allow updating store by storeName (resolve to store_id)
       if (fields.storeName) {
