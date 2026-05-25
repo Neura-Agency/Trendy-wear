@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { usePopup } from './Popup';
 import Badge from './Badge';
 import { SaleModalProps, CreateStoreModalProps, ReportModalProps, AddInventoryModalProps, AllotToStoreModalProps, InventoryItem, Order, Product, Store, Expense } from '../types';
+import { buildDeterministicProductId, findMatchingProduct, formatItemCodeFromUuid, resolveCanonicalBrand } from '../lib/catalog';
 
 type SaleInventoryItem = Pick<InventoryItem, 'productName' | 'quantityAvailable' | 'sellingPrice'> & { ownerSupplyPrice?: number; sizeQuantitiesRemaining?: Record<string, number> };
 
@@ -16,6 +17,29 @@ interface SaleModalPropsLocal {
 
 const normalizeCatalogValue = (value: string) => value.trim().toLowerCase();
 
+const isAllCapsValue = (value: string) => {
+    const trimmed = value.trim();
+    return !!trimmed && trimmed === trimmed.toUpperCase();
+};
+
+const uniqueCatalogValues = (values: string[], preferAllCaps = false) => {
+    const canonicalByKey = new Map<string, string>();
+    values.forEach(value => {
+        const trimmed = String(value || '').trim();
+        if (!trimmed) return;
+        const key = normalizeCatalogValue(trimmed);
+        const current = canonicalByKey.get(key);
+        if (!current) {
+            canonicalByKey.set(key, trimmed);
+            return;
+        }
+        if (preferAllCaps && isAllCapsValue(trimmed) && !isAllCapsValue(current)) {
+            canonicalByKey.set(key, trimmed);
+        }
+    });
+    return Array.from(canonicalByKey.values());
+};
+
 function CatalogInput({
     label,
     value,
@@ -24,9 +48,11 @@ function CatalogInput({
     options,
     onPick,
     onCommit,
-    onDelete,
     required,
     helperText,
+    inventoryItems,
+    getOptionLabel,
+    onDelete,
 }: {
     label: string;
     value: string;
@@ -35,9 +61,12 @@ function CatalogInput({
     options: string[];
     onPick: (value: string) => void;
     onCommit: () => void | Promise<void>;
-    onDelete: (value: string) => void;
     required?: boolean;
     helperText?: string;
+    /** Pass warehouse inventory to look up existing item IDs per product name */
+    inventoryItems?: InventoryItem[];
+    getOptionLabel?: (option: string) => string;
+    onDelete?: (option: string) => void;
 }) {
     const [open, setOpen] = useState(false);
     const filtered = options.filter(option => normalizeCatalogValue(option).includes(normalizeCatalogValue(value)));
@@ -68,38 +97,63 @@ function CatalogInput({
             {helperText && <div style={{ fontSize: 11, marginTop: 4, color: 'var(--text-muted)' }}>{helperText}</div>}
             {open && filtered.length > 0 && (
                 <div style={{ position: 'absolute', top: '100%', left: 0, right: 0, marginTop: 6, background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 10, boxShadow: '0 14px 40px rgba(15, 23, 42, 0.12)', zIndex: 1200, maxHeight: 144, overflowY: 'auto' }}>
-                    {filtered.map(option => (
-                        <button
-                            key={option}
-                            type="button"
-                            onMouseDown={e => e.preventDefault()}
-                            onClick={() => {
-                                onPick(option);
-                                setOpen(false);
-                            }}
-                            style={{ width: '100%', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, padding: '10px 12px', border: 'none', background: 'var(--surface)', cursor: 'pointer', textAlign: 'left', borderBottom: '1px solid var(--surface-2)' }}
-                        >
-                            <span style={{ fontWeight: 700, color: 'var(--text)' }}>{option}</span>
-                            <span
-                                onMouseDown={e => {
-                                    e.preventDefault();
-                                    e.stopPropagation();
-                                    onDelete(option);
+                    {filtered.map(option => {
+                        const optionLabel = getOptionLabel ? getOptionLabel(option) : option;
+                        return (
+                            <div
+                                key={option}
+                                role="button"
+                                tabIndex={0}
+                                onMouseDown={e => e.preventDefault()}
+                                onClick={() => {
+                                    onPick(option);
+                                    setOpen(false);
                                 }}
-                                style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', width: 28, height: 28, borderRadius: 8, color: 'var(--danger)', border: '1px solid rgba(220, 38, 38, 0.2)', background: 'rgba(220, 38, 38, 0.06)', cursor: 'pointer', flexShrink: 0 }}
-                                aria-label={`Delete ${option}`}
-                                title={`Delete ${option}`}
+                                onKeyDown={e => {
+                                    if (e.key === 'Enter' || e.key === ' ') {
+                                        e.preventDefault();
+                                        onPick(option);
+                                        setOpen(false);
+                                    }
+                                }}
+                                style={{ width: '100%', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10, padding: '10px 12px', border: 'none', background: 'var(--surface)', cursor: 'pointer', textAlign: 'left', borderBottom: '1px solid var(--surface-2)' }}
                             >
-                                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                                    <path d="M3 6h18" />
-                                    <path d="M8 6V4h8v2" />
-                                    <path d="M19 6l-1 14H6L5 6" />
-                                    <path d="M10 11v6" />
-                                    <path d="M14 11v6" />
-                                </svg>
-                            </span>
-                        </button>
-                    ))}
+                                <span style={{ fontWeight: 700, color: 'var(--text)', flex: 1, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{optionLabel}</span>
+                                {onDelete && (
+                                    <button
+                                        type="button"
+                                        title="Delete product"
+                                        aria-label={`Delete ${optionLabel}`}
+                                        onMouseDown={e => {
+                                            e.preventDefault();
+                                            e.stopPropagation();
+                                        }}
+                                        onClick={e => {
+                                            e.preventDefault();
+                                            e.stopPropagation();
+                                            setOpen(false);
+                                            onDelete(option);
+                                        }}
+                                        style={{
+                                            width: 30,
+                                            height: 30,
+                                            borderRadius: 10,
+                                            border: '1px solid rgba(239, 68, 68, 0.18)',
+                                            background: 'rgba(239, 68, 68, 0.06)',
+                                            color: 'var(--danger)',
+                                            display: 'inline-flex',
+                                            alignItems: 'center',
+                                            justifyContent: 'center',
+                                            flexShrink: 0,
+                                            cursor: 'pointer'
+                                        }}
+                                    >
+                                        <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M3 6h18"/><path d="M8 6V4a1 1 0 0 1 1-1h6a1 1 0 0 1 1 1v2"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/><path d="M10 11v6"/><path d="M14 11v6"/></svg>
+                                    </button>
+                                )}
+                            </div>
+                        );
+                    })}
                 </div>
             )}
         </div>
@@ -111,7 +165,6 @@ export function AddInventoryModal({ onSave, onClose, stores, products }: AddInve
     const { toast } = usePopup();
 
     const [item, setItem] = useState({
-        itemId: 'ITEM-' + Math.random().toString(36).substr(2, 6).toUpperCase(),
         quantity: 1,
         pricePerPiece: 0,
         picture: '',
@@ -127,19 +180,44 @@ export function AddInventoryModal({ onSave, onClose, stores, products }: AddInve
     const [customSize, setCustomSize] = useState('');
     const [allotedStores, setAllotedStores] = useState<string[]>([]);
     const [savingCatalog, setSavingCatalog] = useState(false);
+    const [resolvedItemId, setResolvedItemId] = useState('');
+    const [showDeleteProductModal, setShowDeleteProductModal] = useState(false);
+    const [deletingProduct, setDeletingProduct] = useState<Product | null>(null);
 
     React.useEffect(() => {
         setCatalogProducts(products || []);
     }, [products]);
 
+    const resolvedProductType = newProduct.productType === 'Other' ? newProduct.customType.trim() : newProduct.productType.trim();
+    const matchedExistingProduct = resolvedProductType
+        ? findMatchingProduct(catalogProducts, newProduct.productName, resolveCanonicalBrand(catalogProducts, newProduct.brandName), resolvedProductType)
+        : undefined;
+
+    React.useEffect(() => {
+        const productName = newProduct.productName.trim();
+        const brandName = newProduct.brandName.trim();
+
+        if (!productName || !brandName || !resolvedProductType) {
+            setResolvedItemId('');
+            return;
+        }
+
+        const canonicalBrand = resolveCanonicalBrand(catalogProducts, brandName);
+        const existingProduct = findMatchingProduct(catalogProducts, productName, canonicalBrand, resolvedProductType);
+        const stableUuid = existingProduct?.id || buildDeterministicProductId(productName, canonicalBrand, resolvedProductType);
+
+        setResolvedItemId(formatItemCodeFromUuid(stableUuid));
+    }, [catalogProducts, newProduct.productName, newProduct.brandName, newProduct.productType, newProduct.customType, resolvedProductType]);
+
     const availableSizes = ['XS', 'S', 'M', 'L', 'XL', 'XXL'];
     const itemTypes = ['T-shirt', 'Jacket', 'Sweatshirt', 'Jeans', 'Hoodie', 'Other'];
 
-    const distinctProductNames = Array.from(new Set(catalogProducts.map(product => product.productName).filter(Boolean)));
-    const distinctBrandNames = Array.from(new Set(catalogProducts.map(product => product.brandName).filter(Boolean)));
+    const distinctProductNames = uniqueCatalogValues(catalogProducts.map(product => product.productName).filter(Boolean));
+    const distinctBrandNames = uniqueCatalogValues(catalogProducts.map(product => product.brandName).filter(Boolean), true);
 
     const filteredProductNames = distinctProductNames.filter(name => normalizeCatalogValue(name).includes(normalizeCatalogValue(newProduct.productName)));
     const filteredBrandNames = distinctBrandNames.filter(name => normalizeCatalogValue(name).includes(normalizeCatalogValue(newProduct.brandName)));
+    const getProductOptionLabel = (productName: string) => productName;
 
     const handleAddColor = () => {
         const c = colorInput.trim();
@@ -192,11 +270,12 @@ export function AddInventoryModal({ onSave, onClose, stores, products }: AddInve
         const productName = newProduct.productName.trim();
         if (!productName) throw new Error('Enter product name');
         const rawBrandName = newProduct.brandName.trim();
-        const brandName = rawBrandName || null;
-        const productType = newProduct.productType === 'Other' ? newProduct.customType.trim() : newProduct.productType.trim();
+        const brandName = resolveCanonicalBrand(catalogProducts, rawBrandName);
+        const productType = resolvedProductType;
         if (!productType) throw new Error('Select product type');
+        if (!brandName) throw new Error('Enter brand name');
 
-        const existing = catalogProducts.find(product => normalizeCatalogValue(product.productName) === normalizeCatalogValue(productName) && normalizeCatalogValue(product.brandName || '') === normalizeCatalogValue(brandName || ''));
+        const existing = findMatchingProduct(catalogProducts, productName, brandName, productType);
         if (existing) return existing;
 
         const response = await fetch('/api/products', {
@@ -209,7 +288,8 @@ export function AddInventoryModal({ onSave, onClose, stores, products }: AddInve
                 pricePerPiece: Number(item.pricePerPiece) || 0,
                 colors,
                 sizes,
-                picture: item.picture || ''
+                picture: item.picture || '',
+                id: buildDeterministicProductId(productName, brandName, productType)
             })
         });
 
@@ -226,32 +306,42 @@ export function AddInventoryModal({ onSave, onClose, stores, products }: AddInve
         return savedProduct;
     };
 
-    const handleDeleteCatalogValue = async (field: 'productName' | 'brandName', value: string) => {
+    const deleteCatalogProduct = (productName: string) => {
+        const target = catalogProducts.find(product => normalizeCatalogValue(product.productName) === normalizeCatalogValue(productName));
+        if (!target) {
+            toast.error('Product not found');
+            return;
+        }
+
+        setDeletingProduct(target);
+        setShowDeleteProductModal(true);
+    };
+
+    const confirmDeleteCatalogProduct = async () => {
+        if (!deletingProduct?.id) {
+            toast.error('Product not found');
+            return;
+        }
+
         try {
             const response = await fetch('/api/products', {
                 method: 'DELETE',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ field, value })
+                body: JSON.stringify({ id: deletingProduct.id })
             });
+
             const result = await response.json();
-            if (!response.ok) throw new Error(result.error || 'Failed to delete catalog value');
+            if (!response.ok) throw new Error(result.error || 'Failed to delete product');
 
-            setCatalogProducts(prev => prev.filter(product => {
-                if (field === 'productName') return normalizeCatalogValue(product.productName) !== normalizeCatalogValue(value);
-                return normalizeCatalogValue(product.brandName || '') !== normalizeCatalogValue(value);
-            }));
-            toast.success('Catalog item deleted');
+            setCatalogProducts(prev => prev.filter(product => product.id !== deletingProduct.id));
+            if (normalizeCatalogValue(newProduct.productName) === normalizeCatalogValue(deletingProduct.productName)) {
+                setNewProduct(curr => ({ ...curr, productName: '' }));
+            }
+            setShowDeleteProductModal(false);
+            setDeletingProduct(null);
+            toast.success('✅ Product deleted');
         } catch (error: any) {
-            toast.error(error?.message || 'Delete failed');
-        }
-    };
-
-    const saveAndUseProduct = async (): Promise<void> => {
-        setSavingCatalog(true);
-        try {
-            await uploadCatalogProduct();
-        } finally {
-            setSavingCatalog(false);
+            toast.error(error?.message || 'Failed to delete product');
         }
     };
 
@@ -259,6 +349,7 @@ export function AddInventoryModal({ onSave, onClose, stores, products }: AddInve
         e.preventDefault();
 
         if (!newProduct.productName.trim()) return toast.error('Enter product name');
+        if (!newProduct.brandName.trim()) return toast.error('Enter brand name');
         if (sizes.length > 0) {
             const sum = Object.values(item.sizeQuantities).reduce((s, q) => s + (Number(q) || 0), 0);
             if (sum === 0) return toast.error('Enter quantities for at least one size');
@@ -269,9 +360,12 @@ export function AddInventoryModal({ onSave, onClose, stores, products }: AddInve
         const hasVariantQuantities = (normalizedSizeQuantities && Object.keys(normalizedSizeQuantities).length > 0) || (normalizedColorQuantities && Object.keys(normalizedColorQuantities).length > 0);
 
         const savedProduct = await uploadCatalogProduct();
+        // Derive Item ID from the product's real UUID (same format as the dropdown)
+        // so warehouse table and dropdown always show the same ID.
+        const derivedItemId = `ITEM-${savedProduct.id.replace(/-/g, '').slice(0, 8).toUpperCase()}`;
 
         onSave({
-            itemId: item.itemId,
+            itemId: derivedItemId,
             quantity: hasVariantQuantities ? totalQuantity : item.quantity,
             pricePerPiece: Number(item.pricePerPiece) || 0,
             picture: item.picture,
@@ -312,11 +406,7 @@ export function AddInventoryModal({ onSave, onClose, stores, products }: AddInve
                         </div>
 
                         <div className="form-grid-2" style={{ marginBottom: 20 }}>
-                            <div className="input-group">
-                                <label>Item ID (Auto-gen)</label>
-                                <input readOnly value={item.itemId} style={{ background: '#f8fafc', fontWeight: 700, color: 'var(--acc)' }} />
-                            </div>
-                            <div className="input-group">
+                            <div className="input-group" style={{ gridColumn: '1 / -1' }}>
                                 <label>Inventory Quantity</label>
                                 <input type="text" inputMode="numeric" value={item.quantity} onChange={e => setItem({ ...item, quantity: parseInt(e.target.value) || 0 })} />
                             </div>
@@ -330,8 +420,9 @@ export function AddInventoryModal({ onSave, onClose, stores, products }: AddInve
                                 placeholder="Type a product name and press Enter"
                                 options={filteredProductNames}
                                 onPick={value => setNewProduct({ ...newProduct, productName: value })}
-                                onCommit={() => saveAndUseProduct()}
-                                onDelete={value => handleDeleteCatalogValue('productName', value)}
+                                onCommit={() => {}}
+                                getOptionLabel={getProductOptionLabel}
+                                onDelete={deleteCatalogProduct}
                                 required
                             />
                             <CatalogInput
@@ -342,13 +433,8 @@ export function AddInventoryModal({ onSave, onClose, stores, products }: AddInve
                                 options={filteredBrandNames}
                                 onPick={value => setNewProduct({ ...newProduct, brandName: value })}
                                 onCommit={async () => {
-                                    if (!newProduct.productName.trim()) {
-                                        toast.error('Enter a product name first');
-                                        return;
-                                    }
-                                    await saveAndUseProduct();
+                                    return;
                                 }}
-                                onDelete={value => handleDeleteCatalogValue('brandName', value)}
                             />
                         </div>
 
@@ -361,6 +447,18 @@ export function AddInventoryModal({ onSave, onClose, stores, products }: AddInve
                                 {newProduct.productType === 'Other' && (
                                     <input style={{ marginTop: 8 }} placeholder="Enter custom type..." value={newProduct.customType} onChange={e => setNewProduct({ ...newProduct, customType: e.target.value })} required />
                                 )}
+                                <div style={{ marginTop: 8 }}>
+                                    <label>Item ID</label>
+                                    <input
+                                        readOnly
+                                        value={resolvedItemId}
+                                        placeholder="Select product, brand, and type"
+                                        style={{ background: 'var(--surface-2)', cursor: 'default' }}
+                                    />
+                                    <div style={{ fontSize: 11, marginTop: 4, color: 'var(--text-muted)' }}>
+                                        {matchedExistingProduct ? 'Existing product row will be reused.' : 'A stable ID is generated for this product combo.'}
+                                    </div>
+                                </div>
                             </div>
                             <div className="input-group">
                                 <label>Price Per Piece (Cost)</label>
@@ -442,6 +540,193 @@ export function AddInventoryModal({ onSave, onClose, stores, products }: AddInve
                     </form>
                 </div>
             </div>
+
+            {showDeleteProductModal && deletingProduct && (
+                <div className="modal-overlay" onClick={() => { setShowDeleteProductModal(false); setDeletingProduct(null); }}>
+                    <div className="modal-box delete-modal" onClick={e => e.stopPropagation()}>
+                        <div className="delete-modal__hero">
+                            <div className="delete-modal__head">
+                                <div className="delete-modal__icon">
+                                    <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d="M3 6h18"/><path d="M8 6V4a1 1 0 0 1 1-1h6a1 1 0 0 1 1 1v2"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/><path d="M10 11v6"/><path d="M14 11v6"/></svg>
+                                </div>
+                                <div className="delete-modal__copy">
+                                    <div className="delete-modal__eyebrow">Destructive action</div>
+                                    <h3 className="delete-modal__title">Delete product?</h3>
+                                    <div className="delete-modal__subtitle">
+                                        You are about to remove <strong>{deletingProduct.productName}</strong> from the product catalog.
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                        <div className="delete-modal__body">
+                            <div className="delete-modal__summary">
+                                <div className="delete-modal__summary-top">
+                                    <div>
+                                        <div className="delete-modal__label">Product details</div>
+                                        <div className="delete-modal__item-name">{deletingProduct.productName}</div>
+                                        <div className="delete-modal__batch">{deletingProduct.brandName || 'No brand'} • {deletingProduct.productType || 'No type'}</div>
+                                    </div>
+                                </div>
+                                <div className="delete-modal__chips">
+                                    <span className="badge badge-red">Catalog item</span>
+                                    <span className="text-muted">This will remove the suggestion from the dropdown.</span>
+                                </div>
+                            </div>
+                            <div className="delete-modal__warning">
+                                This permanently deletes the product from the catalog. The action cannot be undone.
+                            </div>
+                        </div>
+                        <div className="delete-modal__footer">
+                            <button
+                                type="button"
+                                className="btn btn-sm btn-glass delete-modal__cancel"
+                                onClick={() => { setShowDeleteProductModal(false); setDeletingProduct(null); }}
+                            >
+                                Cancel
+                            </button>
+                            <button
+                                type="button"
+                                className="btn btn-sm delete-modal__confirm"
+                                onClick={confirmDeleteCatalogProduct}
+                            >
+                                Delete Product
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            )}
+            <style jsx>{`
+                .delete-modal {
+                    width: min(95vw, 620px);
+                    padding: 0;
+                    overflow: hidden;
+                    border-radius: 22px;
+                    box-shadow: 0 24px 80px rgba(15, 23, 42, 0.24);
+                    border: 1px solid rgba(239, 68, 68, 0.12);
+                    background: linear-gradient(180deg, rgba(255, 255, 255, 0.98) 0%, rgba(255, 248, 248, 0.98) 100%);
+                }
+                .delete-modal__hero {
+                    background: linear-gradient(180deg, rgba(239, 68, 68, 0.12) 0%, rgba(239, 68, 68, 0.04) 100%);
+                    border-bottom: 1px solid rgba(239, 68, 68, 0.12);
+                }
+                .delete-modal__head {
+                    display: flex;
+                    align-items: flex-start;
+                    gap: 16px;
+                    padding: 28px 30px 22px;
+                }
+                .delete-modal__icon {
+                    width: 52px;
+                    height: 52px;
+                    border-radius: 16px;
+                    display: grid;
+                    place-items: center;
+                    background: #fff;
+                    color: var(--danger);
+                    box-shadow: 0 10px 24px rgba(239, 68, 68, 0.14);
+                    flex: 0 0 auto;
+                }
+                .delete-modal__copy {
+                    flex: 1;
+                    min-width: 0;
+                }
+                .delete-modal__eyebrow {
+                    font-size: 11px;
+                    font-weight: 800;
+                    letter-spacing: 0.12em;
+                    text-transform: uppercase;
+                    color: var(--danger);
+                    margin-bottom: 8px;
+                }
+                .delete-modal__title {
+                    margin: 0;
+                    font-size: 20px;
+                    font-weight: 900;
+                    line-height: 1.2;
+                    color: var(--text-main);
+                }
+                .delete-modal__subtitle {
+                    margin-top: 10px;
+                    color: var(--text-muted);
+                    font-size: 13.5px;
+                    line-height: 1.55;
+                }
+                .delete-modal__subtitle strong {
+                    color: var(--text-main);
+                }
+                .delete-modal__body {
+                    padding: 22px 30px 18px;
+                }
+                .delete-modal__summary {
+                    padding: 16px 18px;
+                    border-radius: 16px;
+                    background: var(--surface-2);
+                    border: 1px solid var(--border);
+                    margin-bottom: 14px;
+                }
+                .delete-modal__summary-top {
+                    display: flex;
+                    align-items: flex-start;
+                    justify-content: space-between;
+                    gap: 16px;
+                    margin-bottom: 12px;
+                }
+                .delete-modal__label {
+                    font-size: 11px;
+                    text-transform: uppercase;
+                    letter-spacing: 0.1em;
+                    color: var(--text-muted);
+                    font-weight: 800;
+                    margin-bottom: 6px;
+                }
+                .delete-modal__item-name {
+                    font-size: 15px;
+                    font-weight: 900;
+                    color: var(--text-main);
+                    line-height: 1.3;
+                }
+                .delete-modal__batch {
+                    margin-top: 6px;
+                    font-size: 12px;
+                    color: var(--text-muted);
+                }
+                .delete-modal__chips {
+                    display: flex;
+                    flex-wrap: wrap;
+                    gap: 8px;
+                    align-items: center;
+                }
+                .delete-modal__warning {
+                    padding: 14px 16px;
+                    border-radius: 14px;
+                    background: rgba(239, 68, 68, 0.06);
+                    border: 1px solid rgba(239, 68, 68, 0.18);
+                    color: var(--danger);
+                    font-weight: 700;
+                    font-size: 13px;
+                    line-height: 1.5;
+                }
+                .delete-modal__footer {
+                    display: flex;
+                    justify-content: flex-end;
+                    gap: 12px;
+                    padding: 0 30px 28px;
+                }
+                .delete-modal__cancel,
+                .delete-modal__confirm {
+                    min-width: 104px;
+                    height: 44px;
+                    border-radius: 12px;
+                }
+                .delete-modal__confirm {
+                    min-width: 132px;
+                    background: linear-gradient(135deg, #ef4444 0%, #dc2626 100%);
+                    border-color: #dc2626;
+                    color: #fff;
+                    font-weight: 900;
+                    box-shadow: 0 10px 20px rgba(239, 68, 68, 0.18);
+                }
+            `}</style>
         </div>
     );
 }

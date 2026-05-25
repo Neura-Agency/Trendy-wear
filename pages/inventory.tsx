@@ -21,6 +21,7 @@ const IC = {
   alert: <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3Z"/><path d="M12 9v4"/><path d="M12 17h.01"/></svg>,
   stock: <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d="M21 8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16Z"/><path d="m3.3 7 8.7 5 8.7-5"/><path d="M12 22V12"/></svg>,
   dress: <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d="M6 3h12l-4 9h4l-8 9 2-6H6l4-9H6Z"/></svg>,
+    trash: <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d="M3 6h18"/><path d="M8 6V4a1 1 0 0 1 1-1h6a1 1 0 0 1 1 1v2"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/><path d="M10 11v6"/><path d="M14 11v6"/></svg>,
 };
 
 const Rs = (n: number) => "Rs " + (Number(n) || 0).toLocaleString();
@@ -49,6 +50,8 @@ export default function InventoryPage({ user, onLogin }: PageProps) {
     const [editingRow, setEditingRow] = useState<any | null>(null);
     const [showEditInventoryModal, setShowEditInventoryModal] = useState(false);
     const [editingInventoryItem, setEditingInventoryItem] = useState<InventoryItem | null>(null);
+    const [showDeleteInventoryModal, setShowDeleteInventoryModal] = useState(false);
+    const [deletingInventoryItem, setDeletingInventoryItem] = useState<InventoryItem | null>(null);
     const [showAlerts, setShowAlerts] = useState(false);
 
     const refresh = useCallback(async () => {
@@ -140,6 +143,34 @@ export default function InventoryPage({ user, onLogin }: PageProps) {
         }
     }
 
+    const handleDeleteInventory = async (item: InventoryItem) => {
+        if (!item?.id) return toast.error('Missing inventory id')
+        setDeletingInventoryItem(item)
+        setShowDeleteInventoryModal(true)
+    }
+
+    const confirmDeleteInventory = async () => {
+        if (!deletingInventoryItem?.id) return toast.error('Missing inventory id')
+
+        try {
+            const response = await fetch('/api/inventory', {
+                method: 'DELETE',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ id: deletingInventoryItem.id })
+            })
+
+            const result = await response.json()
+            if (!response.ok) throw new Error(result.error || 'Failed to delete inventory item')
+
+            toast.success('✅ Inventory item deleted')
+            setShowDeleteInventoryModal(false)
+            setDeletingInventoryItem(null)
+            refresh()
+        } catch (e: any) {
+            toast.error(e?.message || 'Delete failed')
+        }
+    }
+
     // Flatten store inventory for the table
     const stockProvided = [];
     Object.entries(data.storeInventory).forEach(([storeName, items]) => {
@@ -164,6 +195,10 @@ export default function InventoryPage({ user, onLogin }: PageProps) {
     Object.entries(data.stores || {}).forEach(([name, s]) => {
         storeCommissionByName[name] = Number((s as any)?.commission) || 0;
     });
+
+    const deletingStoreAllotments = deletingInventoryItem
+        ? stockProvided.filter((item) => item.inventoryId === deletingInventoryItem.id)
+        : [];
 
     // Build alerts list
     const alerts: Array<{ type: 'out' | 'low' | 'store-out'; product: string; detail: string; rowId: string; section: 'warehouse' | 'store' }> = [];
@@ -413,13 +448,34 @@ export default function InventoryPage({ user, onLogin }: PageProps) {
                                                     )}
                                                 </td>
                                                 <td>
-                                                    <button
-                                                        className="btn btn-sm btn-glass"
-                                                        style={{ fontWeight: 700 }}
-                                                        onClick={() => { setEditingInventoryItem(item); setShowEditInventoryModal(true); }}
-                                                    >
-                                                        Edit Stock
-                                                    </button>
+                                                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: 8 }}>
+                                                        <button
+                                                            className="btn btn-sm btn-glass"
+                                                            style={{ fontWeight: 700 }}
+                                                            onClick={() => { setEditingInventoryItem(item); setShowEditInventoryModal(true); }}
+                                                        >
+                                                            Edit Stock
+                                                        </button>
+                                                        <button
+                                                            type="button"
+                                                            className="btn btn-sm btn-glass"
+                                                            onClick={() => handleDeleteInventory(item)}
+                                                            title="Delete inventory item"
+                                                            aria-label={`Delete ${item.productName}`}
+                                                            style={{
+                                                                color: 'var(--danger)',
+                                                                borderColor: 'rgba(239, 68, 68, 0.25)',
+                                                                background: 'rgba(239, 68, 68, 0.08)',
+                                                                display: 'inline-flex',
+                                                                alignItems: 'center',
+                                                                justifyContent: 'center',
+                                                                width: 40,
+                                                                padding: 0,
+                                                            }}
+                                                        >
+                                                            {IC.trash}
+                                                        </button>
+                                                    </div>
                                                 </td>
                                             </tr>
                                         );
@@ -630,6 +686,79 @@ export default function InventoryPage({ user, onLogin }: PageProps) {
                         onClose={() => { setShowEditInventoryModal(false); setEditingInventoryItem(null); }}
                     />
                 )}
+
+                {showDeleteInventoryModal && deletingInventoryItem && (
+                    <div className="modal-overlay" onClick={() => { setShowDeleteInventoryModal(false); setDeletingInventoryItem(null); }}>
+                        <div className="modal-box delete-modal" onClick={e => e.stopPropagation()}>
+                            <div className="delete-modal__hero">
+                                <div className="delete-modal__head">
+                                    <div className="delete-modal__icon">
+                                        {IC.trash}
+                                    </div>
+                                    <div className="delete-modal__copy">
+                                        <div className="delete-modal__eyebrow">
+                                            Destructive action
+                                        </div>
+                                        <h3 className="delete-modal__title">Delete inventory item?</h3>
+                                        <div className="delete-modal__subtitle">
+                                            You are about to remove <strong>{deletingInventoryItem.productName}</strong> from warehouse stock.
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                            <div className="delete-modal__body">
+                                <div className="delete-modal__summary">
+                                    <div className="delete-modal__summary-top">
+                                        <div>
+                                            <div className="delete-modal__label">Item details</div>
+                                            <div className="delete-modal__item-name">{deletingInventoryItem.productName}</div>
+                                            <div className="delete-modal__batch">{deletingInventoryItem.batchNumber}</div>
+                                        </div>
+                                        <div className="delete-modal__count-wrap">
+                                            <div className="delete-modal__label delete-modal__label--right">Linked allotments</div>
+                                            <div className="delete-modal__count">
+                                                {deletingStoreAllotments.length}
+                                            </div>
+                                        </div>
+                                    </div>
+                                    <div className="delete-modal__chips">
+                                        <span className="badge badge-red">Warehouse item</span>
+                                        {deletingStoreAllotments.length > 0 ? (
+                                            deletingStoreAllotments.slice(0, 3).map((item) => (
+                                                <Badge key={`${item.storeName}-${item.id}`} type="blue">
+                                                    {item.storeName}
+                                                </Badge>
+                                            ))
+                                        ) : (
+                                            <span className="text-muted">No store allotments found</span>
+                                        )}
+                                        {deletingStoreAllotments.length > 3 && <Badge type="gray">+{deletingStoreAllotments.length - 3} more</Badge>}
+                                    </div>
+                                </div>
+
+                                <div className="delete-modal__warning">
+                                    This permanently deletes the item and every linked allotment. The action cannot be undone.
+                                </div>
+                            </div>
+                            <div className="delete-modal__footer">
+                                <button
+                                    type="button"
+                                    className="btn btn-sm btn-glass delete-modal__cancel"
+                                    onClick={() => { setShowDeleteInventoryModal(false); setDeletingInventoryItem(null); }}
+                                >
+                                    Cancel
+                                </button>
+                                <button
+                                    type="button"
+                                    className="btn btn-sm delete-modal__confirm"
+                                    onClick={confirmDeleteInventory}
+                                >
+                                    Delete Item
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                )}
             </div>
 
             {/* ── Alerts Popup ── */}
@@ -698,6 +827,148 @@ export default function InventoryPage({ user, onLogin }: PageProps) {
                     padding: 24px;
                     border-radius: var(--radius);
                     border: 1px solid var(--border);
+                }
+                .delete-modal {
+                    width: min(95vw, 620px);
+                    padding: 0;
+                    overflow: hidden;
+                    border-radius: 22px;
+                    box-shadow: 0 24px 80px rgba(15, 23, 42, 0.24);
+                    border: 1px solid rgba(239, 68, 68, 0.12);
+                    background: linear-gradient(180deg, rgba(255, 255, 255, 0.98) 0%, rgba(255, 248, 248, 0.98) 100%);
+                }
+                .delete-modal__hero {
+                    background: linear-gradient(180deg, rgba(239, 68, 68, 0.12) 0%, rgba(239, 68, 68, 0.04) 100%);
+                    border-bottom: 1px solid rgba(239, 68, 68, 0.12);
+                }
+                .delete-modal__head {
+                    display: flex;
+                    align-items: flex-start;
+                    gap: 16px;
+                    padding: 28px 30px 22px;
+                }
+                .delete-modal__icon {
+                    width: 52px;
+                    height: 52px;
+                    border-radius: 16px;
+                    display: grid;
+                    place-items: center;
+                    background: #fff;
+                    color: var(--danger);
+                    box-shadow: 0 10px 24px rgba(239, 68, 68, 0.14);
+                    flex: 0 0 auto;
+                }
+                .delete-modal__copy {
+                    flex: 1;
+                    min-width: 0;
+                }
+                .delete-modal__eyebrow {
+                    font-size: 11px;
+                    font-weight: 800;
+                    letter-spacing: 0.12em;
+                    text-transform: uppercase;
+                    color: var(--danger);
+                    margin-bottom: 8px;
+                }
+                .delete-modal__title {
+                    margin: 0;
+                    font-size: 20px;
+                    font-weight: 900;
+                    line-height: 1.2;
+                    color: var(--text-main);
+                }
+                .delete-modal__subtitle {
+                    margin-top: 10px;
+                    color: var(--text-muted);
+                    font-size: 13.5px;
+                    line-height: 1.55;
+                }
+                .delete-modal__subtitle strong {
+                    color: var(--text-main);
+                }
+                .delete-modal__body {
+                    padding: 22px 30px 18px;
+                }
+                .delete-modal__summary {
+                    padding: 16px 18px;
+                    border-radius: 16px;
+                    background: var(--surface-2);
+                    border: 1px solid var(--border);
+                    margin-bottom: 14px;
+                }
+                .delete-modal__summary-top {
+                    display: flex;
+                    align-items: flex-start;
+                    justify-content: space-between;
+                    gap: 16px;
+                    margin-bottom: 12px;
+                }
+                .delete-modal__label {
+                    font-size: 11px;
+                    text-transform: uppercase;
+                    letter-spacing: 0.1em;
+                    color: var(--text-muted);
+                    font-weight: 800;
+                    margin-bottom: 6px;
+                }
+                .delete-modal__label--right {
+                    text-align: right;
+                }
+                .delete-modal__item-name {
+                    font-size: 15px;
+                    font-weight: 900;
+                    color: var(--text-main);
+                    line-height: 1.3;
+                }
+                .delete-modal__batch {
+                    margin-top: 6px;
+                    font-size: 12px;
+                    color: var(--text-muted);
+                }
+                .delete-modal__count-wrap {
+                    text-align: right;
+                }
+                .delete-modal__count {
+                    font-size: 22px;
+                    font-weight: 900;
+                    color: var(--danger);
+                    line-height: 1;
+                }
+                .delete-modal__chips {
+                    display: flex;
+                    flex-wrap: wrap;
+                    gap: 8px;
+                    align-items: center;
+                }
+                .delete-modal__warning {
+                    padding: 14px 16px;
+                    border-radius: 14px;
+                    background: rgba(239, 68, 68, 0.06);
+                    border: 1px solid rgba(239, 68, 68, 0.18);
+                    color: var(--danger);
+                    font-weight: 700;
+                    font-size: 13px;
+                    line-height: 1.5;
+                }
+                .delete-modal__footer {
+                    display: flex;
+                    justify-content: flex-end;
+                    gap: 12px;
+                    padding: 0 30px 28px;
+                }
+                .delete-modal__cancel,
+                .delete-modal__confirm {
+                    min-width: 104px;
+                    height: 44px;
+                    border-radius: 12px;
+                }
+                .delete-modal__confirm {
+                    min-width: 132px;
+                    background: linear-gradient(135deg, #ef4444 0%, #dc2626 100%);
+                    border-color: #dc2626;
+                    color: #fff;
+                    font-weight: 900;
+                    box-shadow: 0 10px 20px rgba(239, 68, 68, 0.18);
                 }
             `}</style>
         </>

@@ -1,6 +1,7 @@
 import { NextApiRequest, NextApiResponse } from 'next'
 import { supabaseAdmin, TABLES } from '../../lib/supabase'
-import { requireSession, toUserPayload } from '../../lib/api/session'
+import { requireSession, toUserPayload, isSuperAdmin } from '../../lib/api/session'
+import { buildDeterministicProductId, findMatchingProduct, resolveCanonicalBrand } from '../../lib/catalog'
 
 export const config = {
   api: {
@@ -11,6 +12,18 @@ export const config = {
 }
 
 const PRODUCT_IMAGES_BUCKET = process.env.SUPABASE_PRODUCT_IMAGES_BUCKET || 'Trendy Wear'
+
+const mergeQuantities = (existingValue: any, incomingValue: any) => {
+  const current = existingValue && typeof existingValue === 'object' && !Array.isArray(existingValue) ? existingValue : {}
+  const incoming = incomingValue && typeof incomingValue === 'object' && !Array.isArray(incomingValue) ? incomingValue : {}
+  const merged: Record<string, number> = { ...current }
+
+  Object.entries(incoming).forEach(([key, value]) => {
+    merged[key] = (Number(merged[key]) || 0) + (Number(value) || 0)
+  })
+
+  return merged
+}
 
 function num(v: any): number {
   const n = Number(v)
@@ -82,19 +95,75 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 
       // If creating a new product
       if (newProduct) {
-        const { data: product, error: productError } = await supabaseAdmin
+        const productName = String(newProduct.productName || '').trim()
+        const brandName = String(newProduct.brandName || '').trim()
+        const productType = newProduct.productType === 'Other'
+          ? String(newProduct.customType || '').trim()
+          : String(newProduct.productType || '').trim()
+
+        if (!productName) {
+          return res.status(400).json({ error: 'productName is required' })
+        }
+        if (!brandName) {
+          return res.status(400).json({ error: 'brandName is required' })
+        }
+        if (!productType) {
+          return res.status(400).json({ error: 'productType is required' })
+        }
+
+        const { data: existingProducts, error: existingProductsError } = await supabaseAdmin
           .from(TABLES.PRODUCTS)
-          .insert({
-            product_name: newProduct.productName,
-            brand_name: newProduct.brandName || null,
-            product_type: newProduct.productType,
-            price_per_piece: pricePerPiece,
-            colors: newProduct.colors || [],
-            sizes: newProduct.sizes || [],
-            product_image: productImageUrl
-          })
-          .select()
-          .single()
+          .select('*')
+
+        if (existingProductsError) {
+          console.error('Fetch products error:', existingProductsError)
+          return res.status(500).json({ error: 'Failed to fetch products' })
+        }
+
+        const canonicalBrand = resolveCanonicalBrand(existingProducts || [], brandName)
+        const existingProduct = findMatchingProduct(existingProducts || [], productName, canonicalBrand, productType)
+  const productId = buildDeterministicProductId(productName, canonicalBrand, productType)
+
+        let product
+        let productError
+
+        if (existingProduct?.id) {
+          const result = await supabaseAdmin
+            .from(TABLES.PRODUCTS)
+            .update({
+              product_name: productName,
+              brand_name: canonicalBrand,
+              product_type: productType,
+              price_per_piece: pricePerPiece,
+              colors: newProduct.colors || [],
+              sizes: newProduct.sizes || [],
+              product_image: productImageUrl
+            })
+            .eq('id', existingProduct.id)
+            .select()
+            .single()
+
+          product = result.data
+          productError = result.error
+        } else {
+          const result = await supabaseAdmin
+            .from(TABLES.PRODUCTS)
+            .insert({
+              id: productId,
+              product_name: productName,
+              brand_name: canonicalBrand,
+              product_type: productType,
+              price_per_piece: pricePerPiece,
+              colors: newProduct.colors || [],
+              sizes: newProduct.sizes || [],
+              product_image: productImageUrl
+            })
+            .select()
+            .single()
+
+          product = result.data
+          productError = result.error
+        }
 
         if (productError) {
           console.error('Product creation error:', productError)
@@ -116,21 +185,59 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
         totalQuantity = Object.values(sizeQuantities).reduce((sum: number, qty: any) => sum + (Number(qty) || 0), 0)
       }
 
-      // Insert into inventory
-      const { data: inventoryItem, error: inventoryError } = await supabaseAdmin
+      const { data: existingInventory, error: inventoryLookupError } = await supabaseAdmin
         .from(TABLES.INVENTORY)
-        .insert({
-          product_id: finalProductId,
-          batch_number: itemId,
-          cost_price: pricePerPiece,
-          selling_price: 0, // Default, can be set later
-          quantity_available: totalQuantity,
-          size_quantities: sizeQuantities && typeof sizeQuantities === 'object' ? sizeQuantities : null,
-          owner: user.username,
-          low_stock_warning: 5
-        })
-        .select()
-        .single()
+        .select('*')
+        .eq('product_id', finalProductId)
+        .maybeSingle()
+
+      if (inventoryLookupError) {
+        console.error('Inventory lookup error:', inventoryLookupError)
+        return res.status(500).json({ error: 'Failed to fetch existing inventory' })
+      }
+
+      const nextSizeQuantities = mergeQuantities(existingInventory?.size_quantities, sizeQuantities)
+
+      let inventoryItem
+      let inventoryError
+
+      if (existingInventory?.id) {
+        const result = await supabaseAdmin
+          .from(TABLES.INVENTORY)
+          .update({
+            batch_number: existingInventory.batch_number || itemId,
+            cost_price: pricePerPiece,
+            selling_price: Number(existingInventory.selling_price) || 0,
+            quantity_available: (Number(existingInventory.quantity_available) || 0) + totalQuantity,
+            size_quantities: Object.keys(nextSizeQuantities).length ? nextSizeQuantities : null,
+            owner: existingInventory.owner || user.username,
+            low_stock_warning: Number(existingInventory.low_stock_warning) || 5
+          })
+          .eq('id', existingInventory.id)
+          .select()
+          .single()
+
+        inventoryItem = result.data
+        inventoryError = result.error
+      } else {
+        const result = await supabaseAdmin
+          .from(TABLES.INVENTORY)
+          .insert({
+            product_id: finalProductId,
+            batch_number: itemId,
+            cost_price: pricePerPiece,
+            selling_price: 0,
+            quantity_available: totalQuantity,
+            size_quantities: sizeQuantities && typeof sizeQuantities === 'object' ? sizeQuantities : null,
+            owner: user.username,
+            low_stock_warning: 5
+          })
+          .select()
+          .single()
+
+        inventoryItem = result.data
+        inventoryError = result.error
+      }
 
       if (inventoryError) {
         console.error('Inventory creation error:', inventoryError)
@@ -170,6 +277,12 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 
       const formattedInventory = (inventory || []).map((row: any) => {
         const p = row.products || {}
+        // Item ID is ALWAYS derived from the product UUID — never from the stored batch_number.
+        // This auto-corrects all old records (ITEM-6P2FOU etc.) without touching the DB.
+        const productUuid: string = row.product_id ?? ''
+        const derivedItemId = productUuid
+          ? `ITEM-${productUuid.replace(/-/g, '').slice(0, 8).toUpperCase()}`
+          : row.batch_number // fallback for orphaned rows with no product_id
         return {
           id: row.id,
           productId: row.product_id ?? null,
@@ -181,7 +294,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
           sizeQuantities: row.size_quantities ?? null,
           otherVariants: { picture: p.product_image ?? null },
           productImage: p.product_image ?? null,
-          batchNumber: row.batch_number,
+          batchNumber: derivedItemId,
           costPrice: Number(row.cost_price) || 0,
           sellingPrice: Number(row.selling_price) || 0,
           quantityAvailable: Number(row.quantity_available) || 0,
@@ -339,6 +452,40 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       }
 
       return res.json({ success: true, inventory: updatedInventory, product: updatedProduct })
+    }
+
+    if (req.method === 'DELETE') {
+      const { id } = req.body || {}
+
+      if (!isSuperAdmin(session)) {
+        return res.status(403).json({ error: 'Only super admins can delete inventory items' })
+      }
+
+      if (!id) {
+        return res.status(400).json({ error: 'id is required' })
+      }
+
+      const { error: storeInventoryError } = await supabaseAdmin
+        .from(TABLES.STORE_INVENTORY)
+        .delete()
+        .eq('inventory_id', id)
+
+      if (storeInventoryError) {
+        console.error('store inventory delete error:', storeInventoryError)
+        return res.status(500).json({ error: 'Failed to delete related store allocations' })
+      }
+
+      const { error: inventoryDeleteError } = await supabaseAdmin
+        .from(TABLES.INVENTORY)
+        .delete()
+        .eq('id', id)
+
+      if (inventoryDeleteError) {
+        console.error('inventory delete error:', inventoryDeleteError)
+        return res.status(500).json({ error: 'Failed to delete inventory item' })
+      }
+
+      return res.json({ success: true })
     }
 
     return res.status(405).json({ error: 'Method not allowed' })

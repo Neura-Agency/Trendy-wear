@@ -1,6 +1,7 @@
 import { NextApiRequest, NextApiResponse } from 'next'
 import { supabaseAdmin, TABLES } from '../../lib/supabase'
 import { requireSession, toUserPayload } from '../../lib/api/session'
+import { buildDeterministicProductId, findMatchingProduct, resolveCanonicalBrand } from '../../lib/catalog'
 
 const PRODUCT_IMAGES_BUCKET = process.env.SUPABASE_PRODUCT_IMAGES_BUCKET || 'Trendy Wear'
 
@@ -84,30 +85,39 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
         return res.status(400).json({ error: 'productName is required' })
       }
 
-      const bn = String(brandName || '').trim() || null
-      const pt = String(productType || '').trim() || null
+      const bn = String(brandName || '').trim()
+      const pt = String(productType || '').trim()
+      if (!bn) {
+        return res.status(400).json({ error: 'brandName is required' })
+      }
+      if (!pt) {
+        return res.status(400).json({ error: 'productType is required' })
+      }
       const imageUrl = await uploadProductImage(String(picture || ''))
 
+      const { data: products, error: fetchError } = await supabaseAdmin
+        .from(TABLES.PRODUCTS)
+        .select('*')
+
+      if (fetchError) {
+        console.error('Fetch products error:', fetchError)
+        return res.status(500).json({ error: 'Failed to fetch products' })
+      }
+
+      const canonicalBrand = resolveCanonicalBrand(products || [], bn)
+      const existing = findMatchingProduct(products || [], pn, canonicalBrand, pt)
+      const productId = buildDeterministicProductId(pn, canonicalBrand, pt)
+
       const payload = {
+        id: productId,
         product_name: pn,
-        brand_name: bn,
+        brand_name: canonicalBrand,
         product_type: pt,
         price_per_piece: num(pricePerPiece),
         colors: Array.isArray(colors) ? colors : [],
         sizes: Array.isArray(sizes) ? sizes : [],
         product_image: imageUrl,
       }
-
-      let existingQuery = supabaseAdmin
-        .from(TABLES.PRODUCTS)
-        .select('*')
-        .eq('product_name', pn)
-
-      existingQuery = bn === null
-        ? existingQuery.is('brand_name', null)
-        : existingQuery.eq('brand_name', bn)
-
-      const { data: existing } = await existingQuery.maybeSingle()
 
       let saved
       let error
