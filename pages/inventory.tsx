@@ -96,6 +96,8 @@ export default function InventoryPage({ user, onLogin }: PageProps) {
     const isSuperAdmin = isAdmin && user.scope === 'all';
     // Bilal: admin with managedStores, but not superadmin
     const isStoreAdmin = isAdmin && user.managedStores && user.managedStores.length > 0 && !isSuperAdmin;
+    const visibleStoreNames = Array.from(new Set([...(user.managedStores || []), ...(user.storeName ? [user.storeName] : [])].filter(Boolean)));
+    const storeNameMatches = (storeName: string) => visibleStoreNames.some((name) => name.trim().toLowerCase() === storeName.trim().toLowerCase());
 
 
     const handleSaveInventory = async (payload: any) => {
@@ -141,13 +143,10 @@ export default function InventoryPage({ user, onLogin }: PageProps) {
     // Flatten store inventory for the table
     const stockProvided = [];
     Object.entries(data.storeInventory).forEach(([storeName, items]) => {
-        const canSee = isSuperAdmin || (isStoreAdmin && user.managedStores.includes(storeName)) || (!isAdmin && user.storeName === storeName);
+        const canSee = isSuperAdmin || (isStoreAdmin && storeNameMatches(storeName)) || (!isAdmin && storeNameMatches(storeName));
         if (!canSee) return;
         Object.values(items).forEach((item) => {
-            // Admins only see items they own; store users see all items assigned to their store
-            if (!isAdmin || isSuperAdmin || item.owner === user.username) {
-                stockProvided.push({ ...item, storeName });
-            }
+            stockProvided.push({ ...item, storeName });
         });
     });
 
@@ -224,17 +223,17 @@ export default function InventoryPage({ user, onLogin }: PageProps) {
         totalItemsInStores = stockProvided.reduce((acc, it) => acc + it.quantityRemaining, 0);
     } else if (isStoreAdmin) {
         // Only managed stores
-        const managedStoreNames = user.managedStores || [];
+        const managedStoreNames = visibleStoreNames;
         const ownedItems = data.inventory.filter(it => it.owner === user.username);
         totalInventoryValue = calcInventoryValue(ownedItems);
         totalItemsInWarehouse = ownedItems.reduce((acc, it) => acc + Math.max(0, (Number(it.quantityAvailable) || 0) - (allotedQtyByProduct[it.id] || 0)), 0);
-        totalItemsInStores = stockProvided.filter(it => managedStoreNames.includes(it.storeName)).reduce((acc, it) => acc + it.quantityRemaining, 0);
+        totalItemsInStores = stockProvided.filter(it => managedStoreNames.some((name) => name.trim().toLowerCase() === it.storeName.trim().toLowerCase())).reduce((acc, it) => acc + it.quantityRemaining, 0);
     } else {
         // Store user: only their own
         const ownedItems = data.inventory.filter(it => it.owner === user.username);
         totalInventoryValue = calcInventoryValue(ownedItems);
         totalItemsInWarehouse = ownedItems.reduce((acc, it) => acc + Math.max(0, (Number(it.quantityAvailable) || 0) - (allotedQtyByProduct[it.id] || 0)), 0);
-        totalItemsInStores = stockProvided.filter(it => it.storeName === user.storeName).reduce((acc, it) => acc + it.quantityRemaining, 0);
+        totalItemsInStores = stockProvided.filter(it => storeNameMatches(it.storeName)).reduce((acc, it) => acc + it.quantityRemaining, 0);
     }
 
     return (
@@ -300,7 +299,7 @@ export default function InventoryPage({ user, onLogin }: PageProps) {
                         <div className="kpi-icon">{IC.dress}</div>
                         <div className="kpi-label">Available Types</div>
                         <div className="kpi-value">
-                            {isAdmin ? data.inventory.length : stockProvided.filter(s => s.storeName === user.storeName).length}
+                                    {isAdmin ? data.inventory.length : stockProvided.filter(s => storeNameMatches(s.storeName)).length}
                         </div>
                         <div className="kpi-trend">Product Catalog</div>
                     </div>
@@ -454,10 +453,10 @@ export default function InventoryPage({ user, onLogin }: PageProps) {
                                 </tr>
                             </thead>
                             <tbody>
-                                    {stockProvided.filter(s => isAdmin || s.storeName === user.storeName).length === 0 ? (
+                                    {stockProvided.filter(s => isAdmin || storeNameMatches(s.storeName)).length === 0 ? (
                                     <tr><td colSpan={isAdmin ? 7 : 5} style={{ textAlign: 'center', padding: 40 }} className="text-muted">No stock available currently.</td></tr>
                                 ) : (
-                                    stockProvided.filter(s => isAdmin || s.storeName === user.storeName).map((item, idx) => (
+                                    stockProvided.filter(s => isAdmin || storeNameMatches(s.storeName)).map((item, idx) => (
                                         <tr key={item.id || idx} id={`store-inv-row-${item.id || idx}`}>
                                             {isAdmin && <td className="font-bold" style={{ color: 'var(--pri-900)' }}>{item.storeName}</td>}
                                             <td className="font-bold">{item.productName}</td>

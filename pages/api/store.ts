@@ -93,8 +93,34 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
         }
       })
 
+      // Also include all super-admin accounts under "Trendy Wear Main"
+      const { data: adminAccounts } = await supabaseAdmin
+        .from(TABLES.ACCOUNTS)
+        .select('id, username, plain_password, role, scope, managed_stores, is_active')
+        .eq('role', 'admin')
+        .eq('scope', 'all')
+        .order('created_at', { ascending: true })
+
+      ;(adminAccounts || []).forEach((admin: any) => {
+        if (accountsMap[admin.username]) return // already included via store_owners
+        accountsMap[admin.username] = {
+          password: admin.plain_password || '••••••••',
+          role: admin.role,
+          scope: admin.scope,
+          storeName: 'Trendy Wear Main',
+          managedStores: admin.managed_stores || [],
+          isActive: admin.is_active ?? true
+        }
+      })
+
+      // Sort: Trendy Wear Main accounts first, then store accounts by store name
+      const sortedAccountsMap: Record<string, any> = {}
+      const adminEntries = Object.entries(accountsMap).filter(([, v]: [string, any]) => v.storeName === 'Trendy Wear Main')
+      const storeEntries = Object.entries(accountsMap).filter(([, v]: [string, any]) => v.storeName !== 'Trendy Wear Main')
+      ;[...adminEntries, ...storeEntries].forEach(([k, v]) => { sortedAccountsMap[k] = v })
+
       return res.json({
-        accounts: accountsMap,
+        accounts: sortedAccountsMap,
         stores: storesMap,
         settings: { storeCommissionPercent: 10 }
       })
