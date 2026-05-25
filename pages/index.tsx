@@ -78,9 +78,9 @@ function TableFilter({ value, onChange }: TableFilterProps) {
   }
 
   return (
-    <div className="table-filter-wrap" style={{ display: 'flex', gap: 12, alignItems: 'center', flexWrap: 'wrap', background: 'var(--surface-2)', padding: '6px 16px', borderRadius: 8, border: '1px solid var(--border)' }}>
+    <div className="table-filter-wrap" style={{ display: 'flex', gap: 12, alignItems: 'center', flexWrap: 'nowrap', overflowX: 'auto', background: 'var(--surface-2)', padding: '6px 16px', borderRadius: 8, border: '1px solid var(--border)' }}>
       <span style={{ fontWeight: 700, fontSize: '12px', color: 'var(--text-muted)', textTransform: 'uppercase' }}>Filter:</span>
-      <div style={{ minWidth: 120, flex: '1 1 140px', maxWidth: 200 }}>
+      <div style={{ minWidth: 120, flex: '0 0 160px', maxWidth: 200 }}>
         <CustomSelect 
           value={mode} 
           onChange={handleModeChange} 

@@ -10,6 +10,7 @@ interface NavItem {
   path: string;
   adminOnly?: boolean;
   superAdminOnly?: boolean;
+  storeOnly?: boolean;
 }
 
 export default function Layout({ children, user, onLogout }: LayoutProps) {
@@ -144,6 +145,13 @@ export default function Layout({ children, user, onLogout }: LayoutProps) {
       path: "/inventory",
     },
     {
+      id: "all-inventory",
+      icon: iconInventory as any,
+      label: "All inventory",
+      path: "/all-inventory",
+      storeOnly: true,
+    },
+    {
       id: "credentials",
       icon: iconCredentials as any,
       label: "Shop Credentials",
@@ -176,6 +184,7 @@ export default function Layout({ children, user, onLogout }: LayoutProps) {
   const filteredNavItems = navItems.filter((item) => {
     if (item.superAdminOnly)
       return user?.role === "admin" && user?.scope === "all";
+    if (item.storeOnly) return user?.role === "store";
     if (item.adminOnly) return user?.role === "admin";
     return true;
   });
