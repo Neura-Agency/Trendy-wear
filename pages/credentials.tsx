@@ -6,6 +6,7 @@ import { PageProps, Account, Store } from '../types';
 
 interface EditingAccount {
     username: string;
+    originalUsername?: string;
     password?: string;
     role?: 'admin' | 'store';
     isActive?: boolean;
@@ -56,6 +57,7 @@ export default function ShopCredentials({ user, onLogin }: PageProps) {
     const handleEdit = (username: string, account: Account) => {
         setEditingAccount({
             username,
+            originalUsername: username,
             password: '',
             role: account.role,
             isActive: accountStatuses[username] ?? true
@@ -68,7 +70,8 @@ export default function ShopCredentials({ user, onLogin }: PageProps) {
         setSaving(true);
         try {
             const updates: any = {
-                username: editingAccount.username
+                username: editingAccount.username,
+                originalUsername: editingAccount.originalUsername || editingAccount.username
             };
 
             if (editingAccount.password && editingAccount.password.trim() !== '') {
@@ -94,11 +97,16 @@ export default function ShopCredentials({ user, onLogin }: PageProps) {
                 throw new Error(error.error || 'Failed to update account');
             }
 
-            // Update local state
-            setAccountStatuses(prev => ({
-                ...prev,
-                [editingAccount.username]: editingAccount.isActive ?? true
-            }));
+            // Update local state (account key may have changed; refresh will normalize)
+            setAccountStatuses(prev => {
+                const next = { ...prev } as Record<string, boolean>;
+                // remove old key if username changed
+                if (editingAccount.originalUsername && editingAccount.originalUsername !== editingAccount.username) {
+                    delete next[editingAccount.originalUsername];
+                }
+                next[editingAccount.username] = editingAccount.isActive ?? true;
+                return next;
+            });
 
             // Refresh data
             await refresh();
@@ -200,6 +208,19 @@ export default function ShopCredentials({ user, onLogin }: PageProps) {
                     <div className="modal-content" onClick={(e) => e.stopPropagation()}>
                         <h2>Edit Account - {editingAccount.username}</h2>
                         
+                        <div className="form-group">
+                            <label>Username</label>
+                            <input
+                                type="text"
+                                placeholder="Enter username"
+                                value={editingAccount.username || ''}
+                                onChange={(e) => setEditingAccount({
+                                    ...editingAccount,
+                                    username: e.target.value
+                                })}
+                            />
+                        </div>
+
                         <div className="form-group">
                             <label>New Password (leave blank to keep current)</label>
                             <input

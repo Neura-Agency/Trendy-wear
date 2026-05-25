@@ -134,7 +134,10 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       // Calculate total quantity from sizeQuantitiesAssigned if provided
       let qty = num(quantity)
       if (sizeQuantitiesAssigned && typeof sizeQuantitiesAssigned === 'object') {
-        qty = Object.values(sizeQuantitiesAssigned).reduce((sum: number, q: any) => sum + (Number(q) || 0), 0)
+        qty = Object.values(sizeQuantitiesAssigned as Record<string, unknown>).reduce<number>(
+          (sum, q) => sum + (Number(q) || 0),
+          0
+        )
       }
 
       // Validate quantity

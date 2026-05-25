@@ -260,5 +260,6 @@ export interface AllotToStoreModalProps extends ModalProps {
     ownerSupplyPrice: number;
     commissionPercent: number;
     extraQty: number;
+    sizeQuantitiesAssigned?: Record<string, number> | undefined;
   }) => void;
 }

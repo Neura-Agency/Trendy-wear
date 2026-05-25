@@ -3,7 +3,7 @@ import { usePopup } from './Popup';
 import Badge from './Badge';
 import { SaleModalProps, CreateStoreModalProps, ReportModalProps, AddInventoryModalProps, AllotToStoreModalProps, InventoryItem, Order, Product, Store, Expense } from '../types';
 
-type SaleInventoryItem = Pick<InventoryItem, 'productName' | 'quantityAvailable' | 'sellingPrice'> & { ownerSupplyPrice?: number };
+type SaleInventoryItem = Pick<InventoryItem, 'productName' | 'quantityAvailable' | 'sellingPrice'> & { ownerSupplyPrice?: number; sizeQuantitiesRemaining?: Record<string, number> };
 
 interface SaleModalPropsLocal {
     inventory: SaleInventoryItem[];
@@ -12,6 +12,438 @@ interface SaleModalPropsLocal {
   storeNames?: string[];
   onAdd: (sale: any) => void;
   onClose: () => void;
+}
+
+const normalizeCatalogValue = (value: string) => value.trim().toLowerCase();
+
+function CatalogInput({
+    label,
+    value,
+    onChange,
+    placeholder,
+    options,
+    onPick,
+    onCommit,
+    onDelete,
+    required,
+    helperText,
+}: {
+    label: string;
+    value: string;
+    onChange: (value: string) => void;
+    placeholder: string;
+    options: string[];
+    onPick: (value: string) => void;
+    onCommit: () => void | Promise<void>;
+    onDelete: (value: string) => void;
+    required?: boolean;
+    helperText?: string;
+}) {
+    const [open, setOpen] = useState(false);
+    const filtered = options.filter(option => normalizeCatalogValue(option).includes(normalizeCatalogValue(value)));
+
+    return (
+        <div className="input-group" style={{ position: 'relative', zIndex: open ? 1100 : 'auto' }}>
+            <label>{label}</label>
+            <input
+                required={required}
+                value={value}
+                placeholder={placeholder}
+                autoComplete="off"
+                spellCheck={false}
+                onFocus={() => setOpen(true)}
+                onChange={e => {
+                    onChange(e.target.value);
+                    setOpen(true);
+                }}
+                onBlur={() => setTimeout(() => setOpen(false), 150)}
+                onKeyDown={e => {
+                    if (e.key === 'Enter') {
+                        e.preventDefault();
+                        onCommit();
+                        setOpen(false);
+                    }
+                }}
+            />
+            {helperText && <div style={{ fontSize: 11, marginTop: 4, color: 'var(--text-muted)' }}>{helperText}</div>}
+            {open && filtered.length > 0 && (
+                <div style={{ position: 'absolute', top: '100%', left: 0, right: 0, marginTop: 6, background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 10, boxShadow: '0 14px 40px rgba(15, 23, 42, 0.12)', zIndex: 1200, maxHeight: 144, overflowY: 'auto' }}>
+                    {filtered.map(option => (
+                        <button
+                            key={option}
+                            type="button"
+                            onMouseDown={e => e.preventDefault()}
+                            onClick={() => {
+                                onPick(option);
+                                setOpen(false);
+                            }}
+                            style={{ width: '100%', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, padding: '10px 12px', border: 'none', background: 'var(--surface)', cursor: 'pointer', textAlign: 'left', borderBottom: '1px solid var(--surface-2)' }}
+                        >
+                            <span style={{ fontWeight: 700, color: 'var(--text)' }}>{option}</span>
+                            <span
+                                onMouseDown={e => {
+                                    e.preventDefault();
+                                    e.stopPropagation();
+                                    onDelete(option);
+                                }}
+                                style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', width: 28, height: 28, borderRadius: 8, color: 'var(--danger)', border: '1px solid rgba(220, 38, 38, 0.2)', background: 'rgba(220, 38, 38, 0.06)', cursor: 'pointer', flexShrink: 0 }}
+                                aria-label={`Delete ${option}`}
+                                title={`Delete ${option}`}
+                            >
+                                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                                    <path d="M3 6h18" />
+                                    <path d="M8 6V4h8v2" />
+                                    <path d="M19 6l-1 14H6L5 6" />
+                                    <path d="M10 11v6" />
+                                    <path d="M14 11v6" />
+                                </svg>
+                            </span>
+                        </button>
+                    ))}
+                </div>
+            )}
+        </div>
+    );
+}
+
+
+export function AddInventoryModal({ onSave, onClose, stores, products }: AddInventoryModalProps) {
+    const { toast } = usePopup();
+
+    const [item, setItem] = useState({
+        itemId: 'ITEM-' + Math.random().toString(36).substr(2, 6).toUpperCase(),
+        quantity: 1,
+        pricePerPiece: 0,
+        picture: '',
+        sizeQuantities: {} as Record<string, number>,
+        colorQuantities: {} as Record<string, number>
+    });
+
+    const [newProduct, setNewProduct] = useState({ productName: '', brandName: '', productType: 'T-shirt', customType: '' });
+    const [catalogProducts, setCatalogProducts] = useState<Product[]>(products || []);
+    const [colors, setColors] = useState<string[]>([]);
+    const [colorInput, setColorInput] = useState('');
+    const [sizes, setSizes] = useState<string[]>([]);
+    const [customSize, setCustomSize] = useState('');
+    const [allotedStores, setAllotedStores] = useState<string[]>([]);
+    const [savingCatalog, setSavingCatalog] = useState(false);
+
+    React.useEffect(() => {
+        setCatalogProducts(products || []);
+    }, [products]);
+
+    const availableSizes = ['XS', 'S', 'M', 'L', 'XL', 'XXL'];
+    const itemTypes = ['T-shirt', 'Jacket', 'Sweatshirt', 'Jeans', 'Hoodie', 'Other'];
+
+    const distinctProductNames = Array.from(new Set(catalogProducts.map(product => product.productName).filter(Boolean)));
+    const distinctBrandNames = Array.from(new Set(catalogProducts.map(product => product.brandName).filter(Boolean)));
+
+    const filteredProductNames = distinctProductNames.filter(name => normalizeCatalogValue(name).includes(normalizeCatalogValue(newProduct.productName)));
+    const filteredBrandNames = distinctBrandNames.filter(name => normalizeCatalogValue(name).includes(normalizeCatalogValue(newProduct.brandName)));
+
+    const handleAddColor = () => {
+        const c = colorInput.trim();
+        if (!c) return;
+        const normalized = c.toLowerCase();
+        if (!colors.includes(normalized)) setColors(prev => [...prev, normalized]);
+        setColorInput('');
+    };
+
+    const toggleSize = (size: string) => {
+        setSizes(prev => {
+            const next = prev.includes(size) ? prev.filter(s => s !== size) : [...prev, size];
+            setItem(curr => {
+                const q = { ...curr.sizeQuantities };
+                if (!prev.includes(size)) q[size] = q[size] ?? 0;
+                else delete q[size];
+                return { ...curr, sizeQuantities: q };
+            });
+            return next;
+        });
+    };
+
+    const handleAddCustomSize = () => {
+        const custom = customSize.trim();
+        if (!custom) return;
+        const upper = custom.toUpperCase();
+        if (!sizes.includes(upper)) {
+            setSizes(prev => [...prev, upper]);
+            setItem(curr => ({ ...curr, sizeQuantities: { ...curr.sizeQuantities, [upper]: 0 } }));
+        }
+        setCustomSize('');
+    };
+
+    const updateSizeQuantity = (size: string, qty: number) => setItem(curr => ({ ...curr, sizeQuantities: { ...curr.sizeQuantities, [size]: Math.max(0, qty) } }));
+    const updateColorQuantity = (color: string, qty: number) => setItem(curr => ({ ...curr, colorQuantities: { ...curr.colorQuantities, [color]: Math.max(0, qty) } }));
+
+    const totalQuantity = Object.values(item.sizeQuantities).reduce((s, q) => s + (Number(q) || 0), 0) + Object.values(item.colorQuantities).reduce((s, q) => s + (Number(q) || 0), 0);
+
+    const toggleStore = (store: string) => setAllotedStores(prev => prev.includes(store) ? prev.filter(s => s !== store) : [...prev, store]);
+
+    const handleImageChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+        const file = e.target.files?.[0];
+        if (!file) return;
+        const reader = new FileReader();
+        reader.onloadend = () => setItem(curr => ({ ...curr, picture: reader.result as string }));
+        reader.readAsDataURL(file);
+    };
+
+    const uploadCatalogProduct = async () => {
+        const productName = newProduct.productName.trim();
+        if (!productName) throw new Error('Enter product name');
+        const rawBrandName = newProduct.brandName.trim();
+        const brandName = rawBrandName || null;
+        const productType = newProduct.productType === 'Other' ? newProduct.customType.trim() : newProduct.productType.trim();
+        if (!productType) throw new Error('Select product type');
+
+        const existing = catalogProducts.find(product => normalizeCatalogValue(product.productName) === normalizeCatalogValue(productName) && normalizeCatalogValue(product.brandName || '') === normalizeCatalogValue(brandName || ''));
+        if (existing) return existing;
+
+        const response = await fetch('/api/products', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                productName,
+                brandName,
+                productType,
+                pricePerPiece: Number(item.pricePerPiece) || 0,
+                colors,
+                sizes,
+                picture: item.picture || ''
+            })
+        });
+
+        const result = await response.json();
+        if (!response.ok) {
+            throw new Error(result.error || 'Failed to save product');
+        }
+
+        const savedProduct = result.product as Product;
+        setCatalogProducts(prev => {
+            const next = prev.filter(product => product.id !== savedProduct.id);
+            return [savedProduct, ...next];
+        });
+        return savedProduct;
+    };
+
+    const handleDeleteCatalogValue = async (field: 'productName' | 'brandName', value: string) => {
+        try {
+            const response = await fetch('/api/products', {
+                method: 'DELETE',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ field, value })
+            });
+            const result = await response.json();
+            if (!response.ok) throw new Error(result.error || 'Failed to delete catalog value');
+
+            setCatalogProducts(prev => prev.filter(product => {
+                if (field === 'productName') return normalizeCatalogValue(product.productName) !== normalizeCatalogValue(value);
+                return normalizeCatalogValue(product.brandName || '') !== normalizeCatalogValue(value);
+            }));
+            toast.success('Catalog item deleted');
+        } catch (error: any) {
+            toast.error(error?.message || 'Delete failed');
+        }
+    };
+
+    const saveAndUseProduct = async (): Promise<void> => {
+        setSavingCatalog(true);
+        try {
+            await uploadCatalogProduct();
+        } finally {
+            setSavingCatalog(false);
+        }
+    };
+
+    const handleSubmit = async (e: React.FormEvent) => {
+        e.preventDefault();
+
+        if (!newProduct.productName.trim()) return toast.error('Enter product name');
+        if (sizes.length > 0) {
+            const sum = Object.values(item.sizeQuantities).reduce((s, q) => s + (Number(q) || 0), 0);
+            if (sum === 0) return toast.error('Enter quantities for at least one size');
+        }
+
+        const normalizedSizeQuantities = Object.keys(item.sizeQuantities).length ? item.sizeQuantities : null;
+        const normalizedColorQuantities = Object.keys(item.colorQuantities).length ? item.colorQuantities : null;
+        const hasVariantQuantities = (normalizedSizeQuantities && Object.keys(normalizedSizeQuantities).length > 0) || (normalizedColorQuantities && Object.keys(normalizedColorQuantities).length > 0);
+
+        const savedProduct = await uploadCatalogProduct();
+
+        onSave({
+            itemId: item.itemId,
+            quantity: hasVariantQuantities ? totalQuantity : item.quantity,
+            pricePerPiece: Number(item.pricePerPiece) || 0,
+            picture: item.picture,
+            sizeQuantities: normalizedSizeQuantities,
+            colorQuantities: normalizedColorQuantities,
+            productId: savedProduct.id,
+            allotedStores,
+        });
+
+        onClose();
+    };
+
+    return (
+        <div className="modal-overlay">
+            <div className="modal-box" style={{ maxWidth: '820px', width: '95%' }}>
+                <div className="modal-head" style={{ padding: '16px 20px' }}>
+                    <h3 style={{ fontSize: 18, fontWeight: 800 }}>Add Warehouse Inventory</h3>
+                    <button className="btn btn-sm" onClick={onClose} style={{ border: 'none', fontSize: 18 }}>✕</button>
+                </div>
+                <div className="modal-body" style={{ padding: '18px 20px' }}>
+                    <form onSubmit={handleSubmit}>
+                        <div className="input-group" style={{ marginBottom: 20, display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
+                            <label style={{ marginBottom: 12 }}>Item Picture</label>
+                            <div
+                                style={{
+                                    width: '100px', height: '100px', border: '2px dashed var(--border)', borderRadius: '50%', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', background: 'var(--surface-2)', cursor: 'pointer', overflow: 'hidden', position: 'relative', transition: 'all 0.2s ease'
+                                }}
+                                onClick={() => document.getElementById('item-pic-input')?.click()}
+                            >
+                                {item.picture ? (
+                                    <img src={item.picture} alt="Preview" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                                ) : (
+                                    <span style={{ fontSize: 24, color: 'var(--text-faint)' }}>+</span>
+                                )}
+                                <input id="item-pic-input" type="file" accept="image/*" style={{ display: 'none' }} onChange={handleImageChange} />
+                            </div>
+                            {!item.picture && <span style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 8 }}>Click to upload</span>}
+                        </div>
+
+                        <div className="form-grid-2" style={{ marginBottom: 20 }}>
+                            <div className="input-group">
+                                <label>Item ID (Auto-gen)</label>
+                                <input readOnly value={item.itemId} style={{ background: '#f8fafc', fontWeight: 700, color: 'var(--acc)' }} />
+                            </div>
+                            <div className="input-group">
+                                <label>Inventory Quantity</label>
+                                <input type="text" inputMode="numeric" value={item.quantity} onChange={e => setItem({ ...item, quantity: parseInt(e.target.value) || 0 })} />
+                            </div>
+                        </div>
+
+                        <div className="form-grid-2" style={{ marginBottom: 20 }}>
+                            <CatalogInput
+                                label="Product Name"
+                                value={newProduct.productName}
+                                onChange={value => setNewProduct({ ...newProduct, productName: value })}
+                                placeholder="Type a product name and press Enter"
+                                options={filteredProductNames}
+                                onPick={value => setNewProduct({ ...newProduct, productName: value })}
+                                onCommit={() => saveAndUseProduct()}
+                                onDelete={value => handleDeleteCatalogValue('productName', value)}
+                                required
+                            />
+                            <CatalogInput
+                                label="Brand Name"
+                                value={newProduct.brandName}
+                                onChange={value => setNewProduct({ ...newProduct, brandName: value })}
+                                placeholder="Type a brand name and press Enter"
+                                options={filteredBrandNames}
+                                onPick={value => setNewProduct({ ...newProduct, brandName: value })}
+                                onCommit={async () => {
+                                    if (!newProduct.productName.trim()) {
+                                        toast.error('Enter a product name first');
+                                        return;
+                                    }
+                                    await saveAndUseProduct();
+                                }}
+                                onDelete={value => handleDeleteCatalogValue('brandName', value)}
+                            />
+                        </div>
+
+                        <div className="form-grid-2" style={{ marginBottom: 20 }}>
+                            <div className="input-group">
+                                <label>Product Type</label>
+                                <select value={newProduct.productType} onChange={e => setNewProduct({ ...newProduct, productType: e.target.value })}>
+                                    {itemTypes.map(t => <option key={t} value={t}>{t}</option>)}
+                                </select>
+                                {newProduct.productType === 'Other' && (
+                                    <input style={{ marginTop: 8 }} placeholder="Enter custom type..." value={newProduct.customType} onChange={e => setNewProduct({ ...newProduct, customType: e.target.value })} required />
+                                )}
+                            </div>
+                            <div className="input-group">
+                                <label>Price Per Piece (Cost)</label>
+                                <input type="text" inputMode="decimal" required placeholder="0.00" value={item.pricePerPiece as any} onChange={e => setItem({ ...item, pricePerPiece: parseFloat(e.target.value) || 0 })} />
+                            </div>
+                        </div>
+
+                        <div className="input-group" style={{ marginBottom: 20 }}>
+                            <label>Colors</label>
+                            <div style={{ display: 'flex', gap: 8, marginBottom: 8 }}>
+                                <input placeholder="Add color (e.g. red, navy, #ffaa00)..." value={colorInput} onChange={e => setColorInput(e.target.value)} onKeyDown={e => e.key === 'Enter' && (e.preventDefault(), handleAddColor())} />
+                                <button type="button" className="btn btn-primary" onClick={handleAddColor}>Add</button>
+                            </div>
+                            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
+                                {colors.map(c => (
+                                    <div key={c} style={{ padding: '6px 12px', borderRadius: '20px', background: 'var(--surface-2)', border: '1px solid var(--border)', color: c, fontWeight: 800, fontSize: 12, display: 'flex', alignItems: 'center', gap: 8, textTransform: 'capitalize' }}>
+                                        <span style={{ width: 8, height: 8, borderRadius: '50%', background: c }} />
+                                        {c}
+                                        <span style={{ cursor: 'pointer', opacity: 0.6 }} onClick={() => setColors(colors.filter(x => x !== c))}>×</span>
+                                    </div>
+                                ))}
+                                {colors.length === 0 && <div style={{ fontSize: 11, color: 'var(--text-muted)' }}>No colors set.</div>}
+                            </div>
+                        </div>
+
+                        {colors.length > 0 && (
+                            <div style={{ marginBottom: 20, padding: 16, background: 'var(--surface-2)', borderRadius: 10, border: '1px solid var(--border)' }}>
+                                <div style={{ fontSize: 13, fontWeight: 800, marginBottom: 12, color: 'var(--text)' }}>Quantity per Color</div>
+                                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(120px, 1fr))', gap: 12 }}>
+                                    {colors.map(c => (
+                                        <div key={c} style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+                                            <label style={{ fontSize: 11, fontWeight: 700, color: 'var(--text-muted)' }}>{c}</label>
+                                            <input type="text" inputMode="numeric" value={item.colorQuantities[c] || 0} onChange={e => updateColorQuantity(c, parseInt(e.target.value) || 0)} style={{ padding: '8px 12px', fontSize: 14 }} />
+                                        </div>
+                                    ))}
+                                </div>
+                            </div>
+                        )}
+
+                        <div className="input-group" style={{ marginBottom: 20 }}>
+                            <label>Sizes</label>
+                            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, marginBottom: 12 }}>
+                                {availableSizes.map(s => (
+                                    <button key={s} type="button" className={`btn btn-sm ${sizes.includes(s) ? 'btn-primary' : 'btn-glass'}`} style={{ minWidth: 44 }} onClick={() => toggleSize(s)}>{s}</button>
+                                ))}
+                            </div>
+                            <div style={{ display: 'flex', gap: 8, marginBottom: 12 }}>
+                                <input placeholder="Add custom size (e.g. 3XL)..." value={customSize} onChange={e => setCustomSize(e.target.value)} onKeyDown={e => e.key === 'Enter' && (e.preventDefault(), handleAddCustomSize())} />
+                                <button type="button" className="btn btn-sm" onClick={handleAddCustomSize}>+ Custom Size</button>
+                            </div>
+
+                            {sizes.length > 0 && (
+                                <div style={{ marginTop: 16, padding: 16, background: 'var(--surface-2)', borderRadius: 10, border: '1px solid var(--border)' }}>
+                                    <div style={{ fontSize: 13, fontWeight: 800, marginBottom: 12, color: 'var(--text)' }}>Quantity per Size</div>
+                                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(120px, 1fr))', gap: 12 }}>
+                                        {sizes.map(s => (
+                                            <div key={s} style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+                                                <label style={{ fontSize: 11, fontWeight: 700, color: 'var(--text-muted)' }}>{s}</label>
+                                                <input type="text" inputMode="numeric" value={item.sizeQuantities[s] || 0} onChange={e => updateSizeQuantity(s, parseInt(e.target.value) || 0)} style={{ padding: '8px 12px', fontSize: 14 }} />
+                                            </div>
+                                        ))}
+                                    </div>
+                                </div>
+                            )}
+                        </div>
+
+                        <div className="input-group" style={{ marginBottom: 24 }}>
+                            <label>Alloted Stores</label>
+                            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
+                                {stores.map(s => (
+                                    <button key={s} type="button" className={`btn btn-sm ${allotedStores.includes(s) ? 'btn-primary' : 'btn-glass'}`} onClick={() => toggleStore(s)}>{s}</button>
+                                ))}
+                            </div>
+                        </div>
+
+                        <div style={{ display: 'flex', gap: 8 }}>
+                            <button type="submit" className="btn btn-primary btn-full" disabled={savingCatalog} style={{ height: 52, fontSize: 16, fontWeight: 800 }}>{savingCatalog ? 'Saving...' : 'Add to Warehouse Inventory'}</button>
+                        </div>
+                    </form>
+                </div>
+            </div>
+        </div>
+    );
 }
 
 export function EditStoreInventoryModal({ item, storeNames, onSave, onClose }: { item: any; storeNames?: string[]; onSave: (fields: any) => void; onClose: () => void }) {
@@ -1378,442 +1810,7 @@ export function ReportModal({ data, onClose }: ReportModalProps) {
 
 
 
-export function AddInventoryModal({ onSave, onClose, stores, products }: AddInventoryModalProps) {
-    const { toast } = usePopup();
-    const [productMode, setProductMode] = useState<'select' | 'new'>(products?.length ? 'select' : 'new');
-    const [selectedProductId, setSelectedProductId] = useState<string>(products?.[0]?.id || '');
 
-    const [item, setItem] = useState({
-        itemId: 'ITEM-' + Math.random().toString(36).substr(2, 6).toUpperCase(),
-        quantity: 1,
-        pricePerPiece: 0,
-        picture: '',
-        sizeQuantities: {} as Record<string, number>
-    });
-
-    const [newProduct, setNewProduct] = useState<{
-        productName: string;
-        brandName: string;
-        productType: string;
-        customType: string;
-    }>({
-        productName: '',
-        brandName: '',
-        productType: 'T-shirt',
-        customType: ''
-    });
-
-    const [colors, setColors] = useState<string[]>([]);
-    const [colorInput, setColorInput] = useState('');
-    const [sizes, setSizes] = useState<string[]>([]);
-    const [customSize, setCustomSize] = useState('');
-    const [allotedStores, setAllotedStores] = useState<string[]>([]);
-
-    const availableSizes = ['XS', 'S', 'M', 'L', 'XL', 'XXL'];
-    const itemTypes = ['T-shirt', 'Jacket', 'Sweatshirt', 'Jeans', 'Hoodie', 'Other'];
-
-    const selectedProduct: Product | undefined = (products || []).find(p => p.id === selectedProductId);
-    const displayColors = productMode === 'new' ? colors : (selectedProduct?.colors || []);
-    const displaySizes = productMode === 'new' ? sizes : (selectedProduct?.sizes || []);
-
-    const handleAddColor = () => {
-        if (colorInput && !colors.includes(colorInput)) {
-            setColors([...colors, colorInput.toLowerCase()]);
-            setColorInput('');
-        }
-    };
-
-    const toggleSize = (size: string) => {
-        setSizes(prev => {
-            const newSizes = prev.includes(size) ? prev.filter(s => s !== size) : [...prev, size];
-            // Initialize size quantity when adding a size
-            if (!prev.includes(size)) {
-                setItem(curr => ({
-                    ...curr,
-                    sizeQuantities: { ...curr.sizeQuantities, [size]: 0 }
-                }));
-            } else {
-                // Remove size quantity when removing a size
-                setItem(curr => {
-                    const newSizeQuantities = { ...curr.sizeQuantities };
-                    delete newSizeQuantities[size];
-                    return { ...curr, sizeQuantities: newSizeQuantities };
-                });
-            }
-            return newSizes;
-        });
-    };
-
-    const handleAddCustomSize = () => {
-        if (customSize && !sizes.includes(customSize)) {
-            const upperSize = customSize.toUpperCase();
-            setSizes([...sizes, upperSize]);
-            setCustomSize('');
-            // Initialize size quantity for custom size
-            setItem(curr => ({
-                ...curr,
-                sizeQuantities: { ...curr.sizeQuantities, [upperSize]: 0 }
-            }));
-        }
-    };
-
-    const updateSizeQuantity = (size: string, qty: number) => {
-        setItem(curr => ({
-            ...curr,
-            sizeQuantities: { ...curr.sizeQuantities, [size]: Math.max(0, qty) }
-        }));
-    };
-
-    const totalQuantity = Object.values(item.sizeQuantities).reduce((sum, qty) => sum + qty, 0);
-
-    const toggleStore = (store: string) => {
-        setAllotedStores(prev => prev.includes(store) ? prev.filter(s => s !== store) : [...prev, store]);
-    };
-
-    const handleImageChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-        const file = e.target.files?.[0];
-        if (file) {
-            const reader = new FileReader();
-            reader.onloadend = () => {
-                setItem({ ...item, picture: reader.result as string });
-            };
-            reader.readAsDataURL(file);
-        }
-    };
-
-    const handleSubmit = (e: React.FormEvent) => {
-        e.preventDefault();
-
-        if (productMode === 'select' && !selectedProductId) return toast.error('Select a product');
-        if (productMode === 'new') {
-            const pn = newProduct.productName.trim();
-            if (!pn) return toast.error('Enter product name');
-            
-            // Validate size quantities
-            if (sizes.length > 0 && totalQuantity === 0) {
-                return toast.error('Enter quantities for at least one size');
-            }
-        }
-
-        onSave({
-            ...item,
-            quantity: sizes.length > 0 ? totalQuantity : item.quantity,
-            productId: productMode === 'select' ? selectedProductId : undefined,
-            allotedStores,
-            newProduct: productMode === 'new'
-                ? {
-                    productName: newProduct.productName.trim(),
-                    brandName: newProduct.brandName.trim(),
-                    productType: (newProduct.productType === 'Other' ? newProduct.customType : newProduct.productType).trim(),
-                    pricePerPiece: item.pricePerPiece,
-                    colors,
-                    sizes
-                }
-                : undefined
-        });
-        onClose();
-    };
-
-    return (
-        <div className="modal-overlay">
-            <div className="modal-box" style={{ maxWidth: '600px', width: '95%' }}>
-                <div className="modal-head" style={{ padding: '16px 20px' }}>
-                    <h3 style={{ fontSize: '18px', fontWeight: 800 }}>Add Warehouse Inventory</h3>
-                    <button className="btn btn-sm" onClick={onClose} style={{ border: 'none', fontSize: '18px' }}>✕</button>
-                </div>
-                <div className="modal-body" style={{ padding: '24px' }}>
-                    <form onSubmit={handleSubmit}>
-                        <div className="input-group" style={{ marginBottom: 24, display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
-                            <label style={{ marginBottom: 12 }}>Item Picture</label>
-                            <div 
-                                style={{ 
-                                    width: '100px', 
-                                    height: '100px', 
-                                    border: '2px dashed var(--border)', 
-                                    borderRadius: '50%',
-                                    display: 'flex',
-                                    flexDirection: 'column',
-                                    alignItems: 'center',
-                                    justifyContent: 'center',
-                                    background: 'var(--surface-2)',
-                                    cursor: 'pointer',
-                                    overflow: 'hidden',
-                                    position: 'relative',
-                                    transition: 'all 0.2s ease'
-                                }}
-                                onClick={() => document.getElementById('item-pic-input')?.click()}
-                            >
-                                {item.picture ? (
-                                    <img src={item.picture} alt="Preview" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
-                                ) : (
-                                    <>
-                                        <span style={{ fontSize: '24px', color: 'var(--text-faint)' }}><svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d="M14.5 4h-5L7 7H4a2 2 0 0 0-2 2v9a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2V9a2 2 0 0 0-2-2h-3l-2.5-3z"/><circle cx="12" cy="13" r="3"/></svg></span>
-                                    </>
-                                )}
-                                <input 
-                                    id="item-pic-input"
-                                    type="file" 
-                                    accept="image/*" 
-                                    style={{ display: 'none' }} 
-                                    onChange={handleImageChange}
-                                />
-                            </div>
-                            {!item.picture && <span style={{ fontSize: '11px', color: 'var(--text-muted)', marginTop: 8 }}>Click to upload</span>}
-                        </div>
-
-                        <div className="form-grid-2" style={{ marginBottom: 20 }}>
-                            <div className="input-group">
-                                <label>Item ID (Auto-gen)</label>
-                                <input readOnly value={item.itemId} style={{ background: '#f8fafc', fontWeight: 700, color: 'var(--acc)' }} />
-                            </div>
-                            <div className="input-group">
-                                <label>Product</label>
-                                <div style={{ display: 'flex', gap: 8 }}>
-                                    <select
-                                        value={selectedProductId}
-                                        onChange={e => setSelectedProductId(e.target.value)}
-                                        disabled={productMode !== 'select'}
-                                        required={productMode === 'select'}
-                                        style={{ flex: 1 }}
-                                    >
-                                        <option value="">Choose...</option>
-                                        {(products || []).map(p => (
-                                            <option key={p.id} value={p.id}>
-                                                {p.productName}{p.brandName ? ` — ${p.brandName}` : ''}
-                                            </option>
-                                        ))}
-                                    </select>
-                                    <button
-                                        type="button"
-                                        className={`btn btn-sm ${productMode === 'new' ? 'btn-primary' : 'btn-glass'}`}
-                                        onClick={() => setProductMode(productMode === 'new' ? 'select' : 'new')}
-                                        style={{ whiteSpace: 'nowrap' }}
-                                    >
-                                        {productMode === 'new' ? 'Select Existing' : '+ New Product'}
-                                    </button>
-                                </div>
-                                {productMode === 'select' && !products?.length && (
-                                    <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 6 }}>
-                                        No products yet. Click “+ New Product”.
-                                    </div>
-                                )}
-                            </div>
-                        </div>
-
-                        {productMode === 'new' && (
-                            <>
-                                <div className="form-grid-2" style={{ marginBottom: 20 }}>
-                                    <div className="input-group">
-                                        <label>Product Name</label>
-                                        <input
-                                            required
-                                            placeholder="e.g. Summer Breeze Tee"
-                                            value={newProduct.productName}
-                                            onChange={e => setNewProduct({ ...newProduct, productName: e.target.value })}
-                                        />
-                                    </div>
-                                    <div className="input-group">
-                                        <label>Brand Name</label>
-                                        <input
-                                            placeholder="e.g. Trendy Wear"
-                                            value={newProduct.brandName}
-                                            onChange={e => setNewProduct({ ...newProduct, brandName: e.target.value })}
-                                        />
-                                    </div>
-                                </div>
-
-                                <div className="input-group" style={{ marginBottom: 20 }}>
-                                    <label>Product Type</label>
-                                    <select value={newProduct.productType} onChange={e => setNewProduct({ ...newProduct, productType: e.target.value })}>
-                                        {itemTypes.map(t => <option key={t} value={t}>{t}</option>)}
-                                    </select>
-                                    {newProduct.productType === 'Other' && (
-                                        <input
-                                            style={{ marginTop: 8 }}
-                                            placeholder="Enter custom type..."
-                                            value={newProduct.customType}
-                                            onChange={e => setNewProduct({ ...newProduct, customType: e.target.value })}
-                                            required
-                                        />
-                                    )}
-                                </div>
-                            </>
-                        )}
-
-                        {productMode === 'select' && selectedProduct && (
-                            <div style={{ marginBottom: 20, padding: 12, border: '1px solid var(--border)', borderRadius: 10, background: 'var(--surface-2)' }}>
-                                <div style={{ fontSize: 12, fontWeight: 800 }}>{selectedProduct.productName}</div>
-                                <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 4 }}>
-                                    {selectedProduct.brandName ? `Brand: ${selectedProduct.brandName} · ` : ''}{selectedProduct.productType ? `Type: ${selectedProduct.productType}` : ''}
-                                </div>
-                            </div>
-                        )}
-
-                        <div className="form-grid-2" style={{ marginBottom: 20 }}>
-                            <div className="input-group">
-                                <label>Price Per Piece (Cost)</label>
-                                <input type="text" inputMode="decimal" required placeholder="0.00" value={item.pricePerPiece} onChange={e => setItem({ ...item, pricePerPiece: parseFloat(e.target.value) })} />
-                            </div>
-                            {(productMode === 'select' || (productMode === 'new' && sizes.length === 0)) && (
-                                <div className="input-group">
-                                    <label>Total Quantity</label>
-                                    <input type="text" inputMode="numeric" required value={item.quantity} onChange={e => setItem({ ...item, quantity: parseInt(e.target.value) })} />
-                                </div>
-                            )}
-                        </div>
-
-                        <div className="input-group" style={{ marginBottom: 20 }}>
-                            <label>Colors</label>
-                            {productMode === 'new' ? (
-                                <>
-                                    <div style={{ display: 'flex', gap: 8, marginBottom: 8 }}>
-                                        <input 
-                                            placeholder="Add color (e.g. red, navy, #ffaa00)..." 
-                                            value={colorInput} 
-                                            onChange={e => setColorInput(e.target.value)} 
-                                            onKeyPress={e => e.key === 'Enter' && (e.preventDefault(), handleAddColor())}
-                                        />
-                                        <button type="button" className="btn btn-primary" onClick={handleAddColor}>Add</button>
-                                    </div>
-                                </>
-                            ) : (
-                                <div style={{ fontSize: 11, color: 'var(--text-muted)', marginBottom: 8 }}>
-                                    Colors come from the product catalog.
-                                </div>
-                            )}
-                            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
-                                {displayColors.map(c => (
-                                    <div 
-                                        key={c} 
-                                        style={{ 
-                                            padding: '6px 12px', 
-                                            borderRadius: '20px', 
-                                            background: 'var(--surface-2)', 
-                                            border: '1px solid var(--border)',
-                                            color: c,
-                                            fontWeight: 800,
-                                            fontSize: '12px',
-                                            display: 'flex',
-                                            alignItems: 'center',
-                                            gap: '8px',
-                                            textTransform: 'capitalize',
-                                            boxShadow: '0 2px 4px rgba(0,0,0,0.05)'
-                                        }}
-                                    >
-                                        <span style={{ width: 8, height: 8, borderRadius: '50%', background: c }}></span>
-                                        {c}
-                                        {productMode === 'new' && (
-                                            <span style={{ cursor: 'pointer', opacity: 0.6 }} onClick={() => setColors(colors.filter(x => x !== c))}>×</span>
-                                        )}
-                                    </div>
-                                ))}
-                                {displayColors.length === 0 && (
-                                    <div style={{ fontSize: 11, color: 'var(--text-muted)' }}>No colors set.</div>
-                                )}
-                            </div>
-                        </div>
-
-                        <div className="input-group" style={{ marginBottom: 20 }}>
-                            <label>Sizes</label>
-                            {productMode === 'new' ? (
-                                <>
-                                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, marginBottom: 12 }}>
-                                        {availableSizes.map(s => (
-                                            <button
-                                                key={s}
-                                                type="button"
-                                                className={`btn btn-sm ${sizes.includes(s) ? 'btn-primary' : 'btn-glass'}`}
-                                                style={{ minWidth: 44 }}
-                                                onClick={() => toggleSize(s)}
-                                            >
-                                                {s}
-                                            </button>
-                                        ))}
-                                    </div>
-                                    <div style={{ display: 'flex', gap: 8, marginBottom: 12 }}>
-                                        <input 
-                                            placeholder="Add custom size (e.g. 3XL)..." 
-                                            value={customSize} 
-                                            onChange={e => setCustomSize(e.target.value)}
-                                            onKeyPress={e => e.key === 'Enter' && (e.preventDefault(), handleAddCustomSize())}
-                                        />
-                                        <button type="button" className="btn btn-sm" onClick={handleAddCustomSize} style={{ whiteSpace: 'nowrap' }}>+ Custom Size</button>
-                                    </div>
-                                    {sizes.some(s => !availableSizes.includes(s)) && (
-                                        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginTop: 8, marginBottom: 12 }}>
-                                            {sizes.filter(s => !availableSizes.includes(s)).map(s => (
-                                                <Badge key={s} type="purple">
-                                                    {s} <span style={{ cursor: 'pointer', marginLeft: 4 }} onClick={() => setSizes(sizes.filter(x => x !== s))}>×</span>
-                                                </Badge>
-                                            ))}
-                                        </div>
-                                    )}
-                                    
-                                    {sizes.length > 0 && (
-                                        <div style={{ marginTop: 16, padding: 16, background: 'var(--surface-2)', borderRadius: 10, border: '1px solid var(--border)' }}>
-                                            <div style={{ fontSize: 13, fontWeight: 800, marginBottom: 12, color: 'var(--text)' }}>
-                                                Quantity per Size
-                                            </div>
-                                            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(120px, 1fr))', gap: 12 }}>
-                                                {sizes.map(s => (
-                                                    <div key={s} style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
-                                                        <label style={{ fontSize: 11, fontWeight: 700, color: 'var(--text-muted)' }}>{s}</label>
-                                                        <input 
-                                                            type="number" 
-                                                            min="0"
-                                                            value={item.sizeQuantities[s] || 0}
-                                                            onChange={e => updateSizeQuantity(s, parseInt(e.target.value) || 0)}
-                                                            style={{ padding: '8px 12px', fontSize: 14 }}
-                                                        />
-                                                    </div>
-                                                ))}
-                                            </div>
-                                            <div style={{ marginTop: 12, padding: '8px 12px', background: 'var(--primary)', color: 'white', borderRadius: 6, fontSize: 13, fontWeight: 800, textAlign: 'center' }}>
-                                                Total: {totalQuantity} units
-                                            </div>
-                                        </div>
-                                    )}
-                                </>
-                            ) : (
-                                <>
-                                    <div style={{ fontSize: 11, color: 'var(--text-muted)', marginBottom: 8 }}>
-                                        Sizes come from the product catalog.
-                                    </div>
-                                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
-                                        {displaySizes.map(s => (
-                                            <Badge key={s} type="gray">{s}</Badge>
-                                        ))}
-                                        {displaySizes.length === 0 && <div style={{ fontSize: 11, color: 'var(--text-muted)' }}>No sizes set.</div>}
-                                    </div>
-                                </>
-                            )}
-                        </div>
-
-                        <div className="input-group" style={{ marginBottom: 24 }}>
-                            <label>Alloted Stores</label>
-                            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
-                                {stores.map(s => (
-                                    <button
-                                        key={s}
-                                        type="button"
-                                        className={`btn btn-sm ${allotedStores.includes(s) ? 'btn-primary' : 'btn-glass'}`}
-                                        onClick={() => toggleStore(s)}
-                                    >
-                                        {s}
-                                    </button>
-                                ))}
-                            </div>
-                        </div>
-
-                        <button type="submit" className="btn btn-primary btn-full" style={{ height: 52, fontSize: '16px', fontWeight: 800 }}>
-                            Add to Warehouse Inventory
-                        </button>
-                    </form>
-                </div>
-            </div>
-        </div>
-    );
-}
 
 export function AllotToStoreModal({ onSave, onClose, stores, inventory, allotedQtyByProduct, storeCommissionByName }: AllotToStoreModalProps) {
     const { toast } = usePopup();
