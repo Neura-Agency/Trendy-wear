@@ -10,6 +10,8 @@ node_modules/
 # environment variables
 .env*
 !.env.example
+env.download
+env.supabase
 
 # misc
 .DS_Store
