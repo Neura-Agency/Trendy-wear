@@ -2,11 +2,15 @@
 -- Date: 2026-03-28
 -- Description: Adds JSONB columns for size-specific quantity tracking across inventory, store_inventory, and orders tables
 
--- Step 1: Add size_quantities column to inventory table
+-- Step 1: Add variant quantity columns to inventory table
 ALTER TABLE public.inventory 
 ADD COLUMN IF NOT EXISTS size_quantities jsonb;
 
+ALTER TABLE public.inventory 
+ADD COLUMN IF NOT EXISTS color_quantities jsonb;
+
 COMMENT ON COLUMN public.inventory.size_quantities IS 'JSONB object storing quantities per size, e.g., {"S": 10, "M": 15, "L": 20}. NULL for legacy records.';
+COMMENT ON COLUMN public.inventory.color_quantities IS 'JSONB object storing quantities per color, e.g., {"red": 10, "navy": 15}. NULL for legacy records.';
 
 -- Step 2: Add size quantity columns to store_inventory table
 ALTER TABLE public.store_inventory 

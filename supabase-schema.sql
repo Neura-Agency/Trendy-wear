@@ -178,6 +178,7 @@ create table if not exists public.inventory (
   selling_price numeric(12,2) not null default 0.00,
   quantity_available int not null default 0,
   size_quantities jsonb,
+  color_quantities jsonb,
   low_stock_warning int not null default 5,
 
   owner text,

@@ -53,6 +53,15 @@ export default function InventoryPage({ user, onLogin }: PageProps) {
     const [showDeleteInventoryModal, setShowDeleteInventoryModal] = useState(false);
     const [deletingInventoryItem, setDeletingInventoryItem] = useState<InventoryItem | null>(null);
     const [showAlerts, setShowAlerts] = useState(false);
+    // Persisted across modal open/close — tracks product types hidden/replaced by the user
+    const [hiddenProductTypes, setHiddenProductTypes] = useState<string[]>([]);
+    const handleHideProductType = (typeName: string) => {
+        setHiddenProductTypes(prev => {
+            const norm = typeName.trim().toLowerCase();
+            if (prev.some(t => t.trim().toLowerCase() === norm)) return prev;
+            return [...prev, typeName];
+        });
+    };
 
     const refresh = useCallback(async () => {
         setLoading(true);
@@ -612,6 +621,8 @@ export default function InventoryPage({ user, onLogin }: PageProps) {
                     <AddInventoryModal 
                         stores={Object.keys(data.stores)} 
                         products={data.products}
+                        hiddenProductTypes={hiddenProductTypes}
+                        onHideProductType={handleHideProductType}
                         onSave={handleSaveInventory} 
                         onClose={() => setShowAddInventoryModal(false)} 
                     />
@@ -678,6 +689,7 @@ export default function InventoryPage({ user, onLogin }: PageProps) {
                     <EditInventoryModal
                         item={editingInventoryItem}
                         minQuantity={editingInventoryItem.id ? (allotedQtyByProduct[editingInventoryItem.id] || 0) : 0}
+                        products={data.products}
                         onSave={async (payload: any) => {
                             await handleUpdateInventory(editingInventoryItem, payload)
                             setShowEditInventoryModal(false)

@@ -25,6 +25,11 @@ const mergeQuantities = (existingValue: any, incomingValue: any) => {
   return merged
 }
 
+const totalQuantityFrom = (value: any) => {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return 0
+  return Object.values(value).reduce((sum: number, qty: any) => sum + (Number(qty) || 0), 0)
+}
+
 function num(v: any): number {
   const n = Number(v)
   return Number.isFinite(n) ? n : 0
@@ -74,6 +79,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
         itemId,
         quantity,
         sizeQuantities,
+        colorQuantities,
         pricePerPiece,
         picture,
         productId,
@@ -179,11 +185,11 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
           .eq('id', finalProductId)
       }
 
-      // Calculate total quantity from size quantities if provided
-      let totalQuantity = quantity
-      if (sizeQuantities && typeof sizeQuantities === 'object') {
-        totalQuantity = Object.values(sizeQuantities).reduce((sum: number, qty: any) => sum + (Number(qty) || 0), 0)
-      }
+      // Calculate total quantity from variant quantities if provided
+      const hasVariantQuantities = (sizeQuantities && typeof sizeQuantities === 'object') || (colorQuantities && typeof colorQuantities === 'object')
+      const totalQuantity = hasVariantQuantities
+        ? totalQuantityFrom(sizeQuantities) + totalQuantityFrom(colorQuantities)
+        : num(quantity)
 
       const { data: existingInventory, error: inventoryLookupError } = await supabaseAdmin
         .from(TABLES.INVENTORY)
@@ -197,22 +203,26 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       }
 
       const nextSizeQuantities = mergeQuantities(existingInventory?.size_quantities, sizeQuantities)
+      const nextColorQuantities = mergeQuantities(existingInventory?.color_quantities, colorQuantities)
 
       let inventoryItem
       let inventoryError
 
       if (existingInventory?.id) {
-        const result = await supabaseAdmin
-          .from(TABLES.INVENTORY)
-          .update({
+        const updatePayload: Record<string, any> = {
             batch_number: existingInventory.batch_number || itemId,
             cost_price: pricePerPiece,
             selling_price: Number(existingInventory.selling_price) || 0,
             quantity_available: (Number(existingInventory.quantity_available) || 0) + totalQuantity,
-            size_quantities: Object.keys(nextSizeQuantities).length ? nextSizeQuantities : null,
             owner: existingInventory.owner || user.username,
             low_stock_warning: Number(existingInventory.low_stock_warning) || 5
-          })
+          }
+          if (Object.keys(nextSizeQuantities).length) updatePayload.size_quantities = nextSizeQuantities
+          if (Object.keys(nextColorQuantities).length) updatePayload.color_quantities = nextColorQuantities
+
+        const result = await supabaseAdmin
+          .from(TABLES.INVENTORY)
+          .update(updatePayload)
           .eq('id', existingInventory.id)
           .select()
           .single()
@@ -220,18 +230,21 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
         inventoryItem = result.data
         inventoryError = result.error
       } else {
-        const result = await supabaseAdmin
-          .from(TABLES.INVENTORY)
-          .insert({
+        const insertPayload: Record<string, any> = {
             product_id: finalProductId,
             batch_number: itemId,
             cost_price: pricePerPiece,
             selling_price: 0,
             quantity_available: totalQuantity,
-            size_quantities: sizeQuantities && typeof sizeQuantities === 'object' ? sizeQuantities : null,
             owner: user.username,
             low_stock_warning: 5
-          })
+          }
+          if (sizeQuantities && typeof sizeQuantities === 'object' && Object.keys(sizeQuantities).length) insertPayload.size_quantities = sizeQuantities
+          if (colorQuantities && typeof colorQuantities === 'object' && Object.keys(colorQuantities).length) insertPayload.color_quantities = colorQuantities
+
+        const result = await supabaseAdmin
+          .from(TABLES.INVENTORY)
+          .insert(insertPayload)
           .select()
           .single()
 
@@ -292,6 +305,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
           size: p.sizes ?? [],
           color: p.colors ?? [],
           sizeQuantities: row.size_quantities ?? null,
+          colorQuantities: row.color_quantities ?? null,
           otherVariants: { picture: p.product_image ?? null },
           productImage: p.product_image ?? null,
           batchNumber: derivedItemId,
@@ -318,6 +332,17 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 
       const inventoryUpdate: Record<string, any> = {}
       const productUpdate: Record<string, any> = {}
+
+      const { data: currentInventory, error: currentInventoryError } = await supabaseAdmin
+        .from(TABLES.INVENTORY)
+        .select('id, size_quantities, color_quantities')
+        .eq('id', id)
+        .maybeSingle()
+
+      if (currentInventoryError) {
+        console.error('inventory lookup error:', currentInventoryError)
+        return res.status(500).json({ error: 'Failed to lookup inventory' })
+      }
 
       if (inventoryFields.batchNumber !== undefined) {
         const bn = String(inventoryFields.batchNumber).trim()
@@ -347,6 +372,32 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
         } else {
           return res.status(400).json({ error: 'sizeQuantities must be an object or null' })
         }
+      }
+
+      const rawColorQuantities = inventoryFields.colorQuantities
+      if (rawColorQuantities !== undefined) {
+        if (rawColorQuantities === null) {
+          inventoryUpdate.color_quantities = null
+        } else if (typeof rawColorQuantities === 'object') {
+          const normalized: Record<string, number> = {}
+          Object.entries(rawColorQuantities).forEach(([color, qty]) => {
+            normalized[color] = Math.max(0, num(qty))
+          })
+          inventoryUpdate.color_quantities = normalized
+        } else {
+          return res.status(400).json({ error: 'colorQuantities must be an object or null' })
+        }
+      }
+
+      if (rawSizeQuantities !== undefined || rawColorQuantities !== undefined) {
+        const nextSizeQuantities = rawSizeQuantities !== undefined
+          ? inventoryUpdate.size_quantities ?? null
+          : currentInventory?.size_quantities ?? null
+        const nextColorQuantities = rawColorQuantities !== undefined
+          ? inventoryUpdate.color_quantities ?? null
+          : currentInventory?.color_quantities ?? null
+
+        inventoryUpdate.quantity_available = totalQuantityFrom(nextSizeQuantities) + totalQuantityFrom(nextColorQuantities)
       }
 
       if (inventoryFields.quantityAvailable !== undefined && inventoryUpdate.quantity_available === undefined) {

@@ -108,6 +108,7 @@ export interface InventoryItem {
   otherVariants?: any;
   productImage?: string | null;
   sizeQuantities?: Record<string, number> | null;
+  colorQuantities?: Record<string, number> | null;
   batchNumber: string;
   costPrice: number;
   sellingPrice: number;
@@ -246,6 +247,8 @@ export interface AddInventoryModalProps extends ModalProps {
   onSave: (inventory: any) => void;
   stores: string[];
   products: Product[];
+  hiddenProductTypes?: string[];
+  onHideProductType?: (typeName: string) => void;
 }
 
 export interface AllotToStoreModalProps extends ModalProps {

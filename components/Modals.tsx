@@ -15,7 +15,7 @@ interface SaleModalPropsLocal {
   onClose: () => void;
 }
 
-const normalizeCatalogValue = (value: string) => value.trim().toLowerCase();
+const normalizeCatalogValue = (value: string) => String(value ?? '').trim().toLowerCase();
 
 const isAllCapsValue = (value: string) => {
     const trimmed = value.trim();
@@ -59,6 +59,7 @@ function CatalogInput({
     inventoryItems,
     getOptionLabel,
     onDelete,
+    readOnly,
 }: {
     label: string;
     value: string;
@@ -73,6 +74,7 @@ function CatalogInput({
     inventoryItems?: InventoryItem[];
     getOptionLabel?: (option: string) => string;
     onDelete?: (option: string) => void;
+    readOnly?: boolean;
 }) {
     const [open, setOpen] = useState(false);
     const filtered = options.filter(option => normalizeCatalogValue(option).includes(normalizeCatalogValue(value)));
@@ -88,19 +90,25 @@ function CatalogInput({
                 placeholder={placeholder}
                 autoComplete="off"
                 spellCheck={false}
-                onFocus={() => setOpen(true)}
+                readOnly={readOnly}
+                onFocus={() => {
+                    if (!readOnly) setOpen(true);
+                }}
                 onChange={e => {
+                    if (readOnly) return;
                     onChange(e.target.value);
                     setOpen(true);
                 }}
                 onBlur={() => setTimeout(() => setOpen(false), 150)}
                 onKeyDown={e => {
+                    if (readOnly) return;
                     if (e.key === 'Enter') {
                         e.preventDefault();
                         onCommit();
                         setOpen(false);
                     }
                 }}
+                style={readOnly ? { background: 'var(--surface-2)', cursor: 'default' } : undefined}
             />
             {helperText && <div style={{ fontSize: 11, marginTop: 4, color: 'var(--text-muted)' }}>{helperText}</div>}
             {open && filtered.length > 0 && (
@@ -170,7 +178,7 @@ function CatalogInput({
 }
 
 
-export function AddInventoryModal({ onSave, onClose, stores, products }: AddInventoryModalProps) {
+export function AddInventoryModal({ onSave, onClose, stores, products, hiddenProductTypes: hiddenProductTypesProp, onHideProductType }: AddInventoryModalProps) {
     const { toast } = usePopup();
 
     const [item, setItem] = useState({
@@ -209,8 +217,23 @@ export function AddInventoryModal({ onSave, onClose, stores, products }: AddInve
     };
     const [showDeleteProductModal, setShowDeleteProductModal] = useState(false);
     const [deletingProduct, setDeletingProduct] = useState<Product | null>(null);
-    const [hiddenProductTypes, setHiddenProductTypes] = useState<string[]>([]);
+    const [hiddenProductTypes, setHiddenProductTypes] = useState<string[]>(hiddenProductTypesProp || []);
     const [hiddenBrandNames, setHiddenBrandNames] = useState<string[]>([]);
+
+    // Sync externally-hidden product types (from parent, persisted across modal open/close)
+    React.useEffect(() => {
+        if (hiddenProductTypesProp && hiddenProductTypesProp.length > 0) {
+            setHiddenProductTypes(prev => {
+                const merged = [...prev];
+                hiddenProductTypesProp.forEach(t => {
+                    if (!merged.some(h => normalizeCatalogValue(h) === normalizeCatalogValue(t))) {
+                        merged.push(t);
+                    }
+                });
+                return merged;
+            });
+        }
+    }, [hiddenProductTypesProp]);
     const [replaceModalOpen, setReplaceModalOpen] = useState(false);
     const [replaceField, setReplaceField] = useState<'productName' | 'brandName' | 'productType' | 'color' | null>(null);
     const [replaceOriginalValue, setReplaceOriginalValue] = useState<string>('');
@@ -455,54 +478,88 @@ export function AddInventoryModal({ onSave, onClose, stores, products }: AddInve
 
         setReplaceProcessing(true);
         try {
-            const res = await fetch('/api/inventory');
+            // Single dedicated endpoint — handles rename + merge atomically,
+            // surfaces real DB errors instead of swallowing them.
+            const res = await fetch('/api/catalog-replace', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    field: replaceField,
+                    originalValue: replaceOriginalValue,
+                    newValue,
+                }),
+            });
             const data = await res.json();
-            const matches = (data.inventory || []).filter((row: any) => {
-                if (replaceField === 'productName') return normalizeCatalogValue(row.productName) === normalizeCatalogValue(replaceOriginalValue);
-                if (replaceField === 'brandName') return normalizeCatalogValue(row.brand) === normalizeCatalogValue(replaceOriginalValue);
-                if (replaceField === 'productType') return normalizeCatalogValue(row.category) === normalizeCatalogValue(replaceOriginalValue);
-                if (replaceField === 'color') {
-                    const rowColors = Array.isArray(row.color) ? row.color : row.color ? [row.color] : [];
-                    return rowColors.some((color: string) => normalizeCatalogValue(color) === normalizeCatalogValue(replaceOriginalValue));
-                }
-                return false;
-            });
+            if (!res.ok || !data.success) {
+                throw new Error(data.error || 'Replace failed');
+            }
 
-            const byProduct = new Map<string, any>();
-            matches.forEach((match: any) => {
-                if (!match.productId) return;
-                if (!byProduct.has(match.productId)) byProduct.set(match.productId, match);
-            });
-
-            const updates = Array.from(byProduct.values()).map((match: any) => {
-                const body: any = { id: match.id, fields: { product: {} } };
-                if (replaceField === 'productName') body.fields.product.productName = newValue;
-                if (replaceField === 'brandName') body.fields.product.brandName = newValue;
-                if (replaceField === 'productType') body.fields.product.productType = newValue;
-                if (replaceField === 'color') body.fields.product.colors = replaceCatalogValueInList(match.color, replaceOriginalValue, newValue);
-                return fetch('/api/inventory', { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
-            });
-
-            await Promise.all(updates);
-
-            // Update local catalogProducts to reflect replacement
-            setCatalogProducts(prev => prev.map(p => {
+            // ── Update local catalogProducts so the dropdown reflects the
+            // new value immediately without a full page re-fetch. ──────────
+            setCatalogProducts(prev => prev.reduce((acc: Product[], p) => {
                 if (replaceField === 'productName' && normalizeCatalogValue(p.productName) === normalizeCatalogValue(replaceOriginalValue)) {
-                    return { ...p, productName: newValue } as Product;
+                    // In a merge the old product row is deleted — drop it from
+                    // local state; the surviving product already has the name.
+                    const mergeTarget = acc.find(
+                        q => normalizeCatalogValue(q.productName) === normalizeCatalogValue(newValue) &&
+                             normalizeCatalogValue(q.brandName) === normalizeCatalogValue(p.brandName) &&
+                             normalizeCatalogValue(q.productType) === normalizeCatalogValue(p.productType)
+                    );
+                    if (mergeTarget) return acc; // already represented
+                    acc.push({ ...p, productName: newValue } as Product);
+                    return acc;
                 }
                 if (replaceField === 'brandName' && normalizeCatalogValue(p.brandName) === normalizeCatalogValue(replaceOriginalValue)) {
-                    return { ...p, brandName: newValue } as Product;
+                    const mergeTarget = acc.find(
+                        q => normalizeCatalogValue(q.productName) === normalizeCatalogValue(p.productName) &&
+                             normalizeCatalogValue(q.brandName) === normalizeCatalogValue(newValue) &&
+                             normalizeCatalogValue(q.productType) === normalizeCatalogValue(p.productType)
+                    );
+                    if (mergeTarget) return acc;
+                    acc.push({ ...p, brandName: newValue } as Product);
+                    return acc;
                 }
                 if (replaceField === 'productType' && normalizeCatalogValue(p.productType) === normalizeCatalogValue(replaceOriginalValue)) {
-                    return { ...p, productType: newValue } as Product;
+                    const mergeTarget = acc.find(
+                        q => normalizeCatalogValue(q.productName) === normalizeCatalogValue(p.productName) &&
+                             normalizeCatalogValue(q.brandName) === normalizeCatalogValue(p.brandName) &&
+                             normalizeCatalogValue(q.productType) === normalizeCatalogValue(newValue)
+                    );
+                    if (mergeTarget) return acc;
+                    acc.push({ ...p, productType: newValue } as Product);
+                    return acc;
                 }
                 if (replaceField === 'color') {
                     const productColors = Array.isArray(p.colors) ? p.colors : [];
-                    if (!productColors.some(color => normalizeCatalogValue(color) === normalizeCatalogValue(replaceOriginalValue))) return p;
-                    return { ...p, colors: replaceCatalogValueInList(productColors, replaceOriginalValue, newValue) } as Product;
+                    if (!productColors.some(color => normalizeCatalogValue(color) === normalizeCatalogValue(replaceOriginalValue))) {
+                        acc.push(p);
+                        return acc;
+                    }
+                    acc.push({ ...p, colors: replaceCatalogValueInList(productColors, replaceOriginalValue, newValue) } as Product);
+                    return acc;
                 }
-                return p;
-            }));
+                acc.push(p);
+                return acc;
+            }, []));
+
+            // For productType: hide the old value from the dropdown so it
+            // doesn't reappear from DEFAULT_PRODUCT_TYPES after a re-render.
+            if (replaceField === 'productType') {
+                setHiddenProductTypes(prev => {
+                    if (prev.some(item => normalizeCatalogValue(item) === normalizeCatalogValue(replaceOriginalValue))) return prev;
+                    return [...prev, replaceOriginalValue];
+                });
+                onHideProductType?.(replaceOriginalValue);
+                if (normalizeCatalogValue(newProduct.productType) === normalizeCatalogValue(replaceOriginalValue)) {
+                    setNewProduct(curr => ({ ...curr, productType: newValue }));
+                }
+            }
+            if (replaceField === 'brandName') {
+                setHiddenBrandNames(prev => {
+                    if (prev.some(item => normalizeCatalogValue(item) === normalizeCatalogValue(replaceOriginalValue))) return prev;
+                    return [...prev, replaceOriginalValue];
+                });
+            }
 
             toast.success('Replaced and migrated assignments');
             setReplaceModalOpen(false);
@@ -566,6 +623,7 @@ export function AddInventoryModal({ onSave, onClose, stores, products }: AddInve
                 if (prev.some(item => normalizeCatalogValue(item) === normalizeCatalogValue(typeName))) return prev;
                 return [...prev, typeName];
             });
+            onHideProductType?.(typeName);
             if (normalizeCatalogValue(newProduct.productType) === normalizeCatalogValue(typeName)) {
                 setNewProduct(curr => ({ ...curr, productType: '' }));
             }
@@ -769,15 +827,6 @@ export function AddInventoryModal({ onSave, onClose, stores, products }: AddInve
                                     </div>
                                 </div>
                             )}
-                        </div>
-
-                        <div className="input-group" style={{ marginBottom: 24 }}>
-                            <label>Alloted Stores</label>
-                            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
-                                {stores.map(s => (
-                                    <button key={s} type="button" className={`btn btn-sm ${allotedStores.includes(s) ? 'btn-primary' : 'btn-glass'}`} onClick={() => toggleStore(s)}>{s}</button>
-                                ))}
-                            </div>
                         </div>
 
                         <div style={{ display: 'flex', gap: 8 }}>
@@ -1142,16 +1191,20 @@ export function EditStoreInventoryModal({ item, storeNames, onSave, onClose }: {
     );
 }
 
-export function EditInventoryModal({ item, minQuantity, onSave, onClose }: { item: InventoryItem; minQuantity?: number; onSave: (fields: any) => void; onClose: () => void }) {
+export function EditInventoryModal({ item, minQuantity, onSave, onClose, products }: { item: InventoryItem; minQuantity?: number; onSave: (fields: any) => void; onClose: () => void; products?: Product[] }) {
     const { toast } = usePopup();
-    const itemTypes = uniqueCatalogValues([...DEFAULT_PRODUCT_TYPES]);
+    const catalogTypes = uniqueCatalogValues([
+        ...DEFAULT_PRODUCT_TYPES,
+        ...(products || []).map(p => p.productType).filter(Boolean),
+    ]);
+    const itemTypes = catalogTypes;
     const availableSizes = ['XS', 'S', 'M', 'L', 'XL', 'XXL'];
 
     const initialColors = Array.isArray(item.color) ? item.color : item.color ? [item.color] : [];
     const initialSizes = Array.isArray(item.size) ? item.size : item.size ? [item.size] : [];
     const initialSizeQuantities = (item.sizeQuantities && typeof item.sizeQuantities === 'object') ? item.sizeQuantities : {};
-    const hasSizeQuantities = Object.keys(initialSizeQuantities).length > 0;
-    const hasCustomType = item.category && !itemTypes.includes(item.category);
+    const initialColorQuantities = (item.colorQuantities && typeof item.colorQuantities === 'object') ? item.colorQuantities : {};
+    const hasCustomType = item.category && !catalogTypes.some(t => normalizeCatalogValue(t) === normalizeCatalogValue(item.category));
 
     const [form, setForm] = useState({
         productName: item.productName || '',
@@ -1167,16 +1220,15 @@ export function EditInventoryModal({ item, minQuantity, onSave, onClose }: { ite
 
     const [colors, setColors] = useState<string[]>(initialColors);
     const [colorInput, setColorInput] = useState('');
+    const [colorQuantities, setColorQuantities] = useState<Record<string, number>>(initialColorQuantities);
     const [sizes, setSizes] = useState<string[]>(initialSizes);
     const [customSize, setCustomSize] = useState('');
-    const [useSizeQuantities, setUseSizeQuantities] = useState<boolean>(hasSizeQuantities);
-    const [sizeQuantities, setSizeQuantities] = useState<Record<string, number>>(hasSizeQuantities ? initialSizeQuantities : {});
+    const [sizeQuantities, setSizeQuantities] = useState<Record<string, number>>(initialSizeQuantities);
     const [newPicture, setNewPicture] = useState<string | null>(null);
 
     const previewImage = newPicture || item.productImage || (item.otherVariants?.picture as string | undefined) || '';
 
     React.useEffect(() => {
-        if (!useSizeQuantities) return;
         setSizeQuantities((curr) => {
             const next = { ...curr };
             sizes.forEach((s) => {
@@ -1187,11 +1239,23 @@ export function EditInventoryModal({ item, minQuantity, onSave, onClose }: { ite
             });
             return next;
         });
-    }, [sizes, useSizeQuantities]);
+    }, [sizes]);
 
-    const totalQuantity = useSizeQuantities
-        ? Object.values(sizeQuantities).reduce((sum, qty) => sum + (Number(qty) || 0), 0)
-        : (Number(form.quantityAvailable) || 0);
+    React.useEffect(() => {
+        setColorQuantities((curr) => {
+            const next = { ...curr };
+            colors.forEach((c) => {
+                if (next[c] === undefined) next[c] = 0;
+            });
+            Object.keys(next).forEach((c) => {
+                if (!colors.includes(c)) delete next[c];
+            });
+            return next;
+        });
+    }, [colors]);
+
+    const totalQuantity = Object.values(sizeQuantities).reduce((sum, qty) => sum + (Number(qty) || 0), 0)
+        + Object.values(colorQuantities).reduce((sum, qty) => sum + (Number(qty) || 0), 0);
 
     const handleAddColor = () => {
         const color = colorInput.trim();
@@ -1199,24 +1263,39 @@ export function EditInventoryModal({ item, minQuantity, onSave, onClose }: { ite
         const normalized = color.toLowerCase();
         if (!colors.includes(normalized)) {
             setColors([...colors, normalized]);
+            setColorQuantities((curr) => ({ ...curr, [normalized]: curr[normalized] ?? 0 }));
         }
         setColorInput('');
+    };
+
+    const distinctColors = uniqueCatalogValues((products || []).flatMap(product => Array.isArray(product.colors) ? product.colors : []).filter(Boolean));
+    const handleDeleteCatalogColor = (colorName: string) => {
+        // Simple local delete hint: remove from current selection and inform user.
+        setColors(prev => prev.filter(c => normalizeCatalogValue(c) !== normalizeCatalogValue(colorName)));
+        setColorQuantities(curr => {
+            const next = { ...curr };
+            Object.keys(next).forEach(key => {
+                if (normalizeCatalogValue(key) === normalizeCatalogValue(colorName)) {
+                    delete next[key];
+                }
+            });
+            return next;
+        });
+        toast.success('Color removed locally');
     };
 
     const toggleSize = (size: string) => {
         setSizes(prev => {
             const next = prev.includes(size) ? prev.filter(s => s !== size) : [...prev, size];
-            if (useSizeQuantities) {
-                setSizeQuantities((curr) => {
-                    const updated = { ...curr };
-                    if (!prev.includes(size)) {
-                        updated[size] = updated[size] ?? 0;
-                    } else {
-                        delete updated[size];
-                    }
-                    return updated;
-                });
-            }
+            setSizeQuantities((curr) => {
+                const updated = { ...curr };
+                if (!prev.includes(size)) {
+                    updated[size] = updated[size] ?? 0;
+                } else {
+                    delete updated[size];
+                }
+                return updated;
+            });
             return next;
         });
     };
@@ -1227,9 +1306,7 @@ export function EditInventoryModal({ item, minQuantity, onSave, onClose }: { ite
         const upperSize = custom.toUpperCase();
         if (!sizes.includes(upperSize)) {
             setSizes([...sizes, upperSize]);
-            if (useSizeQuantities) {
-                setSizeQuantities((curr) => ({ ...curr, [upperSize]: curr[upperSize] ?? 0 }));
-            }
+            setSizeQuantities((curr) => ({ ...curr, [upperSize]: curr[upperSize] ?? 0 }));
         }
         setCustomSize('');
     };
@@ -1238,6 +1315,13 @@ export function EditInventoryModal({ item, minQuantity, onSave, onClose }: { ite
         setSizeQuantities(curr => ({
             ...curr,
             [size]: Math.max(0, qty)
+        }));
+    };
+
+    const updateColorQuantity = (color: string, qty: number) => {
+        setColorQuantities(curr => ({
+            ...curr,
+            [color]: Math.max(0, qty)
         }));
     };
 
@@ -1273,9 +1357,13 @@ export function EditInventoryModal({ item, minQuantity, onSave, onClose }: { ite
             return toast.error(`Quantity cannot be below assigned (${minQty})`);
         }
 
-        if (useSizeQuantities && sizes.length === 0) {
-            return toast.error('Add at least one size for size tracking');
+        if (sizes.length === 0 && colors.length === 0 && Number(form.quantityAvailable) < 0) {
+            return toast.error('Enter a valid total quantity');
         }
+
+        const normalizedSizeQuantities = Object.keys(sizeQuantities).length ? sizeQuantities : null;
+        const normalizedColorQuantities = Object.keys(colorQuantities).length ? colorQuantities : null;
+        const hasVariantQuantities = !!normalizedSizeQuantities || !!normalizedColorQuantities;
 
         const payload: any = {
             inventory: {
@@ -1283,8 +1371,9 @@ export function EditInventoryModal({ item, minQuantity, onSave, onClose }: { ite
                 costPrice: Number(form.costPrice) || 0,
                 sellingPrice: Number(form.sellingPrice) || 0,
                 lowStockWarning: Number(form.lowStockWarning) || 0,
-                quantityAvailable: totalQuantity,
-                sizeQuantities: useSizeQuantities ? sizeQuantities : null,
+                quantityAvailable: hasVariantQuantities ? totalQuantity : (Number(form.quantityAvailable) || 0),
+                sizeQuantities: normalizedSizeQuantities ?? undefined,
+                colorQuantities: normalizedColorQuantities ?? undefined,
             },
             product: {
                 productName,
@@ -1305,7 +1394,7 @@ export function EditInventoryModal({ item, minQuantity, onSave, onClose }: { ite
 
     return (
         <div className="modal-overlay">
-            <div className="modal-box" style={{ maxWidth: '640px', width: '95%' }}>
+            <div className="modal-box" style={{ maxWidth: '820px', width: '95%' }}>
                 <div className="modal-head" style={{ padding: '16px 20px' }}>
                     <h3 style={{ fontSize: '18px', fontWeight: 800 }}>Edit Inventory</h3>
                     <button className="btn btn-sm" onClick={onClose} style={{ border: 'none', fontSize: '18px' }}>✕</button>
@@ -1350,11 +1439,11 @@ export function EditInventoryModal({ item, minQuantity, onSave, onClose }: { ite
                         <div className="form-grid-2" style={{ marginBottom: 12 }}>
                             <div className="input-group">
                                 <label>Product Name <span style={{ color: 'var(--danger)', marginLeft: 6 }}>*</span></label>
-                                <input value={form.productName} onChange={e => setForm({ ...form, productName: e.target.value })} required />
+                                <input value={form.productName} readOnly style={{ background: 'var(--surface-2)', cursor: 'default' }} required />
                             </div>
                             <div className="input-group">
                                 <label>Brand Name <span style={{ color: 'var(--danger)', marginLeft: 6 }}>*</span></label>
-                                <input value={form.brandName} onChange={e => setForm({ ...form, brandName: e.target.value })} required />
+                                <input value={form.brandName} readOnly style={{ background: 'var(--surface-2)', cursor: 'default' }} required />
                             </div>
                         </div>
 
@@ -1370,6 +1459,7 @@ export function EditInventoryModal({ item, minQuantity, onSave, onClose }: { ite
                                     onCommit={() => {}}
                                     getOptionLabel={(v) => v}
                                     required
+                                    readOnly
                                     onDelete={(opt) => {
                                         // hide locally by marking as custom 'Other' if it matches
                                         if (normalizeCatalogValue(opt) === normalizeCatalogValue(form.productType)) {
@@ -1389,7 +1479,7 @@ export function EditInventoryModal({ item, minQuantity, onSave, onClose }: { ite
                             </div>
                             <div className="input-group">
                                 <label>Item ID (Batch)</label>
-                                <input value={form.batchNumber} onChange={e => setForm({ ...form, batchNumber: e.target.value })} />
+                                <input value={form.batchNumber} readOnly style={{ background: 'var(--surface-2)', cursor: 'default' }} />
                             </div>
                         </div>
 
@@ -1409,61 +1499,47 @@ export function EditInventoryModal({ item, minQuantity, onSave, onClose }: { ite
                                 <label>Low Stock Warning</label>
                                 <input type="text" inputMode="numeric" value={form.lowStockWarning} onChange={e => setForm({ ...form, lowStockWarning: parseInt(e.target.value) || 0 })} />
                             </div>
-                            <div className="input-group" style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-                                <label>Quantity Mode</label>
-                                <button
-                                    type="button"
-                                    className={`btn btn-sm ${useSizeQuantities ? 'btn-primary' : 'btn-glass'}`}
-                                    onClick={() => setUseSizeQuantities(!useSizeQuantities)}
-                                    style={{ width: 'fit-content' }}
-                                >
-                                    {useSizeQuantities ? 'Using Size Quantities' : 'Use Size Quantities'}
-                                </button>
+                            <div className="input-group">
+                                <label>Total Quantity</label>
+                                <input
+                                    type="text"
+                                    inputMode="numeric"
+                                    value={(sizes.length > 0 || colors.length > 0) ? totalQuantity : form.quantityAvailable}
+                                    onChange={e => setForm({ ...form, quantityAvailable: parseInt(e.target.value) || 0 })}
+                                    readOnly={sizes.length > 0 || colors.length > 0}
+                                    style={(sizes.length > 0 || colors.length > 0) ? { background: 'var(--surface-2)', cursor: 'default' } : undefined}
+                                />
                                 {minQuantity ? (
-                                    <div style={{ fontSize: 11, color: 'var(--text-muted)' }}>Assigned to stores: {minQuantity}</div>
+                                    <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 4 }}>Assigned to stores: {minQuantity}</div>
                                 ) : null}
                             </div>
                         </div>
 
-                        {!useSizeQuantities && (
-                            <div className="input-group" style={{ marginBottom: 12 }}>
-                                <label>Total Quantity</label>
-                                <input type="text" inputMode="numeric" value={form.quantityAvailable} onChange={e => setForm({ ...form, quantityAvailable: parseInt(e.target.value) || 0 })} />
-                            </div>
-                        )}
-
                         <div className="input-group" style={{ marginBottom: 12 }}>
-                            <label>Colors</label>
-                            <div style={{ display: 'flex', gap: 8, marginBottom: 8 }}>
-                                <input
-                                    placeholder="Add color (e.g. red, navy, #ffaa00)..."
-                                    value={colorInput}
-                                    onChange={e => setColorInput(e.target.value)}
-                                    onKeyPress={e => e.key === 'Enter' && (e.preventDefault(), handleAddColor())}
-                                />
-                                <button type="button" className="btn btn-primary" onClick={handleAddColor}>Add</button>
-                            </div>
+                            <CatalogInput
+                                label="Colors"
+                                value={colorInput}
+                                onChange={setColorInput}
+                                placeholder="Add color (e.g. red, navy, #ffaa00)..."
+                                options={distinctColors}
+                                onPick={value => setColorInput(value)}
+                                onCommit={handleAddColor}
+                                getOptionLabel={(value) => value}
+                                onDelete={handleDeleteCatalogColor}
+                            />
                             <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
                                 {colors.map(c => (
-                                    <div
-                                        key={c}
-                                        style={{
-                                            padding: '6px 12px',
-                                            borderRadius: '20px',
-                                            background: 'var(--surface-2)',
-                                            border: '1px solid var(--border)',
-                                            color: c,
-                                            fontWeight: 800,
-                                            fontSize: '12px',
-                                            display: 'flex',
-                                            alignItems: 'center',
-                                            gap: '8px',
-                                            textTransform: 'capitalize'
-                                        }}
-                                    >
-                                        <span style={{ width: 8, height: 8, borderRadius: '50%', background: c }}></span>
+                                    <div key={c} style={{ padding: '6px 12px', borderRadius: '20px', background: 'var(--surface-2)', border: '1px solid var(--border)', color: c, fontWeight: 800, fontSize: 12, display: 'flex', alignItems: 'center', gap: 8, textTransform: 'capitalize' }}>
+                                        <span style={{ width: 8, height: 8, borderRadius: '50%', background: c }} />
                                         {c}
-                                        <span style={{ cursor: 'pointer', opacity: 0.6 }} onClick={() => setColors(colors.filter(x => x !== c))}>×</span>
+                                        <span style={{ cursor: 'pointer', opacity: 0.6 }} onClick={() => {
+                                            setColors(colors.filter(x => x !== c));
+                                            setColorQuantities(curr => {
+                                                const next = { ...curr };
+                                                delete next[c];
+                                                return next;
+                                            });
+                                        }}>×</span>
                                     </div>
                                 ))}
                                 {colors.length === 0 && (
@@ -1471,6 +1547,26 @@ export function EditInventoryModal({ item, minQuantity, onSave, onClose }: { ite
                                 )}
                             </div>
                         </div>
+
+                        {colors.length > 0 && (
+                            <div style={{ marginBottom: 16, padding: 16, background: 'var(--surface-2)', borderRadius: 10, border: '1px solid var(--border)' }}>
+                                <div style={{ fontSize: 13, fontWeight: 800, marginBottom: 12, color: 'var(--text)' }}>Quantity per Color</div>
+                                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(120px, 1fr))', gap: 12 }}>
+                                    {colors.map(c => (
+                                        <div key={c} style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+                                            <label style={{ fontSize: 11, fontWeight: 700, color: 'var(--text-muted)' }}>{c}</label>
+                                            <input
+                                                type="number"
+                                                min="0"
+                                                value={colorQuantities[c] || 0}
+                                                onChange={e => updateColorQuantity(c, parseInt(e.target.value) || 0)}
+                                                style={{ padding: '8px 12px', fontSize: 14 }}
+                                            />
+                                        </div>
+                                    ))}
+                                </div>
+                            </div>
+                        )}
 
                         <div className="input-group" style={{ marginBottom: 12 }}>
                             <label>Sizes</label>
@@ -1498,13 +1594,23 @@ export function EditInventoryModal({ item, minQuantity, onSave, onClose }: { ite
                             </div>
                             <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
                                 {sizes.map(s => (
-                                    <Badge key={s} type="gray">{s}</Badge>
+                                    <div key={s} style={{ padding: '6px 12px', borderRadius: '20px', background: 'var(--surface-2)', border: '1px solid var(--border)', color: 'var(--text)', fontWeight: 800, fontSize: 12, display: 'flex', alignItems: 'center', gap: 8, textTransform: 'capitalize' }}>
+                                        <span>{s}</span>
+                                        <span style={{ cursor: 'pointer', opacity: 0.6 }} onClick={() => {
+                                            setSizes(prev => prev.filter(x => x !== s));
+                                            setSizeQuantities(curr => {
+                                                const next = { ...curr };
+                                                delete next[s];
+                                                return next;
+                                            });
+                                        }}>×</span>
+                                    </div>
                                 ))}
                                 {sizes.length === 0 && <div style={{ fontSize: 11, color: 'var(--text-muted)' }}>No sizes set.</div>}
                             </div>
                         </div>
 
-                        {useSizeQuantities && sizes.length > 0 && (
+                        {sizes.length > 0 && (
                             <div style={{ marginBottom: 16, padding: 16, background: 'var(--surface-2)', borderRadius: 10, border: '1px solid var(--border)' }}>
                                 <div style={{ fontSize: 13, fontWeight: 800, marginBottom: 12, color: 'var(--text)' }}>
                                     Quantity per Size
@@ -1523,8 +1629,8 @@ export function EditInventoryModal({ item, minQuantity, onSave, onClose }: { ite
                                         </div>
                                     ))}
                                 </div>
-                                <div style={{ marginTop: 12, padding: '8px 12px', background: 'var(--primary)', color: 'white', borderRadius: 6, fontSize: 13, fontWeight: 800, textAlign: 'center' }}>
-                                    Total: {totalQuantity} units
+                                <div style={{ marginTop: 12, padding: '8px 12px', background: 'var(--primary)', color: 'var(--text)', borderRadius: 6, fontSize: 13, fontWeight: 800, textAlign: 'center' }}>
+                                    Total from variants: {totalQuantity} units
                                 </div>
                             </div>
                         )}
@@ -2599,7 +2705,7 @@ export function AllotToStoreModal({ onSave, onClose, stores, inventory, allotedQ
                                         </div>
                                     ))}
                                 </div>
-                                <div style={{ marginTop: 12, padding: '8px 12px', background: totalSizeQuantity > 0 ? 'var(--primary)' : 'var(--surface-1)', color: totalSizeQuantity > 0 ? 'white' : 'var(--text-muted)', borderRadius: 6, fontSize: 13, fontWeight: 800, textAlign: 'center' }}>
+                                <div style={{ marginTop: 12, padding: '8px 12px', background: totalSizeQuantity > 0 ? 'var(--primary)' : 'var(--surface-1)', color: 'var(--text)', borderRadius: 6, fontSize: 13, fontWeight: 800, textAlign: 'center' }}>
                                     Total: {totalSizeQuantity} units
                                 </div>
                             </div>
