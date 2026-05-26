@@ -40,6 +40,12 @@ const uniqueCatalogValues = (values: string[], preferAllCaps = false) => {
     return Array.from(canonicalByKey.values());
 };
 
+const DEFAULT_PRODUCT_TYPES = [
+    'T-shirt', 'Shirt', 'Polo', 'Hoodie', 'Sweatshirt', 'Sweater', 'Cardigan', 'Jacket', 'Coat', 'Blazer',
+    'Jeans', 'Trousers', 'Trouser', 'Shorts', 'Leggings', 'Joggers', 'Dress', 'Skirt', 'Jumpsuit', 'Top',
+    'Kurta', 'Saree', 'Ethnic', 'Co-ord', 'Co-ords', 'Blouse', 'Other'
+];
+
 function CatalogInput({
     label,
     value,
@@ -73,7 +79,9 @@ function CatalogInput({
 
     return (
         <div className="input-group" style={{ position: 'relative', zIndex: open ? 1100 : 'auto' }}>
-            <label>{label}</label>
+            <label>
+                {label}{required && <span style={{ color: 'var(--danger)', marginLeft: 6 }}>*</span>}
+            </label>
             <input
                 required={required}
                 value={value}
@@ -122,7 +130,7 @@ function CatalogInput({
                                 {onDelete && (
                                     <button
                                         type="button"
-                                        title="Delete product"
+                                        title="Delete option"
                                         aria-label={`Delete ${optionLabel}`}
                                         onMouseDown={e => {
                                             e.preventDefault();
@@ -156,6 +164,7 @@ function CatalogInput({
                     })}
                 </div>
             )}
+            
         </div>
     );
 }
@@ -172,7 +181,7 @@ export function AddInventoryModal({ onSave, onClose, stores, products }: AddInve
         colorQuantities: {} as Record<string, number>
     });
 
-    const [newProduct, setNewProduct] = useState({ productName: '', brandName: '', productType: 'T-shirt', customType: '' });
+    const [newProduct, setNewProduct] = useState({ productName: '', brandName: '', productType: '', customType: '' });
     const [catalogProducts, setCatalogProducts] = useState<Product[]>(products || []);
     const [colors, setColors] = useState<string[]>([]);
     const [colorInput, setColorInput] = useState('');
@@ -181,14 +190,38 @@ export function AddInventoryModal({ onSave, onClose, stores, products }: AddInve
     const [allotedStores, setAllotedStores] = useState<string[]>([]);
     const [savingCatalog, setSavingCatalog] = useState(false);
     const [resolvedItemId, setResolvedItemId] = useState('');
+    const clearForm = () => {
+        setItem({
+            quantity: 1,
+            pricePerPiece: 0,
+            picture: '',
+            sizeQuantities: {} as Record<string, number>,
+            colorQuantities: {} as Record<string, number>
+        });
+        setNewProduct({ productName: '', brandName: '', productType: '', customType: '' });
+        setColors([]);
+        setColorInput('');
+        setSizes([]);
+        setCustomSize('');
+        setAllotedStores([]);
+        setSavingCatalog(false);
+        setResolvedItemId('');
+    };
     const [showDeleteProductModal, setShowDeleteProductModal] = useState(false);
     const [deletingProduct, setDeletingProduct] = useState<Product | null>(null);
+    const [hiddenProductTypes, setHiddenProductTypes] = useState<string[]>([]);
+    const [hiddenBrandNames, setHiddenBrandNames] = useState<string[]>([]);
+    const [replaceModalOpen, setReplaceModalOpen] = useState(false);
+    const [replaceField, setReplaceField] = useState<'productName' | 'brandName' | 'productType' | 'color' | null>(null);
+    const [replaceOriginalValue, setReplaceOriginalValue] = useState<string>('');
+    const [replaceInput, setReplaceInput] = useState<string>('');
+    const [replaceProcessing, setReplaceProcessing] = useState(false);
 
     React.useEffect(() => {
         setCatalogProducts(products || []);
     }, [products]);
 
-    const resolvedProductType = newProduct.productType === 'Other' ? newProduct.customType.trim() : newProduct.productType.trim();
+    const resolvedProductType = newProduct.productType.trim();
     const matchedExistingProduct = resolvedProductType
         ? findMatchingProduct(catalogProducts, newProduct.productName, resolveCanonicalBrand(catalogProducts, newProduct.brandName), resolvedProductType)
         : undefined;
@@ -210,13 +243,18 @@ export function AddInventoryModal({ onSave, onClose, stores, products }: AddInve
     }, [catalogProducts, newProduct.productName, newProduct.brandName, newProduct.productType, newProduct.customType, resolvedProductType]);
 
     const availableSizes = ['XS', 'S', 'M', 'L', 'XL', 'XXL'];
-    const itemTypes = ['T-shirt', 'Jacket', 'Sweatshirt', 'Jeans', 'Hoodie', 'Other'];
 
     const distinctProductNames = uniqueCatalogValues(catalogProducts.map(product => product.productName).filter(Boolean));
     const distinctBrandNames = uniqueCatalogValues(catalogProducts.map(product => product.brandName).filter(Boolean), true);
+    const distinctProductTypes = uniqueCatalogValues([
+        ...DEFAULT_PRODUCT_TYPES,
+        ...catalogProducts.map(product => product.productType).filter(Boolean)
+    ]);
 
     const filteredProductNames = distinctProductNames.filter(name => normalizeCatalogValue(name).includes(normalizeCatalogValue(newProduct.productName)));
-    const filteredBrandNames = distinctBrandNames.filter(name => normalizeCatalogValue(name).includes(normalizeCatalogValue(newProduct.brandName)));
+    const filteredBrandNames = distinctBrandNames.filter(name => normalizeCatalogValue(name).includes(normalizeCatalogValue(newProduct.brandName)) && !hiddenBrandNames.some(hidden => normalizeCatalogValue(hidden) === normalizeCatalogValue(name)));
+    const filteredProductTypes = distinctProductTypes.filter(name => normalizeCatalogValue(name).includes(normalizeCatalogValue(newProduct.productType)) && !hiddenProductTypes.some(hidden => normalizeCatalogValue(hidden) === normalizeCatalogValue(name)));
+    const distinctColors = uniqueCatalogValues(catalogProducts.flatMap(product => Array.isArray(product.colors) ? product.colors : []).filter(Boolean));
     const getProductOptionLabel = (productName: string) => productName;
 
     const handleAddColor = () => {
@@ -225,6 +263,81 @@ export function AddInventoryModal({ onSave, onClose, stores, products }: AddInve
         const normalized = c.toLowerCase();
         if (!colors.includes(normalized)) setColors(prev => [...prev, normalized]);
         setColorInput('');
+    };
+
+    const replaceCatalogValueInList = (list: any, originalValue: string, newValue: string) => {
+        const values = Array.isArray(list) ? list : [];
+        return uniqueCatalogValues(
+            values.map((value: string) => (
+                normalizeCatalogValue(value) === normalizeCatalogValue(originalValue) ? newValue : value
+            ))
+        );
+    };
+
+    const hideBrandSuggestion = (brandName: string) => {
+        (async () => {
+            try {
+                const res = await fetch('/api/inventory');
+                const data = await res.json();
+                const assigned = (data.inventory || []).filter((row: any) => normalizeCatalogValue(row.brand) === normalizeCatalogValue(brandName));
+                if (assigned.length > 0) {
+                    setReplaceField('brandName');
+                    setReplaceOriginalValue(brandName);
+                    setReplaceInput('');
+                    setReplaceModalOpen(true);
+                    return;
+                }
+            } catch (err) {
+                // fallback to hide
+            }
+
+            setHiddenBrandNames(prev => {
+                if (prev.some(item => normalizeCatalogValue(item) === normalizeCatalogValue(brandName))) return prev;
+                return [...prev, brandName];
+            });
+            if (normalizeCatalogValue(newProduct.brandName) === normalizeCatalogValue(brandName)) {
+                setNewProduct(curr => ({ ...curr, brandName: '' }));
+            }
+            toast.success('Brand hidden');
+        })();
+    };
+
+    const deleteCatalogColor = (colorName: string) => {
+        (async () => {
+            try {
+                const res = await fetch('/api/inventory');
+                const data = await res.json();
+                const assigned = (data.inventory || []).filter((row: any) => {
+                    const rowColors = Array.isArray(row.color) ? row.color : row.color ? [row.color] : [];
+                    return rowColors.some((color: string) => normalizeCatalogValue(color) === normalizeCatalogValue(colorName));
+                });
+
+                if (assigned.length > 0) {
+                    setReplaceField('color');
+                    setReplaceOriginalValue(colorName);
+                    setReplaceInput('');
+                    setReplaceModalOpen(true);
+                    return;
+                }
+
+                setCatalogProducts(prev => prev.map(product => {
+                    const productColors = Array.isArray(product.colors) ? product.colors : [];
+                    if (!productColors.some(color => normalizeCatalogValue(color) === normalizeCatalogValue(colorName))) return product;
+                    return {
+                        ...product,
+                        colors: productColors.filter(color => normalizeCatalogValue(color) !== normalizeCatalogValue(colorName))
+                    } as Product;
+                }));
+
+                if (colors.some(color => normalizeCatalogValue(color) === normalizeCatalogValue(colorName))) {
+                    setColors(prev => prev.filter(color => normalizeCatalogValue(color) !== normalizeCatalogValue(colorName)));
+                }
+
+                toast.success('Color removed from suggestions');
+            } catch (err) {
+                toast.error('Failed to inspect color usage');
+            }
+        })();
     };
 
     const toggleSize = (size: string) => {
@@ -272,7 +385,7 @@ export function AddInventoryModal({ onSave, onClose, stores, products }: AddInve
         const rawBrandName = newProduct.brandName.trim();
         const brandName = resolveCanonicalBrand(catalogProducts, rawBrandName);
         const productType = resolvedProductType;
-        if (!productType) throw new Error('Select product type');
+        if (!productType) throw new Error('Enter product type');
         if (!brandName) throw new Error('Enter brand name');
 
         const existing = findMatchingProduct(catalogProducts, productName, brandName, productType);
@@ -313,8 +426,95 @@ export function AddInventoryModal({ onSave, onClose, stores, products }: AddInve
             return;
         }
 
-        setDeletingProduct(target);
-        setShowDeleteProductModal(true);
+        // If this product name is assigned to any inventory items, require replacement first
+        (async () => {
+            try {
+                const res = await fetch('/api/inventory');
+                const data = await res.json();
+                const assigned = (data.inventory || []).filter((row: any) => normalizeCatalogValue(row.productName) === normalizeCatalogValue(productName));
+                if (assigned.length > 0) {
+                    setReplaceField('productName');
+                    setReplaceOriginalValue(productName);
+                    setReplaceInput('');
+                    setReplaceModalOpen(true);
+                    return;
+                }
+            } catch (err) {
+                // ignore and continue to delete
+            }
+
+            setDeletingProduct(target);
+            setShowDeleteProductModal(true);
+        })();
+    };
+
+    const confirmReplace = async () => {
+        if (!replaceField || !replaceOriginalValue) return;
+        const newValue = String(replaceInput || '').trim();
+        if (!newValue) return toast.error('Enter a replacement value');
+
+        setReplaceProcessing(true);
+        try {
+            const res = await fetch('/api/inventory');
+            const data = await res.json();
+            const matches = (data.inventory || []).filter((row: any) => {
+                if (replaceField === 'productName') return normalizeCatalogValue(row.productName) === normalizeCatalogValue(replaceOriginalValue);
+                if (replaceField === 'brandName') return normalizeCatalogValue(row.brand) === normalizeCatalogValue(replaceOriginalValue);
+                if (replaceField === 'productType') return normalizeCatalogValue(row.category) === normalizeCatalogValue(replaceOriginalValue);
+                if (replaceField === 'color') {
+                    const rowColors = Array.isArray(row.color) ? row.color : row.color ? [row.color] : [];
+                    return rowColors.some((color: string) => normalizeCatalogValue(color) === normalizeCatalogValue(replaceOriginalValue));
+                }
+                return false;
+            });
+
+            const byProduct = new Map<string, any>();
+            matches.forEach((match: any) => {
+                if (!match.productId) return;
+                if (!byProduct.has(match.productId)) byProduct.set(match.productId, match);
+            });
+
+            const updates = Array.from(byProduct.values()).map((match: any) => {
+                const body: any = { id: match.id, fields: { product: {} } };
+                if (replaceField === 'productName') body.fields.product.productName = newValue;
+                if (replaceField === 'brandName') body.fields.product.brandName = newValue;
+                if (replaceField === 'productType') body.fields.product.productType = newValue;
+                if (replaceField === 'color') body.fields.product.colors = replaceCatalogValueInList(match.color, replaceOriginalValue, newValue);
+                return fetch('/api/inventory', { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+            });
+
+            await Promise.all(updates);
+
+            // Update local catalogProducts to reflect replacement
+            setCatalogProducts(prev => prev.map(p => {
+                if (replaceField === 'productName' && normalizeCatalogValue(p.productName) === normalizeCatalogValue(replaceOriginalValue)) {
+                    return { ...p, productName: newValue } as Product;
+                }
+                if (replaceField === 'brandName' && normalizeCatalogValue(p.brandName) === normalizeCatalogValue(replaceOriginalValue)) {
+                    return { ...p, brandName: newValue } as Product;
+                }
+                if (replaceField === 'productType' && normalizeCatalogValue(p.productType) === normalizeCatalogValue(replaceOriginalValue)) {
+                    return { ...p, productType: newValue } as Product;
+                }
+                if (replaceField === 'color') {
+                    const productColors = Array.isArray(p.colors) ? p.colors : [];
+                    if (!productColors.some(color => normalizeCatalogValue(color) === normalizeCatalogValue(replaceOriginalValue))) return p;
+                    return { ...p, colors: replaceCatalogValueInList(productColors, replaceOriginalValue, newValue) } as Product;
+                }
+                return p;
+            }));
+
+            toast.success('Replaced and migrated assignments');
+            setReplaceModalOpen(false);
+            setReplaceField(null);
+            setReplaceOriginalValue('');
+            setReplaceInput('');
+        } catch (err: any) {
+            console.error(err);
+            toast.error(err?.message || 'Failed to replace assignments');
+        } finally {
+            setReplaceProcessing(false);
+        }
     };
 
     const confirmDeleteCatalogProduct = async () => {
@@ -343,6 +543,34 @@ export function AddInventoryModal({ onSave, onClose, stores, products }: AddInve
         } catch (error: any) {
             toast.error(error?.message || 'Failed to delete product');
         }
+    };
+
+    const hideProductTypeSuggestion = (typeName: string) => {
+        (async () => {
+            try {
+                const res = await fetch('/api/inventory');
+                const data = await res.json();
+                const assigned = (data.inventory || []).filter((row: any) => normalizeCatalogValue(row.category) === normalizeCatalogValue(typeName));
+                if (assigned.length > 0) {
+                    setReplaceField('productType');
+                    setReplaceOriginalValue(typeName);
+                    setReplaceInput('');
+                    setReplaceModalOpen(true);
+                    return;
+                }
+            } catch (err) {
+                // fallback to hide
+            }
+
+            setHiddenProductTypes(prev => {
+                if (prev.some(item => normalizeCatalogValue(item) === normalizeCatalogValue(typeName))) return prev;
+                return [...prev, typeName];
+            });
+            if (normalizeCatalogValue(newProduct.productType) === normalizeCatalogValue(typeName)) {
+                setNewProduct(curr => ({ ...curr, productType: '' }));
+            }
+            toast.success('✅ Type removed from suggestions');
+        })();
     };
 
     const handleSubmit = async (e: React.FormEvent) => {
@@ -381,9 +609,14 @@ export function AddInventoryModal({ onSave, onClose, stores, products }: AddInve
     return (
         <div className="modal-overlay">
             <div className="modal-box" style={{ maxWidth: '820px', width: '95%' }}>
-                <div className="modal-head" style={{ padding: '16px 20px' }}>
+                <div className="modal-head" style={{ padding: '16px 20px', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
                     <h3 style={{ fontSize: 18, fontWeight: 800 }}>Add Warehouse Inventory</h3>
-                    <button className="btn btn-sm" onClick={onClose} style={{ border: 'none', fontSize: 18 }}>✕</button>
+                    <div style={{ display: 'flex', gap: 8 }}>
+                        <button className="btn btn-sm" title="Undo / clear form" onClick={clearForm} style={{ border: 'none', fontSize: 16 }}>
+                            <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M9 14l-4-4 4-4"/><path d="M5 10h9a6 6 0 1 1 0 12H8"/></svg>
+                        </button>
+                        <button className="btn btn-sm" onClick={onClose} style={{ border: 'none', fontSize: 18 }}>✕</button>
+                    </div>
                 </div>
                 <div className="modal-body" style={{ padding: '18px 20px' }}>
                     <form onSubmit={handleSubmit}>
@@ -403,13 +636,6 @@ export function AddInventoryModal({ onSave, onClose, stores, products }: AddInve
                                 <input id="item-pic-input" type="file" accept="image/*" style={{ display: 'none' }} onChange={handleImageChange} />
                             </div>
                             {!item.picture && <span style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 8 }}>Click to upload</span>}
-                        </div>
-
-                        <div className="form-grid-2" style={{ marginBottom: 20 }}>
-                            <div className="input-group" style={{ gridColumn: '1 / -1' }}>
-                                <label>Inventory Quantity</label>
-                                <input type="text" inputMode="numeric" value={item.quantity} onChange={e => setItem({ ...item, quantity: parseInt(e.target.value) || 0 })} />
-                            </div>
                         </div>
 
                         <div className="form-grid-2" style={{ marginBottom: 20 }}>
@@ -435,30 +661,44 @@ export function AddInventoryModal({ onSave, onClose, stores, products }: AddInve
                                 onCommit={async () => {
                                     return;
                                 }}
+                                onDelete={hideBrandSuggestion}
+                                required
                             />
                         </div>
 
                         <div className="form-grid-2" style={{ marginBottom: 20 }}>
                             <div className="input-group">
-                                <label>Product Type</label>
-                                <select value={newProduct.productType} onChange={e => setNewProduct({ ...newProduct, productType: e.target.value })}>
-                                    {itemTypes.map(t => <option key={t} value={t}>{t}</option>)}
-                                </select>
-                                {newProduct.productType === 'Other' && (
-                                    <input style={{ marginTop: 8 }} placeholder="Enter custom type..." value={newProduct.customType} onChange={e => setNewProduct({ ...newProduct, customType: e.target.value })} required />
-                                )}
-                                <div style={{ marginTop: 8 }}>
-                                    <label>Item ID</label>
-                                    <input
-                                        readOnly
-                                        value={resolvedItemId}
-                                        placeholder="Select product, brand, and type"
-                                        style={{ background: 'var(--surface-2)', cursor: 'default' }}
-                                    />
-                                    <div style={{ fontSize: 11, marginTop: 4, color: 'var(--text-muted)' }}>
-                                        {matchedExistingProduct ? 'Existing product row will be reused.' : 'A stable ID is generated for this product combo.'}
-                                    </div>
+                                <CatalogInput
+                                    label="Product Type"
+                                    value={newProduct.productType}
+                                    onChange={value => setNewProduct({ ...newProduct, productType: value })}
+                                    placeholder="Type a product type and press Enter"
+                                    options={filteredProductTypes}
+                                    onPick={value => setNewProduct({ ...newProduct, productType: value })}
+                                    onCommit={() => {}}
+                                    getOptionLabel={(value) => value}
+                                    onDelete={hideProductTypeSuggestion}
+                                    required
+                                />
+                            </div>
+                            <div className="input-group">
+                                <label>Item ID</label>
+                                <input
+                                    readOnly
+                                    value={resolvedItemId}
+                                    placeholder="Select product, brand, and type"
+                                    style={{ background: 'var(--surface-2)', cursor: 'default' }}
+                                />
+                                <div style={{ fontSize: 11, marginTop: 4, color: 'var(--text-muted)' }}>
+                                    {matchedExistingProduct ? 'Existing product row will be reused.' : 'A stable ID is generated for this product combo.'}
                                 </div>
+                            </div>
+                        </div>
+
+                        <div className="form-grid-2" style={{ marginBottom: 20 }}>
+                            <div className="input-group">
+                                <label>Inventory Quantity</label>
+                                <input type="text" inputMode="numeric" value={item.quantity} onChange={e => setItem({ ...item, quantity: parseInt(e.target.value) || 0 })} />
                             </div>
                             <div className="input-group">
                                 <label>Price Per Piece (Cost)</label>
@@ -467,11 +707,17 @@ export function AddInventoryModal({ onSave, onClose, stores, products }: AddInve
                         </div>
 
                         <div className="input-group" style={{ marginBottom: 20 }}>
-                            <label>Colors</label>
-                            <div style={{ display: 'flex', gap: 8, marginBottom: 8 }}>
-                                <input placeholder="Add color (e.g. red, navy, #ffaa00)..." value={colorInput} onChange={e => setColorInput(e.target.value)} onKeyDown={e => e.key === 'Enter' && (e.preventDefault(), handleAddColor())} />
-                                <button type="button" className="btn btn-primary" onClick={handleAddColor}>Add</button>
-                            </div>
+                            <CatalogInput
+                                label="Colors"
+                                value={colorInput}
+                                onChange={setColorInput}
+                                placeholder="Type a color and press Enter"
+                                options={distinctColors}
+                                onPick={value => setColorInput(value)}
+                                onCommit={handleAddColor}
+                                getOptionLabel={(value) => value}
+                                onDelete={deleteCatalogColor}
+                            />
                             <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
                                 {colors.map(c => (
                                     <div key={c} style={{ padding: '6px 12px', borderRadius: '20px', background: 'var(--surface-2)', border: '1px solid var(--border)', color: c, fontWeight: 800, fontSize: 12, display: 'flex', alignItems: 'center', gap: 8, textTransform: 'capitalize' }}>
@@ -540,6 +786,49 @@ export function AddInventoryModal({ onSave, onClose, stores, products }: AddInve
                     </form>
                 </div>
             </div>
+
+            {replaceModalOpen && replaceField && (
+                <div className="modal-overlay" onClick={() => { setReplaceModalOpen(false); setReplaceField(null); setReplaceOriginalValue(''); setReplaceInput(''); }}>
+                    <div className="modal-box" onClick={e => e.stopPropagation()} style={{ maxWidth: '480px', width: '95%' }}>
+                        <div className="modal-head" style={{ padding: '16px 20px' }}>
+                            <h3 style={{ fontSize: 18, fontWeight: 800 }}>
+                                Replace {replaceField === 'color' ? 'Color' : replaceField === 'productType' ? 'Type' : replaceField === 'brandName' ? 'Brand' : 'Product'}
+                            </h3>
+                            <button className="btn btn-sm" onClick={() => { setReplaceModalOpen(false); setReplaceField(null); setReplaceOriginalValue(''); setReplaceInput(''); }} style={{ border: 'none', fontSize: 18 }}>✕</button>
+                        </div>
+                        <div className="modal-body" style={{ padding: '20px 20px 22px' }}>
+                            <div style={{ marginBottom: 16, color: 'var(--text-muted)', fontSize: 13, lineHeight: 1.5 }}>
+                                {replaceField === 'color'
+                                    ? <>Color <strong>{replaceOriginalValue}</strong> is already used. Enter the replacement color before deleting it.</>
+                                    : <>Value <strong>{replaceOriginalValue}</strong> is already used. Enter the replacement value before deleting it.</>}
+                            </div>
+                            <div className="input-group" style={{ marginBottom: 18 }}>
+                                <label>Replacement value</label>
+                                <input
+                                    value={replaceInput}
+                                    onChange={e => setReplaceInput(e.target.value)}
+                                    placeholder={replaceField === 'color' ? 'Enter replacement color' : 'Enter replacement value'}
+                                    autoFocus
+                                    onKeyDown={e => {
+                                        if (e.key === 'Enter') {
+                                            e.preventDefault();
+                                            confirmReplace();
+                                        }
+                                    }}
+                                />
+                            </div>
+                            <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8 }}>
+                                <button type="button" className="btn btn-glass" onClick={() => { setReplaceModalOpen(false); setReplaceField(null); setReplaceOriginalValue(''); setReplaceInput(''); }}>
+                                    Cancel
+                                </button>
+                                <button type="button" className="btn btn-primary" onClick={confirmReplace} disabled={replaceProcessing}>
+                                    {replaceProcessing ? 'Replacing...' : 'Replace & Delete'}
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            )}
 
             {showDeleteProductModal && deletingProduct && (
                 <div className="modal-overlay" onClick={() => { setShowDeleteProductModal(false); setDeletingProduct(null); }}>
@@ -855,7 +1144,7 @@ export function EditStoreInventoryModal({ item, storeNames, onSave, onClose }: {
 
 export function EditInventoryModal({ item, minQuantity, onSave, onClose }: { item: InventoryItem; minQuantity?: number; onSave: (fields: any) => void; onClose: () => void }) {
     const { toast } = usePopup();
-    const itemTypes = ['T-shirt', 'Jacket', 'Sweatshirt', 'Jeans', 'Hoodie', 'Other'];
+    const itemTypes = uniqueCatalogValues([...DEFAULT_PRODUCT_TYPES]);
     const availableSizes = ['XS', 'S', 'M', 'L', 'XL', 'XXL'];
 
     const initialColors = Array.isArray(item.color) ? item.color : item.color ? [item.color] : [];
@@ -968,6 +1257,9 @@ export function EditInventoryModal({ item, minQuantity, onSave, onClose }: { ite
         const productName = form.productName.trim();
         if (!productName) return toast.error('Enter product name');
 
+        const brandNameValue = form.brandName.trim();
+        if (!brandNameValue) return toast.error('Enter brand name');
+
         const productType = form.productType === 'Other'
             ? form.customType.trim()
             : form.productType.trim();
@@ -1057,21 +1349,34 @@ export function EditInventoryModal({ item, minQuantity, onSave, onClose }: { ite
 
                         <div className="form-grid-2" style={{ marginBottom: 12 }}>
                             <div className="input-group">
-                                <label>Product Name</label>
+                                <label>Product Name <span style={{ color: 'var(--danger)', marginLeft: 6 }}>*</span></label>
                                 <input value={form.productName} onChange={e => setForm({ ...form, productName: e.target.value })} required />
                             </div>
                             <div className="input-group">
-                                <label>Brand Name</label>
-                                <input value={form.brandName} onChange={e => setForm({ ...form, brandName: e.target.value })} />
+                                <label>Brand Name <span style={{ color: 'var(--danger)', marginLeft: 6 }}>*</span></label>
+                                <input value={form.brandName} onChange={e => setForm({ ...form, brandName: e.target.value })} required />
                             </div>
                         </div>
 
                         <div className="form-grid-2" style={{ marginBottom: 12 }}>
                             <div className="input-group">
-                                <label>Product Type</label>
-                                <select value={form.productType} onChange={e => setForm({ ...form, productType: e.target.value })}>
-                                    {itemTypes.map(t => <option key={t} value={t}>{t}</option>)}
-                                </select>
+                                <CatalogInput
+                                    label="Product Type"
+                                    value={form.productType}
+                                    onChange={value => setForm({ ...form, productType: value })}
+                                    placeholder="Type a product type and press Enter"
+                                    options={itemTypes}
+                                    onPick={value => setForm({ ...form, productType: value })}
+                                    onCommit={() => {}}
+                                    getOptionLabel={(v) => v}
+                                    required
+                                    onDelete={(opt) => {
+                                        // hide locally by marking as custom 'Other' if it matches
+                                        if (normalizeCatalogValue(opt) === normalizeCatalogValue(form.productType)) {
+                                            setForm({ ...form, productType: 'Other', customType: '' });
+                                        }
+                                    }}
+                                />
                                 {form.productType === 'Other' && (
                                     <input
                                         style={{ marginTop: 8 }}
