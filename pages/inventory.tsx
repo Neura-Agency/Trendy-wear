@@ -52,6 +52,8 @@ export default function InventoryPage({ user, onLogin }: PageProps) {
     const [editingInventoryItem, setEditingInventoryItem] = useState<InventoryItem | null>(null);
     const [showDeleteInventoryModal, setShowDeleteInventoryModal] = useState(false);
     const [deletingInventoryItem, setDeletingInventoryItem] = useState<InventoryItem | null>(null);
+    const [deletingAllotmentRow, setDeletingAllotmentRow] = useState<any | null>(null);
+    const [deletingAllotment, setDeletingAllotment] = useState(false);
     const [showAlerts, setShowAlerts] = useState(false);
     // Persisted across modal open/close — tracks product types hidden/replaced by the user
     const [hiddenProductTypes, setHiddenProductTypes] = useState<string[]>([]);
@@ -180,6 +182,38 @@ export default function InventoryPage({ user, onLogin }: PageProps) {
         }
     }
 
+    const handleDeleteAllotment = (item: any) => {
+        if (!item?.id) return toast.error('Missing allotment id')
+        setDeletingAllotmentRow(item)
+        setDeletingAllotment(false)
+    }
+
+    const confirmDeleteAllotment = async () => {
+        if (!deletingAllotmentRow?.id) return toast.error('Missing allotment id')
+
+        setDeletingAllotment(true)
+        try {
+            const response = await fetch('/api/storeInventory', {
+                method: 'DELETE',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ id: deletingAllotmentRow.id })
+            })
+
+            const result = await response.json()
+            if (!response.ok) throw new Error(result.error || 'Failed to delete allotment')
+
+            const returned = Number(result?.returned) || 0
+            toast.success(`✅ Returned ${returned} piece${returned === 1 ? '' : 's'} to warehouse`)
+            setDeletingAllotment(false)
+            setDeletingAllotmentRow(null)
+            refresh()
+        } catch (e: any) {
+            toast.error(e?.message || 'Delete failed')
+        } finally {
+            setDeletingAllotment(false)
+        }
+    }
+
     // Flatten store inventory for the table
     const stockProvided = [];
     Object.entries(data.storeInventory).forEach(([storeName, items]) => {
@@ -266,12 +300,10 @@ export default function InventoryPage({ user, onLogin }: PageProps) {
         totalItemsInWarehouse = data.inventory.reduce((acc, it) => acc + Math.max(0, (Number(it.quantityAvailable) || 0) - (allotedQtyByProduct[it.id] || 0)), 0);
         totalItemsInStores = stockProvided.reduce((acc, it) => acc + it.quantityRemaining, 0);
     } else if (isStoreAdmin) {
-        // Only managed stores
-        const managedStoreNames = visibleStoreNames;
         const ownedItems = data.inventory.filter(it => it.owner === user.username);
         totalInventoryValue = calcInventoryValue(ownedItems);
         totalItemsInWarehouse = ownedItems.reduce((acc, it) => acc + Math.max(0, (Number(it.quantityAvailable) || 0) - (allotedQtyByProduct[it.id] || 0)), 0);
-        totalItemsInStores = stockProvided.filter(it => managedStoreNames.some((name) => name.trim().toLowerCase() === it.storeName.trim().toLowerCase())).reduce((acc, it) => acc + it.quantityRemaining, 0);
+        totalItemsInStores = stockProvided.filter(it => visibleStoreNames.some((name) => name.trim().toLowerCase() === it.storeName.trim().toLowerCase())).reduce((acc, it) => acc + it.quantityRemaining, 0);
     } else {
         // Store user: only their own
         const ownedItems = data.inventory.filter(it => it.owner === user.username);
@@ -374,7 +406,7 @@ export default function InventoryPage({ user, onLogin }: PageProps) {
                                         <th>Aloted Qty</th>
                                         <th>Alloted Stores</th>
                                         <th>Status</th>
-                                        <th>Change</th>
+                                        <th style={{ textAlign: 'center' }}>Actions</th>
                                     </tr>
                                 </thead>
                                 <tbody>
@@ -456,14 +488,21 @@ export default function InventoryPage({ user, onLogin }: PageProps) {
                                                         <Badge type="green">✓ Good</Badge>
                                                     )}
                                                 </td>
-                                                <td>
-                                                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: 8 }}>
+                                                <td style={{ textAlign: 'center' }}>
+                                                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8 }}>
                                                         <button
+                                                            type="button"
                                                             className="btn btn-sm btn-glass"
-                                                            style={{ fontWeight: 700 }}
+                                                            style={{
+                                                                fontWeight: 800,
+                                                                color: 'var(--pri-700)',
+                                                                borderColor: 'rgba(99, 102, 241, 0.22)',
+                                                                background: 'rgba(99, 102, 241, 0.07)',
+                                                                boxShadow: '0 8px 18px rgba(99, 102, 241, 0.08)',
+                                                            }}
                                                             onClick={() => { setEditingInventoryItem(item); setShowEditInventoryModal(true); }}
                                                         >
-                                                            Edit Stock
+                                                            Edit
                                                         </button>
                                                         <button
                                                             type="button"
@@ -514,7 +553,7 @@ export default function InventoryPage({ user, onLogin }: PageProps) {
                                     {isAdmin && <th>Shop Cut %</th>}
                                     <th style={{ textAlign: 'right' }}>Items Sold</th>
                                     <th>Alloted By</th>
-                                    {isAdmin && <th>Actions</th>}
+                                    {isAdmin && <th style={{ textAlign: 'center' }}>Actions</th>}
                                 </tr>
                             </thead>
                             <tbody>
@@ -542,13 +581,43 @@ export default function InventoryPage({ user, onLogin }: PageProps) {
                                                 <Badge type="purple">{item.owner || '—'}</Badge>
                                             </td>
                                             {isAdmin && (
-                                                <td style={{ textAlign: 'right' }}>
-                                                    <button
-                                                        className="btn btn-sm"
-                                                        onClick={() => { setEditingRow(item); setShowEditModalUI(true); }}
-                                                    >
-                                                        Edit
-                                                    </button>
+                                                <td style={{ textAlign: 'center' }}>
+                                                    <div style={{ display: 'flex', gap: 8, justifyContent: 'center', alignItems: 'center' }}>
+                                                        <button
+                                                            type="button"
+                                                            className="btn btn-sm"
+                                                            onClick={() => { setEditingRow(item); setShowEditModalUI(true); }}
+                                                            style={{
+                                                                fontWeight: 800,
+                                                                color: 'var(--pri-700)',
+                                                                borderColor: 'rgba(99, 102, 241, 0.22)',
+                                                                background: 'rgba(99, 102, 241, 0.07)',
+                                                                boxShadow: '0 8px 18px rgba(99, 102, 241, 0.08)',
+                                                            }}
+                                                        >
+                                                            Edit
+                                                        </button>
+                                                        <button
+                                                            type="button"
+                                                            className="btn btn-sm btn-glass"
+                                                            onClick={() => setDeletingAllotmentRow(item)}
+                                                            title="Remove allotment and return unsold stock to warehouse"
+                                                            aria-label={`Delete allotment for ${item.productName}`}
+                                                            style={{
+                                                                color: 'var(--danger)',
+                                                                borderColor: 'rgba(239, 68, 68, 0.25)',
+                                                                background: 'rgba(239, 68, 68, 0.08)',
+                                                                display: 'inline-flex',
+                                                                alignItems: 'center',
+                                                                justifyContent: 'center',
+                                                                width: 40,
+                                                                height: 40,
+                                                                padding: 0,
+                                                            }}
+                                                        >
+                                                            {IC.trash}
+                                                        </button>
+                                                    </div>
                                                 </td>
                                             )}
                                         </tr>
@@ -683,6 +752,79 @@ export default function InventoryPage({ user, onLogin }: PageProps) {
                         }}
                         onClose={() => { setShowEditModalUI(false); setEditingRow(null); }}
                     />
+                )}
+
+                {deletingAllotmentRow && (
+                    <div className="modal-overlay" onClick={() => { if (!deletingAllotment) { setDeletingAllotmentRow(null); } }}>
+                        <div className="modal-box delete-modal" onClick={e => e.stopPropagation()}>
+                            <div className="delete-modal__hero">
+                                <div className="delete-modal__head">
+                                    <div className="delete-modal__icon">
+                                        {IC.trash}
+                                    </div>
+                                    <div className="delete-modal__copy">
+                                        <div className="delete-modal__eyebrow">Destructive action</div>
+                                        <h3 className="delete-modal__title">Delete store allotment?</h3>
+                                        <div className="delete-modal__subtitle">
+                                            This will remove the allotment for <strong>{deletingAllotmentRow.productName}</strong> from <strong>{deletingAllotmentRow.storeName}</strong>.
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+
+                            {(() => {
+                                const totalSent = Math.max(0, Number(deletingAllotmentRow.quantityAssigned) || 0)
+                                const remaining = Math.max(0, Number(deletingAllotmentRow.quantityRemaining) || 0)
+                                const sold = Math.max(0, totalSent - remaining)
+
+                                return (
+                                    <div className="delete-modal__body">
+                                        <div className="delete-modal__summary">
+                                            <div className="delete-modal__summary-top">
+                                                <div>
+                                                    <div className="delete-modal__label">Item details</div>
+                                                    <div className="delete-modal__item-name">{deletingAllotmentRow.productName}</div>
+                                                    <div className="delete-modal__batch">{deletingAllotmentRow.storeName}</div>
+                                                </div>
+                                                <div className="delete-modal__count-wrap">
+                                                    <div className="delete-modal__label delete-modal__label--right">Will return</div>
+                                                    <div className="delete-modal__count">{remaining}</div>
+                                                </div>
+                                            </div>
+                                            <div className="delete-modal__chips">
+                                                <span className="badge badge-red">Total sent: {totalSent}</span>
+                                                <span className="badge badge-blue">Items sold: {sold}</span>
+                                                <span className="badge badge-gray">In shop stock: {remaining}</span>
+                                            </div>
+                                        </div>
+
+                                        <div className="delete-modal__warning">
+                                            Deleting this allotment will keep the sold pieces as-is and return only the remaining {remaining} piece{remaining === 1 ? '' : 's'} to warehouse stock.
+                                        </div>
+                                    </div>
+                                )
+                            })()}
+
+                            <div className="delete-modal__footer">
+                                <button
+                                    type="button"
+                                    className="btn btn-sm btn-glass delete-modal__cancel"
+                                    onClick={() => { if (!deletingAllotment) { setDeletingAllotmentRow(null); } }}
+                                    disabled={deletingAllotment}
+                                >
+                                    Cancel
+                                </button>
+                                <button
+                                    type="button"
+                                    className="btn btn-sm delete-modal__confirm"
+                                    onClick={confirmDeleteAllotment}
+                                    disabled={deletingAllotment}
+                                >
+                                    {deletingAllotment ? 'Deleting...' : 'Delete Allotment'}
+                                </button>
+                            </div>
+                        </div>
+                    </div>
                 )}
 
                 {showEditInventoryModal && editingInventoryItem && (

@@ -243,6 +243,55 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       if (fields.store_selling_price !== undefined) allowed.store_selling_price = fields.store_selling_price
       if (fields.quantity_assigned !== undefined) {
         if (Number(fields.quantity_assigned) < 1) return res.status(400).json({ error: 'Quantity assigned must be at least 1' })
+
+        // Validate that increasing assigned qty doesn't exceed batch availability.
+        // Fetch current row to know inventory_id and current assigned qty
+        const { data: existingRow, error: existingErr } = await supabaseAdmin
+          .from(TABLES.STORE_INVENTORY)
+          .select('id, inventory_id, quantity_assigned')
+          .eq('id', id)
+          .maybeSingle()
+
+        if (existingErr) {
+          console.error('storeInventory lookup error on patch:', existingErr)
+          return res.status(500).json({ error: 'Failed to lookup allotment' })
+        }
+        if (!existingRow) return res.status(404).json({ error: 'Allotment not found' })
+
+        // Sum assigned quantities for the same inventory batch excluding this row
+        const { data: assignedRowsOther, error: assignedOtherErr } = await supabaseAdmin
+          .from(TABLES.STORE_INVENTORY)
+          .select('quantity_assigned')
+          .eq('inventory_id', existingRow.inventory_id)
+          .neq('id', existingRow.id)
+
+        if (assignedOtherErr) {
+          console.error('assigned sum error on patch:', assignedOtherErr)
+          return res.status(500).json({ error: 'Failed to validate available quantity' })
+        }
+
+        const alreadyAssignedOther = (assignedRowsOther || []).reduce((acc: number, r: any) => acc + num(r.quantity_assigned), 0)
+
+        // Fetch batch total available
+        const { data: invRow, error: invRowErr } = await supabaseAdmin
+          .from(TABLES.INVENTORY)
+          .select('quantity_available')
+          .eq('id', existingRow.inventory_id)
+          .maybeSingle()
+
+        if (invRowErr) {
+          console.error('inventory lookup error on patch:', invRowErr)
+          return res.status(500).json({ error: 'Failed to lookup inventory' })
+        }
+        if (!invRow) return res.status(404).json({ error: 'Inventory batch not found' })
+
+        const total = num(invRow.quantity_available)
+        const remainingForThisUpdate = Math.max(0, total - alreadyAssignedOther)
+
+        if (Number(fields.quantity_assigned) > remainingForThisUpdate) {
+          return res.status(400).json({ error: `Quantity assigned (${fields.quantity_assigned}) exceeds available stock (${remainingForThisUpdate}) for this batch` })
+        }
+
         allowed.quantity_assigned = fields.quantity_assigned
       }
       if (fields.quantity_remaining !== undefined) {
@@ -280,6 +329,55 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       }
 
       return res.json({ success: true, updated })
+    }
+
+    if (req.method === 'DELETE') {
+      // id of the store_inventory row to remove
+      const { id } = req.body || {}
+      if (!id) return res.status(400).json({ error: 'id is required' })
+
+      // Fetch the row so we know how many unsold pieces to return to warehouse
+      const { data: row, error: fetchErr } = await supabaseAdmin
+        .from(TABLES.STORE_INVENTORY)
+        .select('id, inventory_id, quantity_remaining')
+        .eq('id', id)
+        .maybeSingle()
+
+      if (fetchErr || !row) {
+        return res.status(404).json({ error: 'Allotment not found' })
+      }
+
+      const unsold = Number(row.quantity_remaining) || 0
+
+      // Return unsold pieces to warehouse inventory
+      if (unsold > 0 && row.inventory_id) {
+        const { data: invRow, error: invFetchErr } = await supabaseAdmin
+          .from(TABLES.INVENTORY)
+          .select('quantity_available')
+          .eq('id', row.inventory_id)
+          .maybeSingle()
+
+        if (!invFetchErr && invRow) {
+          const newQty = (Number(invRow.quantity_available) || 0) + unsold
+          await supabaseAdmin
+            .from(TABLES.INVENTORY)
+            .update({ quantity_available: newQty })
+            .eq('id', row.inventory_id)
+        }
+      }
+
+      // Delete the store_inventory row
+      const { error: deleteErr } = await supabaseAdmin
+        .from(TABLES.STORE_INVENTORY)
+        .delete()
+        .eq('id', id)
+
+      if (deleteErr) {
+        console.error('storeInventory delete error:', deleteErr)
+        return res.status(500).json({ error: 'Failed to delete allotment' })
+      }
+
+      return res.json({ success: true, returned: unsold })
     }
 
     return res.status(405).json({ error: 'Method not allowed' })
