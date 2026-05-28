@@ -185,11 +185,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
           .eq('id', finalProductId)
       }
 
-      // Calculate total quantity from variant quantities if provided
-      const hasVariantQuantities = (sizeQuantities && typeof sizeQuantities === 'object') || (colorQuantities && typeof colorQuantities === 'object')
-      const totalQuantity = hasVariantQuantities
-        ? totalQuantityFrom(sizeQuantities) + totalQuantityFrom(colorQuantities)
-        : num(quantity)
+      const totalQuantity = Math.max(0, num(quantity))
 
       const { data: existingInventory, error: inventoryLookupError } = await supabaseAdmin
         .from(TABLES.INVENTORY)
@@ -366,9 +362,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
           Object.entries(rawSizeQuantities).forEach(([size, qty]) => {
             normalized[size] = Math.max(0, num(qty))
           })
-          const total = Object.values(normalized).reduce((sum, qty) => sum + num(qty), 0)
           inventoryUpdate.size_quantities = normalized
-          inventoryUpdate.quantity_available = total
         } else {
           return res.status(400).json({ error: 'sizeQuantities must be an object or null' })
         }
@@ -389,18 +383,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
         }
       }
 
-      if (rawSizeQuantities !== undefined || rawColorQuantities !== undefined) {
-        const nextSizeQuantities = rawSizeQuantities !== undefined
-          ? inventoryUpdate.size_quantities ?? null
-          : currentInventory?.size_quantities ?? null
-        const nextColorQuantities = rawColorQuantities !== undefined
-          ? inventoryUpdate.color_quantities ?? null
-          : currentInventory?.color_quantities ?? null
-
-        inventoryUpdate.quantity_available = totalQuantityFrom(nextSizeQuantities) + totalQuantityFrom(nextColorQuantities)
-      }
-
-      if (inventoryFields.quantityAvailable !== undefined && inventoryUpdate.quantity_available === undefined) {
+      if (inventoryFields.quantityAvailable !== undefined) {
         inventoryUpdate.quantity_available = Math.max(0, num(inventoryFields.quantityAvailable))
       }
 

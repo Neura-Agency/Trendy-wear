@@ -1,7 +1,7 @@
 import { NextApiRequest, NextApiResponse } from 'next'
 import { supabaseAdmin, TABLES } from '../../lib/supabase'
 import { requireSession, toUserPayload } from '../../lib/api/session'
-import { buildDeterministicProductId, findMatchingProduct, resolveCanonicalBrand } from '../../lib/catalog'
+import { buildDeterministicProductId, findMatchingProduct, normalizeCatalogValue, resolveCanonicalBrand } from '../../lib/catalog'
 
 const PRODUCT_IMAGES_BUCKET = process.env.SUPABASE_PRODUCT_IMAGES_BUCKET || 'Trendy Wear'
 
@@ -106,10 +106,14 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 
       const canonicalBrand = resolveCanonicalBrand(products || [], bn)
       const existing = findMatchingProduct(products || [], pn, canonicalBrand, pt)
+      const existingByNameBrand = (products || []).find((product: any) =>
+        normalizeCatalogValue(String(product?.product_name ?? product?.productName ?? '')) === normalizeCatalogValue(pn) &&
+        normalizeCatalogValue(String(product?.brand_name ?? product?.brandName ?? '')) === normalizeCatalogValue(canonicalBrand)
+      )
+      const targetExisting = existing?.id ? existing : existingByNameBrand
       const productId = buildDeterministicProductId(pn, canonicalBrand, pt)
 
-      const payload = {
-        id: productId,
+      const basePayload = {
         product_name: pn,
         brand_name: canonicalBrand,
         product_type: pt,
@@ -119,14 +123,19 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
         product_image: imageUrl,
       }
 
+      const insertPayload = {
+        id: productId,
+        ...basePayload,
+      }
+
       let saved
       let error
 
-      if (existing?.id) {
+      if (targetExisting?.id) {
         const result = await supabaseAdmin
           .from(TABLES.PRODUCTS)
-          .update(payload)
-          .eq('id', existing.id)
+          .update(basePayload)
+          .eq('id', targetExisting.id)
           .select('*')
           .single()
         saved = result.data
@@ -134,7 +143,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       } else {
         const result = await supabaseAdmin
           .from(TABLES.PRODUCTS)
-          .insert(payload)
+          .insert(insertPayload)
           .select('*')
           .single()
         saved = result.data
@@ -143,7 +152,8 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 
       if (error) {
         console.error('Save product error:', error)
-        return res.status(500).json({ error: 'Failed to save product' })
+        const message = error?.message ? `Failed to save product: ${error.message}` : 'Failed to save product'
+        return res.status(500).json({ error: message })
       }
 
       return res.status(201).json({

@@ -390,7 +390,9 @@ export function AddInventoryModal({ onSave, onClose, stores, products, hiddenPro
     const updateSizeQuantity = (size: string, qty: number) => setItem(curr => ({ ...curr, sizeQuantities: { ...curr.sizeQuantities, [size]: Math.max(0, qty) } }));
     const updateColorQuantity = (color: string, qty: number) => setItem(curr => ({ ...curr, colorQuantities: { ...curr.colorQuantities, [color]: Math.max(0, qty) } }));
 
-    const totalQuantity = Object.values(item.sizeQuantities).reduce((s, q) => s + (Number(q) || 0), 0) + Object.values(item.colorQuantities).reduce((s, q) => s + (Number(q) || 0), 0);
+    const sizeQuantityTotal = Object.values(item.sizeQuantities).reduce((s, q) => s + (Number(q) || 0), 0);
+    const colorQuantityTotal = Object.values(item.colorQuantities).reduce((s, q) => s + (Number(q) || 0), 0);
+    const totalQuantity = Math.max(0, Number(item.quantity) || 0);
 
     const toggleStore = (store: string) => setAllotedStores(prev => prev.includes(store) ? prev.filter(s => s !== store) : [...prev, store]);
 
@@ -429,9 +431,18 @@ export function AddInventoryModal({ onSave, onClose, stores, products, hiddenPro
             })
         });
 
-        const result = await response.json();
+        let result: any = null;
+        try {
+            result = await response.json();
+        } catch {
+            result = null;
+        }
         if (!response.ok) {
-            throw new Error(result.error || 'Failed to save product');
+            throw new Error(result?.error || `Failed to save product (HTTP ${response.status})`);
+        }
+
+        if (!result?.product) {
+            throw new Error('Failed to save product: invalid server response');
         }
 
         const savedProduct = result.product as Product;
@@ -636,32 +647,33 @@ export function AddInventoryModal({ onSave, onClose, stores, products, hiddenPro
 
         if (!newProduct.productName.trim()) return toast.error('Enter product name');
         if (!newProduct.brandName.trim()) return toast.error('Enter brand name');
-        if (sizes.length > 0) {
-            const sum = Object.values(item.sizeQuantities).reduce((s, q) => s + (Number(q) || 0), 0);
-            if (sum === 0) return toast.error('Enter quantities for at least one size');
-        }
+        if (sizes.length > 0 && sizeQuantityTotal === 0) return toast.error('Enter quantities for at least one size');
+        if (colors.length > 0 && colorQuantityTotal === 0) return toast.error('Enter quantities for at least one color');
+        if (totalQuantity <= 0) return toast.error('Enter a valid total quantity');
 
         const normalizedSizeQuantities = Object.keys(item.sizeQuantities).length ? item.sizeQuantities : null;
         const normalizedColorQuantities = Object.keys(item.colorQuantities).length ? item.colorQuantities : null;
-        const hasVariantQuantities = (normalizedSizeQuantities && Object.keys(normalizedSizeQuantities).length > 0) || (normalizedColorQuantities && Object.keys(normalizedColorQuantities).length > 0);
+        try {
+            const savedProduct = await uploadCatalogProduct();
+            // Derive Item ID from the product's real UUID (same format as the dropdown)
+            // so warehouse table and dropdown always show the same ID.
+            const derivedItemId = `ITEM-${savedProduct.id.replace(/-/g, '').slice(0, 8).toUpperCase()}`;
 
-        const savedProduct = await uploadCatalogProduct();
-        // Derive Item ID from the product's real UUID (same format as the dropdown)
-        // so warehouse table and dropdown always show the same ID.
-        const derivedItemId = `ITEM-${savedProduct.id.replace(/-/g, '').slice(0, 8).toUpperCase()}`;
+            onSave({
+                itemId: derivedItemId,
+                quantity: totalQuantity,
+                pricePerPiece: Number(item.pricePerPiece) || 0,
+                picture: item.picture,
+                sizeQuantities: normalizedSizeQuantities,
+                colorQuantities: normalizedColorQuantities,
+                productId: savedProduct.id,
+                allotedStores,
+            });
 
-        onSave({
-            itemId: derivedItemId,
-            quantity: hasVariantQuantities ? totalQuantity : item.quantity,
-            pricePerPiece: Number(item.pricePerPiece) || 0,
-            picture: item.picture,
-            sizeQuantities: normalizedSizeQuantities,
-            colorQuantities: normalizedColorQuantities,
-            productId: savedProduct.id,
-            allotedStores,
-        });
-
-        onClose();
+            onClose();
+        } catch (error: any) {
+            toast.error(error?.message || 'Failed to save product');
+        }
     };
 
     return (
@@ -1254,8 +1266,7 @@ export function EditInventoryModal({ item, minQuantity, onSave, onClose, product
         });
     }, [colors]);
 
-    const totalQuantity = Object.values(sizeQuantities).reduce((sum, qty) => sum + (Number(qty) || 0), 0)
-        + Object.values(colorQuantities).reduce((sum, qty) => sum + (Number(qty) || 0), 0);
+    const totalQuantity = Math.max(0, Number(form.quantityAvailable) || 0);
 
     const handleAddColor = () => {
         const color = colorInput.trim();
@@ -1363,15 +1374,13 @@ export function EditInventoryModal({ item, minQuantity, onSave, onClose, product
 
         const normalizedSizeQuantities = Object.keys(sizeQuantities).length ? sizeQuantities : null;
         const normalizedColorQuantities = Object.keys(colorQuantities).length ? colorQuantities : null;
-        const hasVariantQuantities = !!normalizedSizeQuantities || !!normalizedColorQuantities;
-
         const payload: any = {
             inventory: {
                 batchNumber,
                 costPrice: Number(form.costPrice) || 0,
                 sellingPrice: Number(form.sellingPrice) || 0,
                 lowStockWarning: Number(form.lowStockWarning) || 0,
-                quantityAvailable: hasVariantQuantities ? totalQuantity : (Number(form.quantityAvailable) || 0),
+                quantityAvailable: totalQuantity,
                 sizeQuantities: normalizedSizeQuantities ?? undefined,
                 colorQuantities: normalizedColorQuantities ?? undefined,
             },
@@ -1504,10 +1513,8 @@ export function EditInventoryModal({ item, minQuantity, onSave, onClose, product
                                 <input
                                     type="text"
                                     inputMode="numeric"
-                                    value={(sizes.length > 0 || colors.length > 0) ? totalQuantity : form.quantityAvailable}
+                                    value={form.quantityAvailable}
                                     onChange={e => setForm({ ...form, quantityAvailable: parseInt(e.target.value) || 0 })}
-                                    readOnly={sizes.length > 0 || colors.length > 0}
-                                    style={(sizes.length > 0 || colors.length > 0) ? { background: 'var(--surface-2)', cursor: 'default' } : undefined}
                                 />
                                 {minQuantity ? (
                                     <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 4 }}>Assigned to stores: {minQuantity}</div>
