@@ -5,7 +5,7 @@ import Login from "../components/Login";
 import WeekMonthPicker from '../components/WeekMonthPicker';
 import SectionCard from "../components/SectionCard";
 import Badge from "../components/Badge";
-import { SaleModal, CreateStoreModal, ReportModal, ExpenseBreakdownModal } from "../components/Modals";
+import { SaleModal, CreateStoreModal, ReportModal, ExpenseBreakdownModal, SaleReturnModal } from "../components/Modals";
 import { AddExpenseForm } from '../components/Forms';
 import CustomSelect from "../components/CustomSelect";
 import { User, Order, Store, InventoryItem, Expense, Client, StoreInventoryItem, AppData, PageProps } from "../types";
@@ -292,6 +292,7 @@ function GroupedBarChart({ title, groups, series, max, yLabel = '', formatValue 
           </div>
         ))}
       </div>
+
     </div>
   );
 }
@@ -773,8 +774,80 @@ function StoresOverviewSection({ stores, orders, storeInventory, filter, getFilt
 }
 
 // ─── ORDERS SECTION ──────────────────────────────────────────────────
-function OrdersSection({ orders, overallOrders = [], isAdmin, canDelete, onCommissionEdit, onTogglePayout, onEdit, onDelete, onReturn, confirmDialog }: any) {
+function OrdersSection({ orders, overallOrders = [], inventory = [], isAdmin, canDelete, onCommissionEdit, onTogglePayout, onEdit, onDelete, onReturn, onUndoReturn, confirmDialog }: any) {
   const [editing, setEditing] = useState<any>(null);
+  const [editingCurrency, setEditingCurrency] = useState<'PKR' | 'GBP'>('PKR');
+  const [editingSizeQuantities, setEditingSizeQuantities] = useState<Record<string, number>>({});
+  const [editingColorQuantities, setEditingColorQuantities] = useState<Record<string, number>>({});
+  const [returningOrder, setReturningOrder] = useState<any | null>(null);
+
+  const normalizeCatalogValue = (value: string) => String(value ?? '').trim().toLowerCase();
+  const buildEmptyQuantities = (keys: string[]) => keys.reduce((acc, key) => {
+    acc[key] = 0;
+    return acc;
+  }, {} as Record<string, number>);
+
+  const getVariantKeys = (item: any, field: 'size' | 'color') => {
+    const raw = item?.[field] ?? item?.[field === 'size' ? 'sizes' : 'colors'];
+    return Array.isArray(raw) ? raw : [];
+  };
+
+  const openEdit = (order: any) => {
+    const product = inventory.find((item: any) => normalizeCatalogValue(item.productName) === normalizeCatalogValue(order.productName));
+    const sizeKeys = getVariantKeys(product, 'size');
+    const colorKeys = getVariantKeys(product, 'color');
+
+    setEditing(order);
+    setEditingCurrency('PKR');
+    setEditingSizeQuantities(sizeKeys.length > 0 ? buildEmptyQuantities(sizeKeys) : {});
+    setEditingColorQuantities(colorKeys.length > 0 ? buildEmptyQuantities(colorKeys) : {});
+
+    const savedSizeBreakdown = order.sizeQuantities && typeof order.sizeQuantities === 'object' ? order.sizeQuantities : null;
+    const savedColorBreakdown = order.colorQuantities && typeof order.colorQuantities === 'object' ? order.colorQuantities : null;
+
+    if (savedSizeBreakdown && sizeKeys.length > 0) {
+      setEditingSizeQuantities(prev => {
+        const next = { ...prev };
+        sizeKeys.forEach((size: string) => {
+          next[size] = Math.max(0, Number(savedSizeBreakdown[size]) || 0);
+        });
+        return next;
+      });
+    }
+    if (savedColorBreakdown && colorKeys.length > 0) {
+      setEditingColorQuantities(prev => {
+        const next = { ...prev };
+        colorKeys.forEach((color: string) => {
+          next[color] = Math.max(0, Number(savedColorBreakdown[color]) || 0);
+        });
+        return next;
+      });
+    }
+
+    if (order.size && sizeKeys.includes(order.size)) {
+      setEditingSizeQuantities(prev => ({ ...prev, [order.size]: Number(order.quantity) || 0 }));
+    }
+    if (order.color && colorKeys.includes(order.color)) {
+      setEditingColorQuantities(prev => ({ ...prev, [order.color]: Number(order.quantity) || 0 }));
+    }
+  };
+
+  const selectedEditProduct = editing
+    ? inventory.find((item: any) => normalizeCatalogValue(item.productName) === normalizeCatalogValue(editing.productName))
+    : null;
+  const editingSizeKeys = getVariantKeys(selectedEditProduct, 'size');
+  const editingColorKeys = getVariantKeys(selectedEditProduct, 'color');
+  const editingHasSizeTracking = editingSizeKeys.length > 0;
+  const editingHasColorTracking = editingColorKeys.length > 0;
+  const editingSizeTotal = Object.values(editingSizeQuantities).reduce((sum, qty) => sum + (Number(qty) || 0), 0);
+  const editingColorTotal = Object.values(editingColorQuantities).reduce((sum, qty) => sum + (Number(qty) || 0), 0);
+  const editingQuantity = editingHasSizeTracking || editingHasColorTracking
+    ? Math.max(editingSizeTotal, editingColorTotal)
+    : Number(editing?.quantity) || 0;
+  const editingPriceInPKR = editingCurrency === 'GBP' ? Number(editing?.sellingPrice || 0) * 360 : Number(editing?.sellingPrice || 0);
+  const editingGross = editingPriceInPKR * editingQuantity;
+  const editingDeductions = Number(editing?.shipmentCost || 0) + Number(editing?.extraCharges || 0);
+  const editingNetPayable = editingGross - editingDeductions;
 
   const filteredQty = orders.reduce((s, o) => s + (o.quantity || 0), 0);
   const filteredGross = orders.reduce((s, o) => s + ((o.sellingPrice || 0) * (o.quantity || 0)), 0);
@@ -790,55 +863,162 @@ function OrdersSection({ orders, overallOrders = [], isAdmin, canDelete, onCommi
     <div>
       {/* ── Edit modal ── */}
       {editing && (
-        <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.45)', zIndex: 1300, display: 'flex', alignItems: 'flex-start', justifyContent: 'center', padding: '60px 12px 12px', overflowY: 'auto' }}>
-          <div style={{ background: 'var(--surface)', borderRadius: 16, padding: '20px', width: '100%', maxWidth: 480, boxShadow: '0 8px 40px rgba(0,0,0,0.25)' }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 24 }}>
-              <h2 style={{ margin: 0, fontSize: '1.2rem', fontWeight: 800 }}>Edit Sale</h2>
-              <button className="btn btn-glass" style={{ width: 32, height: 32, padding: 0 }} onClick={() => setEditing(null)}>✕</button>
+        <div className="modal-overlay">
+          <div className="modal-box" style={{ maxWidth: '480px' }}>
+            <div className="modal-head" style={{ padding: '12px 20px' }}>
+              <h3 style={{ fontSize: '16px' }}>Edit Sale</h3>
+              <div style={{ display: 'flex', gap: 8 }}>
+                {['PKR', 'GBP'].map(curr => (
+                  <button
+                    key={curr}
+                    type="button"
+                    style={{
+                      padding: '2px 8px', fontSize: '10px', fontWeight: 800, borderRadius: 4,
+                      background: editingCurrency === curr ? 'var(--pri-600)' : '#f0f0f0',
+                      color: editingCurrency === curr ? '#fff' : '#8c8c8c', border: 'none', cursor: 'pointer'
+                    }}
+                    onClick={() => setEditingCurrency(curr as 'PKR' | 'GBP')}
+                  >
+                    {curr}
+                  </button>
+                ))}
+                <button className="btn btn-sm" onClick={() => setEditing(null)} style={{ border: 'none', fontSize: '16px', marginLeft: 8 }}>✕</button>
+              </div>
             </div>
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
-              <label style={{ fontWeight: 600, fontSize: '0.85rem' }}>
-                Product
-                <div style={{ marginTop: 4, padding: '8px 12px', background: 'var(--surface-2)', borderRadius: 8, border: '1px solid var(--border)', color: 'var(--text-muted)' }}>{editing.productName}</div>
-              </label>
-              <label style={{ fontWeight: 600, fontSize: '0.85rem' }}>
-                Quantity Sold
-                <input type="text" inputMode="numeric" className="form-input" style={{ marginTop: 4, display: 'block', width: '100%' }}
-                  value={editing.quantity}
-                  onChange={e => setEditing(prev => ({ ...prev, quantity: e.target.value }))}
-                />
-              </label>
-              <label style={{ fontWeight: 600, fontSize: '0.85rem' }}>
-                Selling Price (Rs)
-                <input type="text" inputMode="numeric" className="form-input" style={{ marginTop: 4, display: 'block', width: '100%' }}
-                  value={editing.sellingPrice}
-                  onChange={e => setEditing(prev => ({ ...prev, sellingPrice: e.target.value }))}
-                />
-              </label>
-              <label style={{ fontWeight: 600, fontSize: '0.85rem' }}>
-                Shipment Cost (Rs)
-                <input type="text" inputMode="numeric" className="form-input" style={{ marginTop: 4, display: 'block', width: '100%' }}
-                  value={editing.shipmentCost}
-                  onChange={e => setEditing(prev => ({ ...prev, shipmentCost: e.target.value }))}
-                />
-              </label>
-              <label style={{ fontWeight: 600, fontSize: '0.85rem' }}>
-                Customer Name
-                <input type="text" className="form-input" style={{ marginTop: 4, display: 'block', width: '100%' }}
-                  value={editing.clientName}
-                  onChange={e => setEditing(prev => ({ ...prev, clientName: e.target.value }))}
-                />
-              </label>
-              <label style={{ fontWeight: 600, fontSize: '0.85rem' }}>
-                Date of Sale
-                <input type="date" className="form-input" style={{ marginTop: 4, display: 'block', width: '100%' }}
-                  value={editing.date ? editing.date.slice(0, 10) : ''}
-                  max={new Date().toISOString().slice(0, 10)}
-                  onChange={e => setEditing(prev => ({ ...prev, date: e.target.value }))}
-                />
-              </label>
-            </div>
-            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 10, marginTop: 24 }}>
+            <div className="modal-body" style={{ padding: '16px 20px' }}>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 18 }}>
+                <div className="input-group full-width">
+                  <label>Select Product</label>
+                  <div style={{ padding: '12px 14px', borderRadius: 10, border: '1px solid var(--border)', background: 'var(--surface-2)', color: 'var(--text-muted)' }}>
+                    {editing.productName}
+                  </div>
+                </div>
+
+                {editingHasSizeTracking && (
+                  <div className="input-group full-width">
+                    <label>Quantity by Size</label>
+                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(120px, 1fr))', gap: 12 }}>
+                      {editingSizeKeys.map((size: string) => (
+                        <div key={size} style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+                          <label style={{ fontSize: 11, fontWeight: 700, color: 'var(--text-muted)' }}>{size} <span style={{ fontSize: 10 }}>(max: {selectedEditProduct?.sizeQuantitiesRemaining?.[size] ?? selectedEditProduct?.sizeQuantities?.[size] ?? '∞'})</span></label>
+                          <input
+                            type="number"
+                            min="0"
+                            value={editingSizeQuantities[size] || 0}
+                            onChange={e => setEditingSizeQuantities(curr => ({ ...curr, [size]: Math.max(0, parseInt(e.target.value) || 0) }))}
+                          />
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                {editingHasColorTracking && (
+                  <div className="input-group full-width">
+                    <label>Quantity by Color</label>
+                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(120px, 1fr))', gap: 12 }}>
+                      {editingColorKeys.map((color: string) => (
+                        <div key={color} style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+                          <label style={{ fontSize: 11, fontWeight: 700, color: 'var(--text-muted)' }}>{color} <span style={{ fontSize: 10 }}>(max: {selectedEditProduct?.colorQuantitiesRemaining?.[color] ?? selectedEditProduct?.colorQuantities?.[color] ?? '∞'})</span></label>
+                          <input
+                            type="number"
+                            min="0"
+                            value={editingColorQuantities[color] || 0}
+                            onChange={e => setEditingColorQuantities(curr => ({ ...curr, [color]: Math.max(0, parseInt(e.target.value) || 0) }))}
+                          />
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                <div className="form-grid-2">
+                  <div className="input-group">
+                    <label>Qty Sold</label>
+                    <input
+                      type="text"
+                      inputMode="numeric"
+                      value={editingHasSizeTracking || editingHasColorTracking ? editingQuantity : editing.quantity}
+                      readOnly={editingHasSizeTracking || editingHasColorTracking}
+                      onChange={e => setEditing(prev => ({ ...prev, quantity: e.target.value }))}
+                      style={(editingHasSizeTracking || editingHasColorTracking) ? { background: 'var(--surface-2)', cursor: 'default' } : undefined}
+                    />
+                    {(editingHasSizeTracking || editingHasColorTracking) && (
+                      <div style={{ fontSize: 11, marginTop: 4, color: 'var(--text-muted)' }}>Auto-calculated from size/color quantities.</div>
+                    )}
+                  </div>
+                  <div className="input-group">
+                    <label>Selling Price ({editingCurrency})</label>
+                    <input
+                      type="text"
+                      inputMode="decimal"
+                      value={editing.sellingPrice}
+                      onChange={e => setEditing(prev => ({ ...prev, sellingPrice: e.target.value }))}
+                      style={{ fontWeight: 700 }}
+                    />
+                    {editingCurrency === 'GBP' && (
+                      <div style={{ fontSize: 10, color: 'var(--success)', marginTop: 4, fontWeight: 600 }}>
+                        ≈ Rs {editingPriceInPKR.toLocaleString()} (Rate: 360)
+                      </div>
+                    )}
+                  </div>
+                </div>
+
+                <div className="input-group">
+                  <label style={{ color: 'var(--danger)', fontWeight: 700 }}>Shipment Cost (PKR)</label>
+                  <input
+                    type="text"
+                    inputMode="decimal"
+                    placeholder="0"
+                    value={editing.shipmentCost}
+                    onChange={e => setEditing(prev => ({ ...prev, shipmentCost: e.target.value }))}
+                    style={{ border: '1px solid var(--danger)' }}
+                  />
+                </div>
+
+                <div className="input-group">
+                  <label style={{ color: 'var(--danger)', fontWeight: 700 }}>Extra Charges (PKR)</label>
+                  <input
+                    type="text"
+                    inputMode="decimal"
+                    placeholder="0"
+                    value={editing.extraCharges || 0}
+                    onChange={e => setEditing(prev => ({ ...prev, extraCharges: e.target.value }))}
+                    style={{ border: '1px solid var(--danger)' }}
+                  />
+                </div>
+
+                <div className="input-group full-width">
+                  <label>Date of Sale</label>
+                  <input
+                    type="date"
+                    value={editing.date ? editing.date.slice(0, 10) : ''}
+                    max={new Date().toISOString().slice(0, 10)}
+                    onChange={e => setEditing(prev => ({ ...prev, date: e.target.value }))}
+                  />
+                </div>
+
+                <div className="input-group full-width">
+                  <label>Customer Name</label>
+                  <input
+                    placeholder="Client name..."
+                    value={editing.clientName}
+                    onChange={e => setEditing(prev => ({ ...prev, clientName: e.target.value }))}
+                  />
+                </div>
+
+                <div style={{ marginTop: 6, padding: '12px 16px', background: '#f9fafb', borderRadius: 6, border: '1px solid #1890ff30' }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 4 }}>
+                    <span style={{ color: '#8c8c8c', fontSize: '11px', fontWeight: 700, textTransform: 'uppercase' }}>Gross Order Value:</span>
+                    <span style={{ fontSize: '14px', fontWeight: 800 }}>Rs {editingGross.toLocaleString()}</span>
+                  </div>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderTop: '1px solid #eee', paddingTop: 8 }}>
+                    <span style={{ color: '#000', fontSize: '12px', fontWeight: 700, textTransform: 'uppercase' }}>Final Net Payable (Rs):</span>
+                    <span style={{ fontSize: '18px', fontWeight: 900, color: 'var(--success)' }}>Rs {editingNetPayable.toLocaleString()}</span>
+                  </div>
+                </div>
+              </div>
+              <div style={{ display: 'flex', flexWrap: 'wrap', gap: 10, marginTop: 24 }}>
               {canDelete && (
                 <button className="btn" style={{ flex: '0 0 auto', background: 'var(--danger)', borderColor: 'var(--danger)', color: '#fff', fontWeight: 700, padding: '0 20px', height: 44 }}
                   onClick={async () => { if (await confirmDialog('Delete this sale? This cannot be undone.')) { onDelete(editing.id); setEditing(null); } }}
@@ -854,8 +1034,22 @@ function OrdersSection({ orders, overallOrders = [], isAdmin, canDelete, onCommi
               )}
               <button className="btn btn-glass" style={{ flex: 1, height: 44 }} onClick={() => setEditing(null)}>Cancel</button>
               <button className="btn btn-primary" style={{ flex: 1, height: 44, fontWeight: 700 }}
-                onClick={() => { onEdit({ ...editing, quantity: Number(editing.quantity), sellingPrice: Number(editing.sellingPrice), shipmentCost: Number(editing.shipmentCost) }); setEditing(null); }}
+                onClick={() => {
+                  onEdit({
+                    ...editing,
+                    quantity: Number(editingHasSizeTracking || editingHasColorTracking ? editingQuantity : editing.quantity),
+                    sellingPrice: Number(editing.sellingPrice),
+                    shipmentCost: Number(editing.shipmentCost),
+                    extraCharges: Number(editing.extraCharges || 0),
+                    sizeQuantities: editingHasSizeTracking ? editingSizeQuantities : null,
+                    colorQuantities: editingHasColorTracking ? editingColorQuantities : null,
+                    productName: editing.productName,
+                    productId: editing.productId,
+                  });
+                  setEditing(null);
+                }}
               >Save Changes</button>
+            </div>
             </div>
           </div>
         </div>
@@ -920,12 +1114,30 @@ function OrdersSection({ orders, overallOrders = [], isAdmin, canDelete, onCommi
                   </>
                 )}
                 <td>
+                  <button
+                    className="btn btn-sm"
+                    style={{ padding: '4px 10px', fontSize: '10px', background: 'var(--pri-600)', color: '#fff', border: 'none', marginRight: 6, fontWeight: 700 }}
+                    onClick={(e) => { e.stopPropagation(); openEdit(o); }}
+                    title="Edit sale"
+                  >
+                    Edit
+                  </button>
+                  {o.orderReturned && (
+                    <button
+                      className="btn btn-sm"
+                      style={{ padding: '4px 8px', fontSize: '10px', background: '#6b7280', color: '#fff', border: 'none', whiteSpace: 'nowrap' }}
+                      onClick={async (e) => { e.stopPropagation(); if (await confirmDialog('Undo this return? The sale will be restored and stock will be deducted again.')) { onUndoReturn(o.id); } }}
+                      title="Undo return"
+                    >
+                      ↻ Undo
+                    </button>
+                  )}
                   {!o.orderReturned && (
                     <button 
                       className="btn btn-sm" 
                       style={{ padding: '4px 8px', fontSize: '10px', background: '#f59e0b', color: '#fff', border: 'none' }}
-                      onClick={(e) => { e.stopPropagation(); onReturn(o.id); }}
-                      title="Mark as Returned"
+                      onClick={(e) => { e.stopPropagation(); setReturningOrder(o); }}
+                      title="Return this sale"
                     >
                       ↩
                     </button>
@@ -947,6 +1159,22 @@ function OrdersSection({ orders, overallOrders = [], isAdmin, canDelete, onCommi
           All partners totals: Items: {overallQty} — Gross: {Rs(overallGross)} — Profit: {Rs(overallProfit)}
         </div>
       </div>
+
+      {returningOrder && (
+        <SaleReturnModal
+          order={{
+            id: returningOrder.id,
+            productName: returningOrder.productName || returningOrder.product || '',
+            storeName: returningOrder.storeName || '',
+            quantity: returningOrder.quantity || 1,
+            sizeQuantities: returningOrder.sizeQuantities ?? null,
+            colorQuantities: returningOrder.colorQuantities ?? null,
+            storeInventoryId: returningOrder.storeInventoryId ?? null,
+          }}
+          onConfirm={async (payload) => { await onReturn(payload); setReturningOrder(null); }}
+          onClose={() => setReturningOrder(null)}
+        />
+      )}
     </div>
   );
 }
@@ -1377,8 +1605,13 @@ const [loading, setLoading] = useState<boolean>(true);
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
+          productId:   order.productId,
           productName:  order.productName,
+          brandName:    order.brandName,
+          productType:  order.productType,
           quantity:     order.quantity,
+          sizeQuantities: order.sizeQuantities || null,
+          colorQuantities: order.colorQuantities || null,
           extraQty:     order.extraQty || 0,
           sellingPrice: order.sellingPrice,
           shipmentCost: order.shipmentCost || 0,
@@ -1387,6 +1620,8 @@ const [loading, setLoading] = useState<boolean>(true);
           orderType:    order.type || 'Sale',
           occurredAt:   order.occurredAt || new Date().toISOString(),
           storeName:    order.storeName,
+          size:         order.size || null,
+          color:        order.color || null,
         }),
       });
       const result = await res.json();
@@ -1487,18 +1722,35 @@ const [loading, setLoading] = useState<boolean>(true);
     }
   };
 
-  const handleReturnOrder = async (id: string) => {
+  const handleReturnOrder = async (payload: { id: string; returnQuantity: number; returnReason: string; returnSizeQuantities?: Record<string,number>|null; returnColorQuantities?: Record<string,number>|null }) => {
     try {
       const res = await fetch('/api/orders', {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ id, isReturn: true }),
+        body: JSON.stringify({ isReturn: true, ...payload }),
       });
       const result = await res.json();
       if (!res.ok) toast.error(result.error || 'Failed to process return');
       else toast.success('✅ Order marked as returned and stock updated');
     } catch (e: any) {
       toast.error(e?.message || 'Failed to process return');
+    } finally {
+      refresh();
+    }
+  };
+
+  const handleUndoReturn = async (id: string) => {
+    try {
+      const res = await fetch('/api/orders', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ isUndoReturn: true, id }),
+      });
+      const result = await res.json();
+      if (!res.ok) toast.error(result.error || 'Failed to undo return');
+      else toast.success('↩ Return undone — sale restored');
+    } catch (e: any) {
+      toast.error(e?.message || 'Failed to undo return');
     } finally {
       refresh();
     }
@@ -1676,6 +1928,7 @@ const [loading, setLoading] = useState<boolean>(true);
             <OrdersSection
               orders={partnerOrders.slice(-20).reverse()}
               overallOrders={partnerAll}
+              inventory={data.inventory}
               isAdmin={isAdmin}
               onCommissionEdit={async (id, v) => {
                 try {
@@ -1704,8 +1957,11 @@ const [loading, setLoading] = useState<boolean>(true);
                       quantity: order.quantity,
                       sellingPrice: order.sellingPrice,
                       shipmentCost: order.shipmentCost,
+                      extraCharges: order.extraCharges || 0,
                       clientName: order.clientName,
                       occurredAt: order.date,
+                      sizeQuantities: order.sizeQuantities || null,
+                      colorQuantities: order.colorQuantities || null,
                     }),
                   });
                   const result = await res.json();
@@ -1726,6 +1982,7 @@ const [loading, setLoading] = useState<boolean>(true);
                 } catch (e: any) { toast.error(e?.message || 'Failed to delete sale'); }
               }}
               onReturn={handleReturnOrder}
+              onUndoReturn={handleUndoReturn}
               confirmDialog={confirmDialog}
             />
           </SectionCard>
@@ -1825,18 +2082,28 @@ const [loading, setLoading] = useState<boolean>(true);
                     .filter(([sName]) => (user.managedStores || []).includes(sName))
                     .flatMap(([, items]) =>
                       Object.values(items).map(si => ({
+                        productId: si.productId,
                         productName: si.productName,
+                        sizes: si.sizes,
+                        colors: si.colors,
                         quantityAvailable: si.quantityRemaining,
                         sellingPrice: si.storeSellingPrice,
                         ownerSupplyPrice: si.ownerSupplyPrice,
+                        sizeQuantitiesRemaining: si.sizeQuantitiesRemaining,
+                        colorQuantitiesRemaining: si.colorQuantitiesRemaining,
                       }))
                     )
                 : user.role === 'store'
                   ? Object.values(data.storeInventory[user.storeName] || {}).map(si => ({
+                      productId: si.productId,
                       productName: si.productName,
+                      sizes: si.sizes,
+                      colors: si.colors,
                       quantityAvailable: si.quantityRemaining,
                       sellingPrice: si.storeSellingPrice,
                       ownerSupplyPrice: si.ownerSupplyPrice,
+                      sizeQuantitiesRemaining: si.sizeQuantitiesRemaining,
+                      colorQuantitiesRemaining: si.colorQuantitiesRemaining,
                     }))
                   : data.inventory
             }

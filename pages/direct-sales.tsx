@@ -199,8 +199,11 @@ export default function DirectSalesPage({ user, onLogin }: PageProps) {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
+          productId:   order.productId,
           productName:  order.productName,
           quantity:     order.quantity,
+          sizeQuantities: order.sizeQuantities || null,
+          colorQuantities: order.colorQuantities || null,
           extraQty:     order.extraQty || 0,
           sellingPrice: order.sellingPrice,
           shipmentCost: order.shipmentCost || 0,

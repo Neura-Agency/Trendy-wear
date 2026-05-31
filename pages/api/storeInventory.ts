@@ -9,7 +9,9 @@ function num(v: any): number {
 
 export default async function handler(req: NextApiRequest, res: NextApiResponse) {
   try {
-    const session = req.method === 'GET' ? await requireSession(req, res) : await requireAdmin(req, res)
+    // returnToWarehouse is allowed for store managers (any logged-in user) — not just admins
+    const isReturnAction = req.method === 'PATCH' && req.body?.action === 'returnToWarehouse'
+    const session = (req.method === 'GET' || isReturnAction) ? await requireSession(req, res) : await requireAdmin(req, res)
     if (!session) return
 
     if (req.method === 'GET') {
@@ -31,11 +33,14 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
           created_at,
           updated_at,
           stores:store_id ( name ),
-          products:product_id ( product_name ),
+          products:product_id ( product_name, sizes, colors ),
           size_quantities_assigned,
           size_quantities_remaining,
           color_quantities_assigned,
-          color_quantities_remaining
+          color_quantities_remaining,
+          pending_return_qty,
+          pending_return_size_quantities,
+          pending_return_color_quantities
         `)
         .order('created_at', { ascending: false })
 
@@ -79,6 +84,8 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
           id: row.id,
           productName,
           productId: row.product_id,
+          sizes: Array.isArray(row.products?.sizes) ? row.products.sizes : [],
+          colors: Array.isArray(row.products?.colors) ? row.products.colors : [],
           inventoryId: row.inventory_id,
           ownerSupplyPrice: num(row.owner_supply_price),
           commissionPercent: num(row.commission_percent),
@@ -90,6 +97,9 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
           colorQuantitiesAssigned: row.color_quantities_assigned ?? null,
           colorQuantitiesRemaining: row.color_quantities_remaining ?? null,
           extraQty: num(row['extra_Qty'] ?? 0),
+          pendingReturnQty: num(row.pending_return_qty ?? 0),
+          pendingReturnSizeQuantities: row.pending_return_size_quantities ?? null,
+          pendingReturnColorQuantities: row.pending_return_color_quantities ?? null,
           created_at: row.created_at,
           updated_at: row.updated_at
         }
@@ -265,6 +275,102 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     }
 
     if (req.method === 'PATCH') {
+      // ── Scenario B: Return pending stock back to warehouse ──────────────────
+      if (req.body?.action === 'returnToWarehouse') {
+        const { id, returnQty, returnSizeQuantities, returnColorQuantities } = req.body || {}
+        if (!id) return res.status(400).json({ error: 'id is required' })
+        const retQty = num(returnQty)
+        if (retQty < 1) return res.status(400).json({ error: 'returnQty must be at least 1' })
+
+        // Fetch the allotment row
+        const { data: siRow, error: siFetchErr } = await supabaseAdmin
+          .from(TABLES.STORE_INVENTORY)
+          .select('id, inventory_id, quantity_remaining, size_quantities_remaining, color_quantities_remaining, pending_return_qty, pending_return_size_quantities, pending_return_color_quantities')
+          .eq('id', id)
+          .single()
+
+        if (siFetchErr || !siRow) return res.status(404).json({ error: 'Allotment not found' })
+
+        const pendingQty = num(siRow.pending_return_qty) || 0
+        if (retQty > pendingQty) {
+          return res.status(400).json({ error: `Can only return up to ${pendingQty} pending piece(s) to warehouse` })
+        }
+
+        // Rebuild pending & remaining size/color
+        const newPendingSize = { ...(siRow.pending_return_size_quantities || {}) } as Record<string, number>
+        const newSizeRem = { ...(siRow.size_quantities_remaining || {}) } as Record<string, number>
+        if (returnSizeQuantities) {
+          Object.entries(returnSizeQuantities as Record<string, number>).forEach(([size, qty]) => {
+            newPendingSize[size] = Math.max(0, (newPendingSize[size] || 0) - num(qty))
+            newSizeRem[size] = Math.max(0, (newSizeRem[size] || 0) - num(qty))
+          })
+        }
+
+        const newPendingColor = { ...(siRow.pending_return_color_quantities || {}) } as Record<string, number>
+        const newColorRem = { ...(siRow.color_quantities_remaining || {}) } as Record<string, number>
+        if (returnColorQuantities) {
+          Object.entries(returnColorQuantities as Record<string, number>).forEach(([color, qty]) => {
+            newPendingColor[color] = Math.max(0, (newPendingColor[color] || 0) - num(qty))
+            newColorRem[color] = Math.max(0, (newColorRem[color] || 0) - num(qty))
+          })
+        }
+
+        // Update store_inventory: deduct from quantity_remaining and pending
+        const { error: siUpdErr } = await supabaseAdmin
+          .from(TABLES.STORE_INVENTORY)
+          .update({
+            quantity_remaining: Math.max(0, num(siRow.quantity_remaining) - retQty),
+            size_quantities_remaining: Object.keys(newSizeRem).length ? newSizeRem : null,
+            color_quantities_remaining: Object.keys(newColorRem).length ? newColorRem : null,
+            pending_return_qty: Math.max(0, pendingQty - retQty),
+            pending_return_size_quantities: Object.values(newPendingSize).some(v => v > 0) ? newPendingSize : null,
+            pending_return_color_quantities: Object.values(newPendingColor).some(v => v > 0) ? newPendingColor : null,
+          })
+          .eq('id', id)
+
+        if (siUpdErr) {
+          console.error('returnToWarehouse store_inventory update error:', siUpdErr)
+          return res.status(500).json({ error: 'Failed to update store inventory' })
+        }
+
+        // Restore warehouse inventory
+        if (siRow.inventory_id) {
+          const { data: invRow, error: invFetchErr } = await supabaseAdmin
+            .from(TABLES.INVENTORY)
+            .select('id, quantity_available, size_quantities, color_quantities')
+            .eq('id', siRow.inventory_id)
+            .single()
+
+          if (!invFetchErr && invRow) {
+            const newInvSizes = { ...(invRow.size_quantities || {}) } as Record<string, number>
+            if (returnSizeQuantities) {
+              Object.entries(returnSizeQuantities as Record<string, number>).forEach(([size, qty]) => {
+                newInvSizes[size] = (newInvSizes[size] || 0) + num(qty)
+              })
+            }
+            const newInvColors = { ...(invRow.color_quantities || {}) } as Record<string, number>
+            if (returnColorQuantities) {
+              Object.entries(returnColorQuantities as Record<string, number>).forEach(([color, qty]) => {
+                newInvColors[color] = (newInvColors[color] || 0) + num(qty)
+              })
+            }
+
+            const { error: invUpdErr } = await supabaseAdmin
+              .from(TABLES.INVENTORY)
+              .update({
+                quantity_available: num(invRow.quantity_available) + retQty,
+                size_quantities: Object.keys(newInvSizes).length ? newInvSizes : invRow.size_quantities,
+                color_quantities: Object.keys(newInvColors).length ? newInvColors : invRow.color_quantities,
+              })
+              .eq('id', siRow.inventory_id)
+
+            if (invUpdErr) console.error('returnToWarehouse inventory update error:', invUpdErr)
+          }
+        }
+
+        return res.json({ success: true, returned: retQty })
+      }
+
       // Update existing store_inventory row (admin only)
       const { id, fields } = req.body || {}
 

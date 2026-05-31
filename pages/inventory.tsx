@@ -12,7 +12,7 @@ import {
     Product,
   User 
 } from "../types";
-import { AddInventoryModal, AllotToStoreModal, EditInventoryModal, EditStoreInventoryModal } from "../components/Modals";
+import { AddInventoryModal, AllotToStoreModal, EditInventoryModal, EditStoreInventoryModal, ReturnToWarehouseModal } from "../components/Modals";
 
 // ── SVG Icon Components (mono-color, inherits currentColor) ──
 const IC = {
@@ -54,6 +54,7 @@ export default function InventoryPage({ user, onLogin }: PageProps) {
     const [deletingInventoryItem, setDeletingInventoryItem] = useState<InventoryItem | null>(null);
     const [deletingAllotmentRow, setDeletingAllotmentRow] = useState<any | null>(null);
     const [deletingAllotment, setDeletingAllotment] = useState(false);
+    const [returnToWarehouseRow, setReturnToWarehouseRow] = useState<any | null>(null);
     const [showAlerts, setShowAlerts] = useState(false);
     // Persisted across modal open/close — tracks product types hidden/replaced by the user
     const [hiddenProductTypes, setHiddenProductTypes] = useState<string[]>([]);
@@ -212,6 +213,19 @@ export default function InventoryPage({ user, onLogin }: PageProps) {
         } finally {
             setDeletingAllotment(false)
         }
+    }
+
+    const handleReturnToWarehouse = async (payload: { id: string; returnQty: number; returnSizeQuantities?: any; returnColorQuantities?: any }) => {
+        const response = await fetch('/api/storeInventory', {
+            method: 'PATCH',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ action: 'returnToWarehouse', ...payload }),
+        })
+        const result = await response.json()
+        if (!response.ok) throw new Error(result.error || 'Failed to return to warehouse')
+        toast.success(`✅ ${payload.returnQty} piece${payload.returnQty !== 1 ? 's' : ''} returned to warehouse`)
+        setReturnToWarehouseRow(null)
+        refresh()
     }
 
     // Flatten store inventory for the table
@@ -553,7 +567,7 @@ export default function InventoryPage({ user, onLogin }: PageProps) {
                                     {isAdmin && <th>Shop Cut %</th>}
                                     <th style={{ textAlign: 'right' }}>Items Sold</th>
                                     <th>Alloted By</th>
-                                    {isAdmin && <th style={{ textAlign: 'center' }}>Actions</th>}
+                                    <th style={{ textAlign: 'center' }}>Actions</th>
                                 </tr>
                             </thead>
                             <tbody>
@@ -580,56 +594,75 @@ export default function InventoryPage({ user, onLogin }: PageProps) {
                                             <td>
                                                 <Badge type="purple">{item.owner || '—'}</Badge>
                                             </td>
-                                            {isAdmin && (
-                                                <td style={{ textAlign: 'center' }}>
-                                                    <div style={{ display: 'flex', gap: 8, justifyContent: 'center', alignItems: 'center' }}>
+                                            <td style={{ textAlign: 'center' }}>
+                                                    <div style={{ display: 'flex', gap: 8, justifyContent: 'center', alignItems: 'center', flexWrap: 'wrap' }}>
+                                                        {isAdmin && (
+                                                            <button
+                                                                type="button"
+                                                                className="btn btn-sm"
+                                                                onClick={() => {
+                                                                const warehouseItem = data.inventory.find((i: any) => i.id === item.inventoryId);
+                                                                setEditingRow({
+                                                                    ...item,
+                                                                    sizeQuantities: warehouseItem?.sizeQuantities || {},
+                                                                    colorQuantities: warehouseItem?.colorQuantities || {},
+                                                                    totalQty: warehouseItem?.quantityAvailable || 0,
+                                                                    allotedQty: allotedQtyByProduct[item.inventoryId] || 0,
+                                                                });
+                                                                setShowEditModalUI(true);
+                                                            }}
+                                                                style={{
+                                                                    fontWeight: 800,
+                                                                    color: 'var(--pri-700)',
+                                                                    borderColor: 'rgba(99, 102, 241, 0.22)',
+                                                                    background: 'rgba(99, 102, 241, 0.07)',
+                                                                    boxShadow: '0 8px 18px rgba(99, 102, 241, 0.08)',
+                                                                }}
+                                                            >
+                                                                Edit
+                                                            </button>
+                                                        )}
+                                                        {/* Return to Main Store — always visible to shop managers */}
                                                         <button
                                                             type="button"
                                                             className="btn btn-sm"
-                                                            onClick={() => {
-                                                            const warehouseItem = data.inventory.find((i: any) => i.id === item.inventoryId);
-                                                            setEditingRow({
-                                                                ...item,
-                                                                sizeQuantities: warehouseItem?.sizeQuantities || {},
-                                                                colorQuantities: warehouseItem?.colorQuantities || {},
-                                                                totalQty: warehouseItem?.quantityAvailable || 0,
-                                                                allotedQty: allotedQtyByProduct[item.inventoryId] || 0,
-                                                            });
-                                                            setShowEditModalUI(true);
-                                                        }}
+                                                            onClick={() => setReturnToWarehouseRow(item)}
+                                                            title={`Return stock to main store (${item.quantityRemaining} in stock${(item as any).pendingReturnQty > 0 ? `, ${(item as any).pendingReturnQty} pending` : ''})`}
                                                             style={{
+                                                                fontSize: 11,
                                                                 fontWeight: 800,
-                                                                color: 'var(--pri-700)',
-                                                                borderColor: 'rgba(99, 102, 241, 0.22)',
-                                                                background: 'rgba(99, 102, 241, 0.07)',
-                                                                boxShadow: '0 8px 18px rgba(99, 102, 241, 0.08)',
+                                                                color: '#1e40af',
+                                                                borderColor: 'rgba(59,130,246,0.3)',
+                                                                background: 'rgba(59,130,246,0.08)',
+                                                                whiteSpace: 'nowrap',
                                                             }}
                                                         >
-                                                            Edit
+                                                            &#x21A9; Return to main{(item as any).pendingReturnQty > 0 ? ` (${(item as any).pendingReturnQty} pending)` : ''}
                                                         </button>
-                                                        <button
-                                                            type="button"
-                                                            className="btn btn-sm btn-glass"
-                                                            onClick={() => setDeletingAllotmentRow(item)}
-                                                            title="Remove allotment and return unsold stock to warehouse"
-                                                            aria-label={`Delete allotment for ${item.productName}`}
-                                                            style={{
-                                                                color: 'var(--danger)',
-                                                                borderColor: 'rgba(239, 68, 68, 0.25)',
-                                                                background: 'rgba(239, 68, 68, 0.08)',
-                                                                display: 'inline-flex',
-                                                                alignItems: 'center',
-                                                                justifyContent: 'center',
-                                                                width: 40,
-                                                                height: 40,
-                                                                padding: 0,
-                                                            }}
-                                                        >
-                                                            {IC.trash}
-                                                        </button>
+                                                        {isAdmin && (
+                                                            <button
+                                                                type="button"
+                                                                className="btn btn-sm btn-glass"
+                                                                onClick={() => setDeletingAllotmentRow(item)}
+                                                                title="Remove allotment and return unsold stock to warehouse"
+                                                                aria-label={`Delete allotment for ${item.productName}`}
+                                                                style={{
+                                                                    color: 'var(--danger)',
+                                                                    borderColor: 'rgba(239, 68, 68, 0.25)',
+                                                                    background: 'rgba(239, 68, 68, 0.08)',
+                                                                    display: 'inline-flex',
+                                                                    alignItems: 'center',
+                                                                    justifyContent: 'center',
+                                                                    width: 40,
+                                                                    height: 40,
+                                                                    padding: 0,
+                                                                }}
+                                                            >
+                                                                {IC.trash}
+                                                            </button>
+                                                        )}
                                                     </div>
                                                 </td>
-                                            )}
                                         </tr>
                                     ))
                                 )}
@@ -926,6 +959,25 @@ export default function InventoryPage({ user, onLogin }: PageProps) {
                     </div>
                 )}
             </div>
+
+            {/* ── Return to Warehouse Modal (Scenario B) ── */}
+            {returnToWarehouseRow && (
+                <ReturnToWarehouseModal
+                    allotment={{
+                        id: returnToWarehouseRow.id,
+                        productName: returnToWarehouseRow.productName,
+                        storeName: returnToWarehouseRow.storeName,
+                        quantityRemaining: Number(returnToWarehouseRow.quantityRemaining) || 0,
+                        pendingReturnQty: Number(returnToWarehouseRow.pendingReturnQty) || 0,
+                        pendingReturnSizeQuantities: returnToWarehouseRow.pendingReturnSizeQuantities ?? null,
+                        pendingReturnColorQuantities: returnToWarehouseRow.pendingReturnColorQuantities ?? null,
+                        sizeQuantitiesRemaining: returnToWarehouseRow.sizeQuantitiesRemaining ?? null,
+                        colorQuantitiesRemaining: returnToWarehouseRow.colorQuantitiesRemaining ?? null,
+                    }}
+                    onConfirm={handleReturnToWarehouse}
+                    onClose={() => setReturnToWarehouseRow(null)}
+                />
+            )}
 
             {/* ── Alerts Popup ── */}
             {showAlerts && (

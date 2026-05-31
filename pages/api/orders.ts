@@ -45,8 +45,13 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
           commission_amount,
           admin_take,
           profit,
+          size_quantities,
+          color_quantities,
           payment_status,
           order_returned,
+          return_quantity,
+          return_reason,
+          returned_at,
           created_at,
           stores:store_id ( name ),
           store_inventory:store_inventory_id (
@@ -82,7 +87,10 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
           orderCode: row.order_code,
           productName: row.product_name,
           quantity: num(row.quantity),
-          size: null,
+          size: row.size ?? null,
+          color: row.color ?? null,
+          sizeQuantities: row.size_quantities ?? null,
+          colorQuantities: row.color_quantities ?? null,
           sellingPrice: num(row.selling_price),
           shipmentCost: num(row.shipment_cost),
           storeName: row.stores?.name ?? '',
@@ -97,6 +105,10 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
           profit: num(row.profit),
           paymentStatus: row.payment_status ?? null,
           orderReturned: row.order_returned ?? false,
+          returnQuantity: row.return_quantity ?? null,
+          returnReason: row.return_reason ?? null,
+          returnedAt: row.returned_at ?? null,
+          storeInventoryId: row.store_inventory_id ?? null,
         }
       })
 
@@ -108,9 +120,14 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     // ────────────────────────────────────────────────────────────────────────
     if (req.method === 'POST') {
       const {
+        productId,
         productName,
+        brandName,
+        productType,
         quantity,
         size,
+        sizeQuantities,
+        colorQuantities,
         extraQty,       // bonus/free units dispatched (stock deducted but not billed)
         sellingPrice,
         shipmentCost,
@@ -156,13 +173,42 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       if (!storeId) return res.status(400).json({ error: 'Could not resolve store' })
 
       // ── Resolve product_id ───────────────────────────────────────────────
-      const { data: product, error: productErr } = await supabaseAdmin
-        .from(TABLES.PRODUCTS)
-        .select('id')
-        .eq('product_name', productName)
-        .maybeSingle()
-      if (productErr) throw productErr
-      const productId: string | null = product?.id ?? null
+      let resolvedProductId: string | null = null
+      const normalizedProductId = String(productId || '').trim()
+      const normalizedBrandName = String(brandName || '').trim()
+      const normalizedProductType = String(productType || '').trim()
+
+      if (normalizedProductId) {
+        const { data: product, error: productErr } = await supabaseAdmin
+          .from(TABLES.PRODUCTS)
+          .select('id')
+          .eq('id', normalizedProductId)
+          .maybeSingle()
+        if (productErr) throw productErr
+        resolvedProductId = product?.id ?? null
+      } else {
+        let productQuery = supabaseAdmin
+          .from(TABLES.PRODUCTS)
+          .select('id')
+          .eq('product_name', productName)
+
+        if (normalizedBrandName) {
+          productQuery = productQuery.eq('brand_name', normalizedBrandName)
+        }
+
+        if (normalizedProductType) {
+          productQuery = productQuery.eq('product_type', normalizedProductType)
+        }
+
+        const { data: products, error: productErr } = await productQuery.limit(2)
+        if (productErr) throw productErr
+
+        if ((products || []).length === 1) {
+          resolvedProductId = products[0].id
+        } else if ((products || []).length > 1) {
+          return res.status(400).json({ error: 'Product match is ambiguous. Please select the exact product.' })
+        }
+      }
 
       // ── Find store_inventory rows (FIFO: oldest first) ───────────────────
       // Special case: "Direct" store sells straight from warehouse inventory
@@ -173,8 +219,8 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
           .select('id, cost_price, quantity_available')
           .order('created_at', { ascending: true })
 
-        if (productId) {
-          invQuery = invQuery.eq('product_id', productId)
+        if (resolvedProductId) {
+          invQuery = invQuery.eq('product_id', resolvedProductId)
         } else {
           invQuery = invQuery.eq('product_name', productName)
         }
@@ -204,8 +250,11 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
           .insert({
             order_code: generateOrderCode(),
             store_id: storeId,
-            product_id: productId,
+            product_id: resolvedProductId,
             product_name: productName,
+            color: req.body?.color || null,
+            size_quantities: sizeQuantities || null,
+            color_quantities: colorQuantities || null,
             store_inventory_id: null,
             quantity: qty,
             selling_price: price,
@@ -219,12 +268,17 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
             commission_amount: commissionAmount,
             admin_take: adminTake,
             profit: profit,
+            size: size || null,
           })
           .select('id, order_code')
-          .single()
 
         if (orderErr) {
           console.error('orders INSERT error (direct):', orderErr)
+          return res.status(500).json({ error: 'Failed to save order' })
+        }
+
+        const directOrder = Array.isArray(order) ? order[0] : order
+        if (!directOrder) {
           return res.status(500).json({ error: 'Failed to save order' })
         }
 
@@ -244,8 +298,8 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 
         return res.status(201).json({
           success: true,
-          orderId: order.id,
-          orderCode: order.order_code,
+          orderId: directOrder.id,
+          orderCode: directOrder.order_code,
         })
       }
 
@@ -255,8 +309,8 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
         .eq('store_id', storeId)
         .order('created_at', { ascending: true })
 
-      if (productId) {
-        storeInvQuery = storeInvQuery.eq('product_id', productId)
+      if (resolvedProductId) {
+        storeInvQuery = storeInvQuery.eq('product_id', resolvedProductId)
       }
 
       const { data: invRows, error: invErr } = await storeInvQuery
@@ -288,8 +342,11 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
         .insert({
           order_code: generateOrderCode(),
           store_id: storeId,
-          product_id: productId,
+          product_id: resolvedProductId,
           product_name: productName,
+          color: req.body?.color || null,
+          size_quantities: sizeQuantities || null,
+          color_quantities: colorQuantities || null,
           store_inventory_id: primaryStoreInvId,
           quantity: qty,
           selling_price: price,
@@ -303,12 +360,17 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
           commission_amount: commissionAmount,
           admin_take: adminTake,
           profit: profit,
+          size: size || null,
         })
         .select('id, order_code')
-        .single()
 
       if (orderErr) {
         console.error('orders INSERT error:', orderErr)
+        return res.status(500).json({ error: 'Failed to save order' })
+      }
+
+      const savedOrder = Array.isArray(order) ? order[0] : order
+      if (!savedOrder) {
         return res.status(500).json({ error: 'Failed to save order' })
       }
 
@@ -329,8 +391,8 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 
       return res.status(201).json({
         success: true,
-        orderId: order.id,
-        orderCode: order.order_code,
+        orderId: savedOrder.id,
+        orderCode: savedOrder.order_code,
       })
     }
 
@@ -357,52 +419,203 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
         return res.json({ success: true, updated: ids.length })
       }
 
-      // ── Mark order as returned ───────────────────────────────────────────
+      // ── Mark order as returned (Scenario A — Sale Return) ──────────────────
       if (req.body?.isReturn === true) {
-        const { id } = req.body;
+        const {
+          id,
+          returnQuantity,
+          returnReason,
+          returnSizeQuantities,
+          returnColorQuantities,
+        } = req.body;
         if (!id) return res.status(400).json({ error: 'id is required' });
 
         // Fetch order details
         const { data: order, error: fetchErr } = await supabaseAdmin
           .from(TABLES.ORDERS)
-          .select('id, quantity, store_inventory_id, order_returned, stores:store_id(name)')
+          .select('id, quantity, size_quantities, color_quantities, store_inventory_id, order_returned, commission_percent, selling_price, shipment_cost, cost_price')
           .eq('id', id)
           .single();
 
         if (fetchErr || !order) return res.status(404).json({ error: 'Order not found' });
-
         if (order.order_returned) return res.status(400).json({ error: 'Order already marked as returned' });
 
-        // 1. Mark as returned
+        const originalQty = num(order.quantity);
+        const retQty = returnQuantity != null ? Math.min(num(returnQuantity), originalQty) : originalQty;
+        if (retQty < 1) return res.status(400).json({ error: 'returnQuantity must be at least 1' });
+
+        // 1. Mark as returned and zero financials
         const { error: updErr } = await supabaseAdmin
           .from(TABLES.ORDERS)
-          .update({ 
+          .update({
             order_returned: true,
             profit: 0,
             admin_take: 0,
-            commission_amount: 0
+            commission_amount: 0,
+            return_quantity: retQty,
+            return_reason: returnReason || null,
+            return_size_quantities: returnSizeQuantities || null,
+            return_color_quantities: returnColorQuantities || null,
+            returned_at: new Date().toISOString(),
           })
           .eq('id', id);
-        
+
         if (updErr) {
           console.error('Return update error:', updErr);
           return res.status(500).json({ error: 'Failed to mark order as returned' });
         }
 
-        // 2. Add back to inventory if store_inventory_id exists
+        // 2. Restore store_inventory quantities
         if (order.store_inventory_id) {
           const { data: inv, error: invFetchErr } = await supabaseAdmin
             .from(TABLES.STORE_INVENTORY)
-            .select('quantity_remaining')
+            .select('quantity_remaining, size_quantities_remaining, color_quantities_remaining, pending_return_qty, pending_return_size_quantities, pending_return_color_quantities')
             .eq('id', order.store_inventory_id)
             .single();
-          
+
           if (!invFetchErr && inv) {
+            // Rebuild size/color remaining
+            const newSizeRem = { ...(inv.size_quantities_remaining || {}) } as Record<string, number>;
+            if (returnSizeQuantities) {
+              Object.entries(returnSizeQuantities as Record<string, number>).forEach(([size, qty]) => {
+                newSizeRem[size] = (newSizeRem[size] || 0) + num(qty);
+              });
+            }
+            const newColorRem = { ...(inv.color_quantities_remaining || {}) } as Record<string, number>;
+            if (returnColorQuantities) {
+              Object.entries(returnColorQuantities as Record<string, number>).forEach(([color, qty]) => {
+                newColorRem[color] = (newColorRem[color] || 0) + num(qty);
+              });
+            }
+
+            // Pending return tracking (for Scenario B)
+            const newPendingSize = { ...(inv.pending_return_size_quantities || {}) } as Record<string, number>;
+            if (returnSizeQuantities) {
+              Object.entries(returnSizeQuantities as Record<string, number>).forEach(([size, qty]) => {
+                newPendingSize[size] = (newPendingSize[size] || 0) + num(qty);
+              });
+            }
+            const newPendingColor = { ...(inv.pending_return_color_quantities || {}) } as Record<string, number>;
+            if (returnColorQuantities) {
+              Object.entries(returnColorQuantities as Record<string, number>).forEach(([color, qty]) => {
+                newPendingColor[color] = (newPendingColor[color] || 0) + num(qty);
+              });
+            }
+
             const { error: invUpdErr } = await supabaseAdmin
               .from(TABLES.STORE_INVENTORY)
-              .update({ quantity_remaining: num(inv.quantity_remaining) + num(order.quantity) })
+              .update({
+                quantity_remaining: num(inv.quantity_remaining) + retQty,
+                size_quantities_remaining: Object.keys(newSizeRem).length ? newSizeRem : null,
+                color_quantities_remaining: Object.keys(newColorRem).length ? newColorRem : null,
+                pending_return_qty: (num(inv.pending_return_qty) || 0) + retQty,
+                pending_return_size_quantities: Object.keys(newPendingSize).length ? newPendingSize : null,
+                pending_return_color_quantities: Object.keys(newPendingColor).length ? newPendingColor : null,
+              })
               .eq('id', order.store_inventory_id);
             if (invUpdErr) console.error('Inventory return error:', invUpdErr);
+          }
+        }
+
+        return res.json({ success: true });
+      }
+
+      // ── Undo Return ─────────────────────────────────────────────────────────
+      if (req.body?.isUndoReturn === true) {
+        const { id } = req.body;
+        if (!id) return res.status(400).json({ error: 'id is required' });
+
+        const { data: order, error: fetchErr } = await supabaseAdmin
+          .from(TABLES.ORDERS)
+          .select('id, quantity, selling_price, shipment_cost, cost_price, commission_percent, store_inventory_id, order_returned, return_quantity, return_size_quantities, return_color_quantities')
+          .eq('id', id)
+          .single();
+
+        if (fetchErr || !order) return res.status(404).json({ error: 'Order not found' });
+        if (!order.order_returned) return res.status(400).json({ error: 'Order is not marked as returned' });
+
+        // Recalculate original financials
+        const qty = num(order.quantity);
+        const price = num(order.selling_price);
+        const ship = num(order.shipment_cost);
+        const cost = num(order.cost_price);
+        const pct = num(order.commission_percent);
+        const gross = price * qty - ship;
+        const commission = Math.round(gross * pct / 100);
+        const adminTake = gross - commission;
+        const profit = gross - cost * qty;
+
+        // 1. Restore order financials and clear return flags
+        const { error: updErr } = await supabaseAdmin
+          .from(TABLES.ORDERS)
+          .update({
+            order_returned: false,
+            profit,
+            admin_take: adminTake,
+            commission_amount: commission,
+            return_quantity: null,
+            return_reason: null,
+            return_size_quantities: null,
+            return_color_quantities: null,
+            returned_at: null,
+          })
+          .eq('id', id);
+
+        if (updErr) {
+          console.error('Undo return update error:', updErr);
+          return res.status(500).json({ error: 'Failed to undo return' });
+        }
+
+        // 2. Subtract the returned qty back from store_inventory
+        if (order.store_inventory_id) {
+          const { data: inv, error: invFetchErr } = await supabaseAdmin
+            .from(TABLES.STORE_INVENTORY)
+            .select('quantity_remaining, size_quantities_remaining, color_quantities_remaining, pending_return_qty, pending_return_size_quantities, pending_return_color_quantities')
+            .eq('id', order.store_inventory_id)
+            .single();
+
+          if (!invFetchErr && inv) {
+            const retQty = num(order.return_quantity) || qty;
+            const retSizes = order.return_size_quantities as Record<string, number> | null;
+            const retColors = order.return_color_quantities as Record<string, number> | null;
+
+            const newSizeRem = { ...(inv.size_quantities_remaining || {}) } as Record<string, number>;
+            if (retSizes) {
+              Object.entries(retSizes).forEach(([size, q]) => {
+                newSizeRem[size] = Math.max(0, (newSizeRem[size] || 0) - num(q));
+              });
+            }
+            const newColorRem = { ...(inv.color_quantities_remaining || {}) } as Record<string, number>;
+            if (retColors) {
+              Object.entries(retColors).forEach(([color, q]) => {
+                newColorRem[color] = Math.max(0, (newColorRem[color] || 0) - num(q));
+              });
+            }
+            const newPendingSize = { ...(inv.pending_return_size_quantities || {}) } as Record<string, number>;
+            if (retSizes) {
+              Object.entries(retSizes).forEach(([size, q]) => {
+                newPendingSize[size] = Math.max(0, (newPendingSize[size] || 0) - num(q));
+              });
+            }
+            const newPendingColor = { ...(inv.pending_return_color_quantities || {}) } as Record<string, number>;
+            if (retColors) {
+              Object.entries(retColors).forEach(([color, q]) => {
+                newPendingColor[color] = Math.max(0, (newPendingColor[color] || 0) - num(q));
+              });
+            }
+
+            const { error: invUpdErr } = await supabaseAdmin
+              .from(TABLES.STORE_INVENTORY)
+              .update({
+                quantity_remaining: Math.max(0, num(inv.quantity_remaining) - retQty),
+                size_quantities_remaining: Object.keys(newSizeRem).length ? newSizeRem : null,
+                color_quantities_remaining: Object.keys(newColorRem).length ? newColorRem : null,
+                pending_return_qty: Math.max(0, (num(inv.pending_return_qty) || 0) - retQty),
+                pending_return_size_quantities: Object.keys(newPendingSize).length ? newPendingSize : null,
+                pending_return_color_quantities: Object.keys(newPendingColor).length ? newPendingColor : null,
+              })
+              .eq('id', order.store_inventory_id);
+            if (invUpdErr) console.error('Undo return inventory error:', invUpdErr);
           }
         }
 
@@ -457,7 +670,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     // PUT — full order edit (recalculates all financials)
     // ────────────────────────────────────────────────────────────────────────
     if (req.method === 'PUT') {
-      const { id, quantity, sellingPrice, shipmentCost, extraCharges, clientName, occurredAt } = req.body
+      const { id, quantity, sellingPrice, shipmentCost, extraCharges, clientName, occurredAt, size, color, sizeQuantities, colorQuantities } = req.body
       if (!id) return res.status(400).json({ error: 'id is required' })
 
       // Fetch existing to keep cost_price + commission_percent
@@ -487,9 +700,13 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
         .update({
           quantity:           qty,
           selling_price:      price,
-          shipment_cost:      ship,
+          shipment_cost:      totalDeductions,
           client_name:        clientName ?? '',
           occurred_at:        occurredAt,
+          size:               size ?? null,
+          color:              color ?? null,
+          size_quantities:    sizeQuantities ?? null,
+          color_quantities:   colorQuantities ?? null,
           commission_amount:  commissionAmount,
           admin_take:         adminTake,
           profit:             profit,

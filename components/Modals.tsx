@@ -4,7 +4,18 @@ import Badge from './Badge';
 import { SaleModalProps, CreateStoreModalProps, ReportModalProps, AddInventoryModalProps, AllotToStoreModalProps, InventoryItem, Order, Product, Store, Expense } from '../types';
 import { buildDeterministicProductId, findMatchingProduct, formatItemCodeFromUuid, resolveCanonicalBrand } from '../lib/catalog';
 
-type SaleInventoryItem = Pick<InventoryItem, 'productName' | 'quantityAvailable' | 'sellingPrice'> & { ownerSupplyPrice?: number; sizeQuantitiesRemaining?: Record<string, number> };
+type SaleInventoryItem = Pick<InventoryItem, 'productName' | 'quantityAvailable' | 'sellingPrice'> & {
+    productId?: string;
+    brandName?: string;
+    productType?: string;
+    sizes?: string[];
+    colors?: string[];
+    ownerSupplyPrice?: number;
+    sizeQuantities?: Record<string, number>;
+    sizeQuantitiesRemaining?: Record<string, number>;
+    colorQuantities?: Record<string, number>;
+    colorQuantitiesRemaining?: Record<string, number>;
+};
 
 interface SaleModalPropsLocal {
     inventory: SaleInventoryItem[];
@@ -807,7 +818,7 @@ export function AddInventoryModal({ onSave, onClose, stores, products, hiddenPro
                                     {colors.map(c => (
                                         <div key={c} style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
                                             <label style={{ fontSize: 11, fontWeight: 700, color: 'var(--text-muted)' }}>{c}</label>
-                                            <input type="text" inputMode="numeric" value={item.colorQuantities[c] || 0} onChange={e => updateColorQuantity(c, parseInt(e.target.value) || 0)} style={{ padding: '8px 12px', fontSize: 14 }} />
+                                            <input type="text" inputMode="numeric" value={item.colorQuantities[c] || 0} onChange={e => updateColorQuantity(c, parseInt(e.target.value) || 0)} />
                                         </div>
                                     ))}
                                 </div>
@@ -833,7 +844,7 @@ export function AddInventoryModal({ onSave, onClose, stores, products, hiddenPro
                                         {sizes.map(s => (
                                             <div key={s} style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
                                                 <label style={{ fontSize: 11, fontWeight: 700, color: 'var(--text-muted)' }}>{s}</label>
-                                                <input type="text" inputMode="numeric" value={item.sizeQuantities[s] || 0} onChange={e => updateSizeQuantity(s, parseInt(e.target.value) || 0)} style={{ padding: '8px 12px', fontSize: 14 }} />
+                                                <input type="text" inputMode="numeric" value={item.sizeQuantities[s] || 0} onChange={e => updateSizeQuantity(s, parseInt(e.target.value) || 0)} />
                                             </div>
                                         ))}
                                     </div>
@@ -1287,7 +1298,7 @@ export function EditStoreInventoryModal({ item, storeNames, onSave, onClose }: {
                                             <label style={{ fontSize: 11, fontWeight: 700, color: 'var(--text-muted)' }}>
                                                 {size} <span style={{ fontSize: 10 }}>(max: {(item?.sizeQuantities as any)?.[size] ?? (item?.sizeQuantitiesRemaining as any)?.[size] ?? (item?.sizeQuantitiesAssigned as any)?.[size] ?? '∞'})</span>
                                             </label>
-                                            <input type="number" min="0" value={form.sizeQuantitiesAssigned[size] || 0} onChange={e => updateSizeQuantity(size, parseInt(e.target.value) || 0)} style={{ padding: '8px 10px', fontSize: 13 }} />
+                                            <input type="number" min="0" value={form.sizeQuantitiesAssigned[size] || 0} onChange={e => updateSizeQuantity(size, parseInt(e.target.value) || 0)} />
                                         </div>
                                     ))}
                                 </div>
@@ -1310,7 +1321,7 @@ export function EditStoreInventoryModal({ item, storeNames, onSave, onClose }: {
                                             <label style={{ fontSize: 11, fontWeight: 700, color: 'var(--text-muted)', textTransform: 'capitalize' }}>
                                                 {color} <span style={{ fontSize: 10 }}>(max: {(item?.colorQuantities as any)?.[color] ?? (item?.colorQuantitiesRemaining as any)?.[color] ?? '∞'})</span>
                                             </label>
-                                            <input type="number" min="0" value={form.colorQuantitiesAssigned[color] || 0} onChange={e => updateColorQuantity(color, parseInt(e.target.value) || 0)} style={{ padding: '8px 10px', fontSize: 13 }} />
+                                            <input type="number" min="0" value={form.colorQuantitiesAssigned[color] || 0} onChange={e => updateColorQuantity(color, parseInt(e.target.value) || 0)} />
                                         </div>
                                     ))}
                                 </div>
@@ -1724,7 +1735,6 @@ export function EditInventoryModal({ item, minQuantity, onSave, onClose, product
                                                 min="0"
                                                 value={colorQuantities[c] || 0}
                                                 onChange={e => updateColorQuantity(c, parseInt(e.target.value) || 0)}
-                                                style={{ padding: '8px 12px', fontSize: 14 }}
                                             />
                                         </div>
                                     ))}
@@ -1788,7 +1798,6 @@ export function EditInventoryModal({ item, minQuantity, onSave, onClose, product
                                                 min="0"
                                                 value={sizeQuantities[s] || 0}
                                                 onChange={e => updateSizeQuantity(s, parseInt(e.target.value) || 0)}
-                                                style={{ padding: '8px 12px', fontSize: 14 }}
                                             />
                                         </div>
                                     ))}
@@ -1813,10 +1822,14 @@ export function EditInventoryModal({ item, minQuantity, onSave, onClose, product
 export function SaleModal({ inventory, storeName, isAdmin, storeNames, onAdd, onClose }: SaleModalPropsLocal) {
     const { toast } = usePopup();
     const todayIso = new Date().toISOString().slice(0, 10);
+    const buildEmptyQuantities = (keys: string[]) => keys.reduce((acc, key) => {
+        acc[key] = 0;
+        return acc;
+    }, {} as Record<string, number>);
     const [sale, setSale] = useState<any>({
+        productId: '',
         productName: '',
-        quantity: 1,
-        size: '',
+        quantity: 0,
         extraQty: 0,
         sellingPrice: 0,
         shipmentCost: 0,
@@ -1829,47 +1842,111 @@ export function SaleModal({ inventory, storeName, isAdmin, storeNames, onAdd, on
     const [currency, setCurrency] = useState<string>('PKR');
     const gbpRate = 360; // 1 GBP = 360 PKR (Default)
 
-    const selectedItem = inventory.find(i => i.productName === sale.productName);
-    const sizeQuantitiesRemaining = selectedItem?.sizeQuantitiesRemaining;
-    const hasSizeTracking = sizeQuantitiesRemaining && Object.keys(sizeQuantitiesRemaining).length > 0;
-    const availableSizes = hasSizeTracking ? Object.entries(sizeQuantitiesRemaining).filter(([_, qty]) => (qty as number) > 0) : [];
+    const selectedItem = inventory.find(i => (sale.productId && i.productId === sale.productId) || (!sale.productId && i.productName === sale.productName));
+    const sizeQuantitiesRemaining = selectedItem?.sizeQuantitiesRemaining ?? selectedItem?.sizeQuantities;
+    const colorQuantitiesRemaining = selectedItem?.colorQuantitiesRemaining ?? selectedItem?.colorQuantities;
+    const availableSizesFromQuantities = sizeQuantitiesRemaining ? Object.entries(sizeQuantitiesRemaining).filter(([_, qty]) => (qty as number) > 0) : [];
+    const availableColorsFromQuantities = colorQuantitiesRemaining ? Object.entries(colorQuantitiesRemaining).filter(([_, qty]) => (qty as number) > 0) : [];
+    const availableSizes = availableSizesFromQuantities.length > 0
+        ? availableSizesFromQuantities
+        : Array.isArray(selectedItem?.sizes)
+            ? selectedItem.sizes.map(size => [size, selectedItem?.quantityAvailable ?? 0] as [string, number])
+            : [];
+    const availableColors = availableColorsFromQuantities.length > 0
+        ? availableColorsFromQuantities
+        : Array.isArray(selectedItem?.colors)
+            ? selectedItem.colors.map(color => [color, selectedItem?.quantityAvailable ?? 0] as [string, number])
+            : [];
+    const hasSizeTracking = availableSizes.length > 0;
+    const hasColorTracking = availableColors.length > 0;
+
+    const [sizeQuantities, setSizeQuantities] = useState<Record<string, number>>({});
+    const [colorQuantities, setColorQuantities] = useState<Record<string, number>>({});
+
+    const sizeKeys = availableSizes.map(([size]) => size);
+    const colorKeys = availableColors.map(([color]) => color);
+
+    const sizeQuantityTotal = Object.values(sizeQuantities).reduce((sum, qty) => sum + (Number(qty) || 0), 0);
+    const colorQuantityTotal = Object.values(colorQuantities).reduce((sum, qty) => sum + (Number(qty) || 0), 0);
+    const hasAnyVariantBreakdown = hasSizeTracking || hasColorTracking;
+    const totalQuantity = hasAnyVariantBreakdown
+        ? Math.max(sizeQuantityTotal, colorQuantityTotal, Number(sale.quantity) || 0)
+        : Math.max(0, Number(sale.quantity) || 0);
+
+    const updateSizeQuantity = (size: string, qty: number) => {
+        const maxForSize = Number(sizeQuantitiesRemaining?.[size] ?? selectedItem?.quantityAvailable ?? 0);
+        setSizeQuantities(curr => ({ ...curr, [size]: Math.max(0, Math.min(qty, maxForSize)) }));
+    };
+
+    const updateColorQuantity = (color: string, qty: number) => {
+        const maxForColor = Number(colorQuantitiesRemaining?.[color] ?? selectedItem?.quantityAvailable ?? 0);
+        setColorQuantities(curr => ({ ...curr, [color]: Math.max(0, Math.min(qty, maxForColor)) }));
+    };
 
     const handleSubmit = (e: React.FormEvent) => {
         e.preventDefault();
         
-        // Validate size if tracking is enabled
-        if (hasSizeTracking && !sale.size) {
-            toast.error('Please select a size');
+        if (hasSizeTracking && sizeQuantityTotal < 1) {
+            toast.error('Enter quantities for at least one size');
             return;
         }
-        
-        // Validate quantity against size-specific stock
-        if (hasSizeTracking && sale.size) {
-            const availableForSize = (sizeQuantitiesRemaining[sale.size] as number) || 0;
-            const totalDispatch = (sale.quantity || 0) + (sale.extraQty || 0);
-            if (totalDispatch > availableForSize) {
-                toast.error(`Only ${availableForSize} units available for size ${sale.size}`);
-                return;
+
+        if (hasColorTracking && colorQuantityTotal < 1) {
+            toast.error('Enter quantities for at least one color');
+            return;
+        }
+
+        if (hasSizeTracking && hasColorTracking && sizeQuantityTotal > 0 && colorQuantityTotal > 0 && sizeQuantityTotal !== colorQuantityTotal) {
+            toast.error('Size and color totals must match');
+            return;
+        }
+
+        if (hasSizeTracking) {
+            for (const [size, qty] of Object.entries(sizeQuantities)) {
+                const maxForSize = Number(sizeQuantitiesRemaining?.[size] ?? selectedItem?.quantityAvailable ?? 0);
+                if (Number(qty) > maxForSize) {
+                    toast.error(`Only ${maxForSize} units available for size ${size}`);
+                    return;
+                }
             }
+        }
+
+        if (hasColorTracking) {
+            for (const [color, qty] of Object.entries(colorQuantities)) {
+                const maxForColor = Number(colorQuantitiesRemaining?.[color] ?? selectedItem?.quantityAvailable ?? 0);
+                if (Number(qty) > maxForColor) {
+                    toast.error(`Only ${maxForColor} units available for color ${color}`);
+                    return;
+                }
+            }
+        }
+
+        if (totalQuantity <= 0) {
+            toast.error('Enter a valid total quantity');
+            return;
         }
         
         const finalPrice = currency === 'GBP' ? sale.sellingPrice * gbpRate : sale.sellingPrice;
         onAdd({
             ...sale,
             type: 'Sale',
+            quantity: totalQuantity,
             sellingPrice: finalPrice,
             occurredAt: sale.occurredAt || todayIso,
             extraCharges: sale.extraCharges || 0,
             extraQty: sale.extraQty || 0,
+            sizeQuantities: hasSizeTracking ? sizeQuantities : null,
+            colorQuantities: hasColorTracking ? colorQuantities : null,
+            productId: selectedItem?.productId || sale.productId || null,
         });
         onClose();
     };
 
     const currentPriceInPKR = currency === 'GBP' ? sale.sellingPrice * gbpRate : sale.sellingPrice;
-    const totalBill = (currentPriceInPKR * sale.quantity);
+    const totalBill = (currentPriceInPKR * totalQuantity);
     const totalDeductions = (isAdmin ? (sale.shipmentCost || 0) : 0) + (sale.extraCharges || 0);
     const netPayable = totalBill - totalDeductions;
-    const totalDispatch = (sale.quantity || 0) + (sale.extraQty || 0);
+    const totalDispatch = totalQuantity + (sale.extraQty || 0);
 
     return (
         <div className="modal-overlay">
@@ -1898,18 +1975,28 @@ export function SaleModal({ inventory, storeName, isAdmin, storeNames, onAdd, on
                             <div className="input-group full-width">
                                 <label>Select Product</label>
                                 <select
-                                    value={sale.productName}
+                                    value={sale.productId || ''}
                                     onChange={e => {
-                                        const item = inventory.find(i => i.productName === e.target.value);
-                                        setSale({ ...sale, productName: e.target.value, sellingPrice: item?.sellingPrice || 0, size: '' });
+                                        const item = inventory.find(i => (i.productId && i.productId === e.target.value) || i.productName === e.target.value);
+                                        const nextSizeKeys = Array.isArray(item?.sizes) && item.sizes.length > 0 ? item.sizes : [];
+                                        const nextColorKeys = Array.isArray(item?.colors) && item.colors.length > 0 ? item.colors : [];
+                                        setSale({
+                                            ...sale,
+                                            productId: item?.productId || e.target.value,
+                                            productName: item?.productName || '',
+                                            sellingPrice: item?.sellingPrice || 0,
+                                            quantity: 0,
+                                        });
+                                        setSizeQuantities(buildEmptyQuantities(nextSizeKeys));
+                                        setColorQuantities(buildEmptyQuantities(nextColorKeys));
                                         setCurrency('PKR'); // Reset to PKR on item select
                                     }}
                                     required
                                 >
                                     <option value="">Choose...</option>
                                     {inventory.map(i => (
-                                        <option key={i.productName} value={i.productName}>
-                                            {i.productName} ({i.quantityAvailable})
+                                        <option key={i.productId || i.productName} value={i.productId || i.productName}>
+                                            {i.productName}{i.brandName ? ` • ${i.brandName}` : ''}{i.productType ? ` • ${i.productType}` : ''} ({i.quantityAvailable})
                                         </option>
                                     ))}
                                 </select>
@@ -1917,20 +2004,45 @@ export function SaleModal({ inventory, storeName, isAdmin, storeNames, onAdd, on
 
                             {hasSizeTracking && (
                                 <div className="input-group full-width">
-                                    <label>Select Size</label>
-                                    <select
-                                        value={sale.size}
-                                        onChange={e => setSale({ ...sale, size: e.target.value })}
-                                        required
-                                        style={{ fontWeight: 700 }}
-                                    >
-                                        <option value="">Choose size...</option>
+                                    <label>Quantity by Size</label>
+                                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(120px, 1fr))', gap: 12 }}>
                                         {availableSizes.map(([size, qty]) => (
-                                            <option key={size} value={size}>
-                                                {size} - {qty} available
-                                            </option>
+                                            <div key={size} style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+                                                <label style={{ fontSize: 11, fontWeight: 700, color: 'var(--text-muted)' }}>
+                                                    {size} <span style={{ fontSize: 10 }}>(max: {qty})</span>
+                                                </label>
+                                                <input
+                                                    type="number"
+                                                    min="0"
+                                                    value={sizeQuantities[size] || 0}
+                                                    onChange={e => updateSizeQuantity(size, parseInt(e.target.value) || 0)}
+                                                    style={{ padding: '8px 12px', fontSize: 14 }}
+                                                />
+                                            </div>
                                         ))}
-                                    </select>
+                                    </div>
+                                </div>
+                            )}
+
+                            {hasColorTracking && (
+                                <div className="input-group full-width">
+                                    <label>Quantity by Color</label>
+                                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(120px, 1fr))', gap: 12 }}>
+                                        {availableColors.map(([color, qty]) => (
+                                            <div key={color} style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+                                                <label style={{ fontSize: 11, fontWeight: 700, color: 'var(--text-muted)' }}>
+                                                    {color} <span style={{ fontSize: 10 }}>(max: {qty})</span>
+                                                </label>
+                                                <input
+                                                    type="number"
+                                                    min="0"
+                                                    value={colorQuantities[color] || 0}
+                                                    onChange={e => updateColorQuantity(color, parseInt(e.target.value) || 0)}
+                                                    style={{ padding: '8px 12px', fontSize: 14 }}
+                                                />
+                                            </div>
+                                        ))}
+                                    </div>
                                 </div>
                             )}
 
@@ -1939,9 +2051,16 @@ export function SaleModal({ inventory, storeName, isAdmin, storeNames, onAdd, on
                                 <input
                                     type="text"
                                     inputMode="numeric"
-                                    value={sale.quantity}
+                                    value={hasAnyVariantBreakdown ? totalQuantity : sale.quantity}
+                                    readOnly={hasAnyVariantBreakdown}
                                     onChange={e => setSale({ ...sale, quantity: parseInt(e.target.value) || 0 })}
+                                    style={hasAnyVariantBreakdown ? { background: 'var(--surface-2)', cursor: 'default' } : undefined}
                                 />
+                                {hasAnyVariantBreakdown && (
+                                    <div style={{ fontSize: 11, marginTop: 4, color: 'var(--text-muted)' }}>
+                                        Auto-calculated from size/color quantities.
+                                    </div>
+                                )}
                             </div>
 
                             {isAdmin && (
@@ -2892,13 +3011,12 @@ export function AllotToStoreModal({ onSave, onClose, stores, inventory, allotedQ
                                             <label style={{ fontSize: 11, fontWeight: 700, color: 'var(--text-muted)' }}>
                                                 {size} <span style={{ fontSize: 10, color: 'var(--text-muted)' }}>(max: {availableQty})</span>
                                             </label>
-                                            <input 
+                                            <input
                                                 type="number" 
                                                 min="0"
                                                 max={availableQty as number}
                                                 value={form.sizeQuantitiesAssigned[size] || 0}
                                                 onChange={e => updateSizeQuantity(size, parseInt(e.target.value) || 0)}
-                                                style={{ padding: '8px 10px', fontSize: 13 }}
                                             />
                                         </div>
                                     ))}
@@ -2936,7 +3054,6 @@ export function AllotToStoreModal({ onSave, onClose, stores, inventory, allotedQ
                                                 max={availableQty as number}
                                                 value={form.colorQuantitiesAssigned[color] || 0}
                                                 onChange={e => updateColorQuantity(color, parseInt(e.target.value) || 0)}
-                                                style={{ padding: '8px 10px', fontSize: 13 }}
                                             />
                                         </div>
                                     ))}
@@ -3197,6 +3314,352 @@ export function ExpenseBreakdownModal({ expenses, orders, onClose }: ExpenseBrea
                             </div>
                         </div>
                         <div style={{ fontSize: 22, fontWeight: 900, color: 'var(--danger)' }}>-{Rs(grandTotal)}</div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    );
+}
+
+// ============================================================
+// SALE RETURN MODAL (Scenario A)
+// ============================================================
+export interface SaleReturnModalProps {
+    order: {
+        id: string;
+        productName: string;
+        storeName: string;
+        quantity: number;
+        sizeQuantities?: Record<string, number> | null;
+        colorQuantities?: Record<string, number> | null;
+        storeInventoryId?: string | null;
+    };
+    onConfirm: (payload: {
+        id: string;
+        returnQuantity: number;
+        returnReason: string;
+        returnSizeQuantities?: Record<string, number> | null;
+        returnColorQuantities?: Record<string, number> | null;
+    }) => Promise<void>;
+    onClose: () => void;
+}
+
+const RETURN_REASONS = ['Cancelled', 'Customer Refused', 'Defective', 'Wrong Item', 'Other'];
+
+export function SaleReturnModal({ order, onConfirm, onClose }: SaleReturnModalProps) {
+    const [returnQty, setReturnQty] = useState(order.quantity);
+    const [reason, setReason] = useState(RETURN_REASONS[0]);
+    const [sizeInputs, setSizeInputs] = useState<Record<string, number>>(
+        order.sizeQuantities ? Object.fromEntries(Object.entries(order.sizeQuantities).map(([k, v]) => [k, v])) : {}
+    );
+    const [colorInputs, setColorInputs] = useState<Record<string, number>>(
+        order.colorQuantities ? Object.fromEntries(Object.entries(order.colorQuantities).map(([k, v]) => [k, v])) : {}
+    );
+    const [saving, setSaving] = useState(false);
+
+    const hasSizes = order.sizeQuantities && Object.keys(order.sizeQuantities).length > 0;
+    const hasColors = order.colorQuantities && Object.keys(order.colorQuantities).length > 0;
+
+    const handleSubmit = async () => {
+        if (saving) return;
+        setSaving(true);
+        try {
+            await onConfirm({
+                id: order.id,
+                returnQuantity: returnQty,
+                returnReason: reason,
+                returnSizeQuantities: hasSizes ? sizeInputs : null,
+                returnColorQuantities: hasColors ? colorInputs : null,
+            });
+        } finally {
+            setSaving(false);
+        }
+    };
+
+    return (
+        <div className="modal-overlay" onClick={onClose}>
+            <div className="modal-box" style={{ maxWidth: 480, width: '95%' }} onClick={e => e.stopPropagation()}>
+                <div className="modal-head" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                    <div>
+                        <h3 style={{ margin: 0, fontSize: 17, fontWeight: 800 }}>Return Sale</h3>
+                        <div style={{ fontSize: 12, color: 'var(--text-muted)', marginTop: 3 }}>
+                            {order.productName} — {order.storeName}
+                        </div>
+                    </div>
+                    <button className="btn btn-sm" onClick={onClose} style={{ border: 'none', fontSize: 18 }}>&#x2715;</button>
+                </div>
+                <div className="modal-body" style={{ padding: '16px 20px 24px', display: 'flex', flexDirection: 'column', gap: 16 }}>
+
+                    {/* Return Qty */}
+                    <div className="input-group">
+                        <label style={{ fontSize: 12, fontWeight: 700, color: 'var(--text-muted)', display: 'block', marginBottom: 6 }}>
+                            Return Quantity <span style={{ color: 'var(--text-muted)', fontWeight: 400 }}>(max {order.quantity})</span>
+                        </label>
+                        <input
+                            type="number" min={1} max={order.quantity}
+                            value={returnQty}
+                            onChange={e => setReturnQty(Math.min(order.quantity, Math.max(1, Number(e.target.value))))}
+                            style={{ width: '100%' }}
+                        />
+                    </div>
+
+                    {/* Size breakdown */}
+                    {hasSizes && (
+                        <div>
+                            <div style={{ fontSize: 12, fontWeight: 700, color: 'var(--text-muted)', marginBottom: 8 }}>Sizes Being Returned</div>
+                            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(100px,1fr))', gap: 8 }}>
+                                {Object.keys(order.sizeQuantities!).map(size => (
+                                    <div key={size}>
+                                        <label style={{ fontSize: 11, fontWeight: 600, display: 'block', marginBottom: 3 }}>{size}</label>
+                                        <input
+                                            type="number" min={0} max={order.sizeQuantities![size]}
+                                            value={sizeInputs[size] ?? 0}
+                                            onChange={e => setSizeInputs(prev => ({ ...prev, [size]: Math.min(order.sizeQuantities![size], Math.max(0, Number(e.target.value))) }))}
+                                            style={{ width: '100%' }}
+                                        />
+                                    </div>
+                                ))}
+                            </div>
+                        </div>
+                    )}
+
+                    {/* Color breakdown */}
+                    {hasColors && (
+                        <div>
+                            <div style={{ fontSize: 12, fontWeight: 700, color: 'var(--text-muted)', marginBottom: 8 }}>Colors Being Returned</div>
+                            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(110px,1fr))', gap: 8 }}>
+                                {Object.keys(order.colorQuantities!).map(color => (
+                                    <div key={color}>
+                                        <label style={{ fontSize: 11, fontWeight: 600, display: 'block', marginBottom: 3 }}>{color}</label>
+                                        <input
+                                            type="number" min={0} max={order.colorQuantities![color]}
+                                            value={colorInputs[color] ?? 0}
+                                            onChange={e => setColorInputs(prev => ({ ...prev, [color]: Math.min(order.colorQuantities![color], Math.max(0, Number(e.target.value))) }))}
+                                            style={{ width: '100%' }}
+                                        />
+                                    </div>
+                                ))}
+                            </div>
+                        </div>
+                    )}
+
+                    {/* Reason */}
+                    <div className="input-group">
+                        <label style={{ fontSize: 12, fontWeight: 700, color: 'var(--text-muted)', display: 'block', marginBottom: 6 }}>Return Reason</label>
+                        <select value={reason} onChange={e => setReason(e.target.value)} style={{ width: '100%' }}>
+                            {RETURN_REASONS.map(r => <option key={r} value={r}>{r}</option>)}
+                        </select>
+                    </div>
+
+                    {/* Info */}
+                    <div style={{ padding: '10px 14px', background: '#fef3c7', border: '1px solid #fde68a', borderRadius: 8, fontSize: 12, color: '#92400e', fontWeight: 600 }}>
+                        ⚠️ Returned pieces will go back to store stock as &lsquo;pending return&rsquo;.
+                        Use <strong>Return to Main Store</strong> on the allotment row to send them back.
+                    </div>
+
+                    <div style={{ display: 'flex', gap: 10, justifyContent: 'flex-end', marginTop: 4 }}>
+                        <button className="btn btn-sm btn-glass" onClick={onClose} disabled={saving}>Cancel</button>
+                        <button
+                            className="btn btn-sm"
+                            style={{ background: 'var(--warning, #f59e0b)', borderColor: 'var(--warning, #f59e0b)', color: '#fff' }}
+                            onClick={handleSubmit}
+                            disabled={saving}
+                        >
+                            {saving ? 'Processing…' : `Return ${returnQty} piece${returnQty !== 1 ? 's' : ''}`}
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </div>
+    );
+}
+
+// ============================================================
+// RETURN TO WAREHOUSE MODAL (Scenario B)
+// ============================================================
+export interface ReturnToWarehouseModalProps {
+    allotment: {
+        id: string;
+        productName: string;
+        storeName: string;
+        quantityRemaining: number;
+        pendingReturnQty: number;
+        pendingReturnSizeQuantities?: Record<string, number> | null;
+        pendingReturnColorQuantities?: Record<string, number> | null;
+        sizeQuantitiesRemaining?: Record<string, number> | null;
+        colorQuantitiesRemaining?: Record<string, number> | null;
+    };
+    onConfirm: (payload: {
+        id: string;
+        returnQty: number;
+        returnSizeQuantities?: Record<string, number> | null;
+        returnColorQuantities?: Record<string, number> | null;
+        returnReason?: string;
+        returnNote?: string;
+        proofImage?: string | null;
+    }) => Promise<void>;
+    onClose: () => void;
+}
+
+export function ReturnToWarehouseModal({ allotment, onConfirm, onClose }: ReturnToWarehouseModalProps) {
+    const maxQty = allotment.quantityRemaining || 0;
+    const defaultQty = Math.min(allotment.pendingReturnQty > 0 ? allotment.pendingReturnQty : maxQty, maxQty);
+    const [returnQty, setReturnQty] = useState(Math.max(1, defaultQty));
+    const baseSizes = allotment.sizeQuantitiesRemaining || allotment.pendingReturnSizeQuantities;
+    const baseColors = allotment.colorQuantitiesRemaining || allotment.pendingReturnColorQuantities;
+    const [sizeInputs, setSizeInputs] = useState<Record<string, number>>(baseSizes ? { ...baseSizes } : {});
+    const [colorInputs, setColorInputs] = useState<Record<string, number>>(baseColors ? { ...baseColors } : {});
+    const [reason, setReason] = useState(allotment.pendingReturnQty > 0 ? 'Customer return' : 'Unsold stock');
+    const [note, setNote] = useState('');
+    const [proofImage, setProofImage] = useState<string | null>(null);
+    const [saving, setSaving] = useState(false);
+
+    const hasSizes = baseSizes && Object.keys(baseSizes).length > 0;
+    const hasColors = baseColors && Object.keys(baseColors).length > 0;
+
+    const handleSubmit = async () => {
+        if (saving) return;
+        setSaving(true);
+        try {
+            await onConfirm({
+                id: allotment.id,
+                returnQty,
+                returnSizeQuantities: hasSizes ? sizeInputs : null,
+                returnColorQuantities: hasColors ? colorInputs : null,
+                returnReason: reason,
+                returnNote: note || undefined,
+                proofImage: proofImage || null,
+            });
+        } finally {
+            setSaving(false);
+        }
+    };
+
+    return (
+        <div className="modal-overlay" onClick={onClose}>
+            <div className="modal-box" style={{ maxWidth: 460, width: '95%' }} onClick={e => e.stopPropagation()}>
+                <div className="modal-head" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                    <div>
+                        <h3 style={{ margin: 0, fontSize: 17, fontWeight: 800 }}>Return to Main Store</h3>
+                        <div style={{ fontSize: 12, color: 'var(--text-muted)', marginTop: 3 }}>
+                            {allotment.productName} — {allotment.storeName}
+                        </div>
+                    </div>
+                    <button className="btn btn-sm" onClick={onClose} style={{ border: 'none', fontSize: 18 }}>&#x2715;</button>
+                </div>
+                <div className="modal-body" style={{ padding: '16px 20px 24px', display: 'flex', flexDirection: 'column', gap: 16 }}>
+
+                    {allotment.pendingReturnQty > 0 && (
+                        <div style={{ padding: '10px 14px', background: '#eff6ff', border: '1px solid #bfdbfe', borderRadius: 8, fontSize: 12, color: '#1e40af', fontWeight: 600 }}>
+                            📦 {allotment.pendingReturnQty} piece{allotment.pendingReturnQty !== 1 ? 's' : ''} physically back at {allotment.storeName} awaiting warehouse return.
+                        </div>
+                    )}
+
+                    {/* Return Qty */}
+                    <div className="input-group">
+                        <label style={{ fontSize: 12, fontWeight: 700, color: 'var(--text-muted)', display: 'block', marginBottom: 6 }}>
+                            Qty to Return to Main Store <span style={{ color: 'var(--text-muted)', fontWeight: 400 }}>(max {maxQty})</span>
+                        </label>
+                        <input
+                            type="number" min={1} max={maxQty}
+                            value={returnQty}
+                            onChange={e => setReturnQty(Math.min(maxQty, Math.max(1, Number(e.target.value))))}
+                        />
+                    </div>
+
+                    {/* Size breakdown */}
+                    {hasSizes && (
+                        <div>
+                            <div style={{ fontSize: 12, fontWeight: 700, color: 'var(--text-muted)', marginBottom: 8 }}>Sizes Returning to Main Store</div>
+                            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(100px,1fr))', gap: 8 }}>
+                                {Object.keys(baseSizes!).map(size => (
+                                    <div key={size}>
+                                        <label style={{ fontSize: 11, fontWeight: 600, display: 'block', marginBottom: 3 }}>{size} (max {baseSizes![size]})</label>
+                                        <input
+                                            type="number" min={0} max={baseSizes![size]}
+                                            value={sizeInputs[size] ?? 0}
+                                            onChange={e => setSizeInputs(prev => ({ ...prev, [size]: Math.min(baseSizes![size], Math.max(0, Number(e.target.value))) }))}
+                                        />
+                                    </div>
+                                ))}
+                            </div>
+                        </div>
+                    )}
+
+                    {/* Color breakdown */}
+                    {hasColors && (
+                        <div>
+                            <div style={{ fontSize: 12, fontWeight: 700, color: 'var(--text-muted)', marginBottom: 8 }}>Colors Returning to Main Store</div>
+                            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(110px,1fr))', gap: 8 }}>
+                                {Object.keys(baseColors!).map(color => (
+                                    <div key={color}>
+                                        <label style={{ fontSize: 11, fontWeight: 600, display: 'block', marginBottom: 3 }}>{color} (max {baseColors![color]})</label>
+                                        <input
+                                            type="number" min={0} max={baseColors![color]}
+                                            value={colorInputs[color] ?? 0}
+                                            onChange={e => setColorInputs(prev => ({ ...prev, [color]: Math.min(baseColors![color], Math.max(0, Number(e.target.value))) }))}
+                                        />
+                                    </div>
+                                ))}
+                            </div>
+                        </div>
+                    )}
+
+                    {/* Reason */}
+                    <div className="input-group">
+                        <label style={{ fontSize: 12, fontWeight: 700, color: 'var(--text-muted)', display: 'block', marginBottom: 6 }}>Reason</label>
+                        <select value={reason} onChange={e => setReason(e.target.value)} style={{ width: '100%' }}>
+                            <option>Unsold stock</option>
+                            <option>Customer return</option>
+                            <option>Damaged goods</option>
+                            <option>Wrong item</option>
+                            <option>Other</option>
+                        </select>
+                    </div>
+
+                    {/* Optional note */}
+                    <div className="input-group">
+                        <label style={{ fontSize: 12, fontWeight: 700, color: 'var(--text-muted)', display: 'block', marginBottom: 6 }}>Note <span style={{ fontWeight: 400 }}>(optional)</span></label>
+                        <textarea
+                            value={note}
+                            onChange={e => setNote(e.target.value)}
+                            rows={2}
+                            placeholder="Any additional details…"
+                            style={{ width: '100%', resize: 'vertical' }}
+                        />
+                    </div>
+
+                    {/* Proof image */}
+                    <div className="input-group">
+                        <label style={{ fontSize: 12, fontWeight: 700, color: 'var(--text-muted)', display: 'block', marginBottom: 6 }}>Proof Image <span style={{ fontWeight: 400 }}>(optional)</span></label>
+                        {proofImage ? (
+                            <div style={{ position: 'relative', display: 'inline-block' }}>
+                                <img src={proofImage} alt="proof" style={{ maxHeight: 120, borderRadius: 8, border: '1px solid var(--border)' }} />
+                                <button type="button" onClick={() => setProofImage(null)} style={{ position: 'absolute', top: 4, right: 4, background: 'rgba(0,0,0,0.55)', color: '#fff', border: 'none', borderRadius: '50%', width: 22, height: 22, cursor: 'pointer', fontSize: 13, lineHeight: '22px', textAlign: 'center' }}>✕</button>
+                            </div>
+                        ) : (
+                            <label style={{ cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: 8, padding: '7px 14px', borderRadius: 8, border: '1.5px dashed var(--border)', fontSize: 13, color: 'var(--text-muted)' }}>
+                                📎 Attach photo
+                                <input type="file" accept="image/*" style={{ display: 'none' }} onChange={e => {
+                                    const file = e.target.files?.[0];
+                                    if (!file) return;
+                                    const reader = new FileReader();
+                                    reader.onload = ev => setProofImage(ev.target?.result as string);
+                                    reader.readAsDataURL(file);
+                                }} />
+                            </label>
+                        )}
+                    </div>
+
+                    <div style={{ display: 'flex', gap: 10, justifyContent: 'flex-end', marginTop: 4 }}>
+                        <button className="btn btn-sm btn-glass" onClick={onClose} disabled={saving}>Cancel</button>
+                        <button
+                            className="btn btn-sm btn-primary"
+                            onClick={handleSubmit}
+                            disabled={saving || maxQty === 0}
+                        >
+                            {saving ? 'Returning…' : `Return ${returnQty} piece${returnQty !== 1 ? 's' : ''} to Main Store`}
+                        </button>
                     </div>
                 </div>
             </div>

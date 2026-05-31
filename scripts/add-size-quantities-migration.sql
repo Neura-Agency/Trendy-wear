@@ -34,7 +34,19 @@ COMMENT ON COLUMN public.store_inventory.color_quantities_remaining IS 'JSONB ob
 ALTER TABLE public.orders 
 ADD COLUMN IF NOT EXISTS size text;
 
+ALTER TABLE public.orders 
+ADD COLUMN IF NOT EXISTS color text;
+
+ALTER TABLE public.orders 
+ADD COLUMN IF NOT EXISTS size_quantities jsonb;
+
+ALTER TABLE public.orders 
+ADD COLUMN IF NOT EXISTS color_quantities jsonb;
+
 COMMENT ON COLUMN public.orders.size IS 'Size of the item sold (e.g., "S", "M", "L", "XL"). NULL for legacy orders without size tracking.';
+COMMENT ON COLUMN public.orders.color IS 'Color of the item sold. NULL for legacy orders without color tracking.';
+COMMENT ON COLUMN public.orders.size_quantities IS 'JSONB object storing quantities per size for the sale. NULL for legacy orders without size breakdown.';
+COMMENT ON COLUMN public.orders.color_quantities IS 'JSONB object storing quantities per color for the sale. NULL for legacy orders without color breakdown.';
 
 -- Step 4: Create index on orders.size for efficient filtering
 CREATE INDEX IF NOT EXISTS idx_orders_size ON public.orders(size);

@@ -63,6 +63,8 @@ export interface Order {
   id: string;
   productName: string;
   quantity: number;
+  size?: string | null;
+  color?: string | null;
   sellingPrice: number;
   shipmentCost: number;
   storeName: string;

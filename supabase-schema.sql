@@ -246,11 +246,16 @@ create table if not exists public.orders (
   product_name text not null,
   quantity int not null,
   size text,
+  color text,
+  size_quantities jsonb,
+  color_quantities jsonb,
   selling_price numeric(12,2) not null,
   shipment_cost numeric(12,2) not null default 0.00,
   client_name text,
   order_type text,
   occurred_at timestamptz not null default now(),
+  payment_status boolean,
+  order_returned boolean,
 
   included_in_payout boolean not null default false,
   commission_percent numeric(5,2) not null default 0.00,
@@ -395,3 +400,22 @@ alter table public.settings enable row level security;
 alter table public.audit_logs enable row level security;
 
 -- No policies added: access via server using SUPABASE_SERVICE_ROLE_KEY.
+
+-- =========================================================
+-- RETURN SYSTEM MIGRATION
+-- Run these ALTER statements in Supabase SQL editor
+-- =========================================================
+
+-- Orders table: return tracking columns
+alter table public.orders
+  add column if not exists return_quantity integer default null,
+  add column if not exists return_reason text default null,
+  add column if not exists return_size_quantities jsonb default null,
+  add column if not exists return_color_quantities jsonb default null,
+  add column if not exists returned_at timestamptz default null;
+
+-- Store inventory table: pending return columns (Scenario B)
+alter table public.store_inventory
+  add column if not exists pending_return_qty integer default 0,
+  add column if not exists pending_return_size_quantities jsonb default null,
+  add column if not exists pending_return_color_quantities jsonb default null;
