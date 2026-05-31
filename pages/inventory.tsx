@@ -586,7 +586,17 @@ export default function InventoryPage({ user, onLogin }: PageProps) {
                                                         <button
                                                             type="button"
                                                             className="btn btn-sm"
-                                                            onClick={() => { setEditingRow(item); setShowEditModalUI(true); }}
+                                                            onClick={() => {
+                                                            const warehouseItem = data.inventory.find((i: any) => i.id === item.inventoryId);
+                                                            setEditingRow({
+                                                                ...item,
+                                                                sizeQuantities: warehouseItem?.sizeQuantities || {},
+                                                                colorQuantities: warehouseItem?.colorQuantities || {},
+                                                                totalQty: warehouseItem?.quantityAvailable || 0,
+                                                                allotedQty: allotedQtyByProduct[item.inventoryId] || 0,
+                                                            });
+                                                            setShowEditModalUI(true);
+                                                        }}
                                                             style={{
                                                                 fontWeight: 800,
                                                                 color: 'var(--pri-700)',
@@ -703,7 +713,7 @@ export default function InventoryPage({ user, onLogin }: PageProps) {
                         inventory={data.inventory}
                         allotedQtyByProduct={allotedQtyByProduct}
                         storeCommissionByName={storeCommissionByName}
-                        onSave={async ({ storeName, batchNumber, quantity, ownerSupplyPrice, commissionPercent, extraQty }) => {
+                        onSave={async ({ storeName, batchNumber, quantity, ownerSupplyPrice, commissionPercent, extraQty, sizeQuantitiesAssigned, colorQuantitiesAssigned }) => {
                             try {
                                 const resp = await fetch('/api/storeInventory', {
                                     method: 'POST',
@@ -712,6 +722,8 @@ export default function InventoryPage({ user, onLogin }: PageProps) {
                                         storeName,
                                         batchNumber,
                                         quantity,
+                                        sizeQuantitiesAssigned,
+                                        colorQuantitiesAssigned,
                                         ownerSupplyPrice,
                                         commissionPercent,
                                         extraQty: extraQty || 0,

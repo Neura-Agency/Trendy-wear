@@ -1083,6 +1083,30 @@ export function AddInventoryModal({ onSave, onClose, stores, products, hiddenPro
 
 export function EditStoreInventoryModal({ item, storeNames, onSave, onClose }: { item: any; storeNames?: string[]; onSave: (fields: any) => void; onClose: () => void }) {
     const { toast } = usePopup();
+
+    // Helper to safely get keys from a field that might be null/non-object
+    const safeKeys = (obj: any) => (obj && typeof obj === 'object' && !Array.isArray(obj)) ? Object.keys(obj) : [];
+    const safeObj = (obj: any): Record<string, number> => (obj && typeof obj === 'object' && !Array.isArray(obj)) ? obj : {};
+
+    // Build initial assigned quantities — prefer sizeQuantitiesAssigned, fall back to sizeQuantitiesRemaining
+    const initialSizeQuantitiesAssigned: Record<string, number> = Object.keys(safeObj(item?.sizeQuantitiesAssigned)).length > 0
+        ? safeObj(item?.sizeQuantitiesAssigned)
+        : safeObj(item?.sizeQuantitiesRemaining);
+    const initialColorQuantitiesAssigned: Record<string, number> = Object.keys(safeObj(item?.colorQuantitiesAssigned)).length > 0
+        ? safeObj(item?.colorQuantitiesAssigned)
+        : safeObj(item?.colorQuantitiesRemaining);
+
+    // sizeKeys: union of assigned keys + warehouse size keys (passed from inventory page)
+    const sizeKeys = Array.from(new Set([
+        ...safeKeys(item?.sizeQuantities),
+        ...safeKeys(item?.sizeQuantitiesAssigned),
+        ...safeKeys(item?.sizeQuantitiesRemaining),
+    ]));
+    const colorKeys = Array.from(new Set([
+        ...safeKeys(item?.colorQuantities),
+        ...safeKeys(item?.colorQuantitiesAssigned),
+        ...safeKeys(item?.colorQuantitiesRemaining),
+    ]));
     const [form, setForm] = useState({
         storeName: item?.storeName || (storeNames && storeNames[0]) || '',
         ownerSupplyPrice: item?.ownerSupplyPrice || 0,
@@ -1090,6 +1114,9 @@ export function EditStoreInventoryModal({ item, storeNames, onSave, onClose }: {
         storeSellingPrice: item?.storeSellingPrice || item?.ownerSupplyPrice || 0,
         quantityAssigned: item?.quantityAssigned || 0,
         quantityRemaining: item?.quantityRemaining || 0,
+        sizeQuantitiesAssigned: initialSizeQuantitiesAssigned as Record<string, number>,
+        colorQuantitiesAssigned: initialColorQuantitiesAssigned as Record<string, number>,
+        extraQty: item?.extraQty || item?.extra_Qty || 0,
     });
 
     React.useEffect(() => {
@@ -1099,6 +1126,62 @@ export function EditStoreInventoryModal({ item, storeNames, onSave, onClose }: {
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [storeNames]);
 
+    const hasSizeTracking = sizeKeys.length > 0;
+    const hasColorTracking = colorKeys.length > 0;
+    const totalSizeQuantity = Object.values(form.sizeQuantitiesAssigned).reduce((sum, qty) => sum + (Number(qty) || 0), 0);
+    const totalColorQuantity = Object.values(form.colorQuantitiesAssigned).reduce((sum, qty) => sum + (Number(qty) || 0), 0);
+    const effectiveQuantityAssigned = hasSizeTracking ? totalSizeQuantity : hasColorTracking ? totalColorQuantity : Number(form.quantityAssigned) || 0;
+
+    const updateSizeQuantity = (size: string, qty: number) => {
+        const maxForSize = ((item?.sizeQuantities as any)?.[size] ?? (item?.sizeQuantitiesRemaining as any)?.[size] ?? Infinity) as number;
+        setForm(curr => ({
+            ...curr,
+            sizeQuantitiesAssigned: {
+                ...curr.sizeQuantitiesAssigned,
+                [size]: Math.max(0, Math.min(qty, maxForSize)),
+            },
+        }));
+    };
+
+    const updateColorQuantity = (color: string, qty: number) => {
+        const maxForColor = ((item?.colorQuantities as any)?.[color] ?? (item?.colorQuantitiesRemaining as any)?.[color] ?? Infinity) as number;
+        setForm(curr => ({
+            ...curr,
+            colorQuantitiesAssigned: {
+                ...curr.colorQuantitiesAssigned,
+                [color]: Math.max(0, Math.min(qty, maxForColor)),
+            },
+        }));
+    };
+
+    const distributeSizeEqually = () => {
+        if (!hasSizeTracking) return;
+        if (!sizeKeys.length) return;
+        const total = Number(form.quantityAssigned) || 0;
+        const qtyPerSize = Math.floor(total / sizeKeys.length);
+        const next: Record<string, number> = {};
+        sizeKeys.forEach((size) => {
+            const maxForSize = ((item?.sizeQuantities as any)?.[size] ?? (item?.sizeQuantitiesRemaining as any)?.[size] ?? Infinity) as number;
+            next[size] = Math.min(qtyPerSize, maxForSize);
+        });
+        setForm(curr => ({ ...curr, sizeQuantitiesAssigned: next, quantityAssigned: Object.values(next).reduce((s, v) => s + v, 0) }));
+        toast.success('Distributed equally across sizes');
+    };
+
+    const distributeColorEqually = () => {
+        if (!hasColorTracking) return;
+        if (!colorKeys.length) return;
+        const total = Number(form.quantityAssigned) || 0;
+        const qtyPerColor = Math.floor(total / colorKeys.length);
+        const next: Record<string, number> = {};
+        colorKeys.forEach((color) => {
+            const maxForColor = ((item?.colorQuantities as any)?.[color] ?? (item?.colorQuantitiesRemaining as any)?.[color] ?? Infinity) as number;
+            next[color] = Math.min(qtyPerColor, maxForColor);
+        });
+        setForm(curr => ({ ...curr, colorQuantitiesAssigned: next, quantityAssigned: Object.values(next).reduce((s, v) => s + v, 0) }));
+        toast.success('Distributed equally across colors');
+    };
+
     const handleSubmit = (e: React.FormEvent) => {
         e.preventDefault();
         const assigned = Number(form.quantityAssigned) || 0;
@@ -1107,13 +1190,26 @@ export function EditStoreInventoryModal({ item, storeNames, onSave, onClose }: {
         if (remaining < 0) return toast.error('Remaining quantity cannot be less than 0');
         if (remaining > assigned) return toast.error('Remaining cannot exceed total sent');
 
+        if (hasSizeTracking && totalSizeQuantity < 1) return toast.error('Enter quantities for at least one size');
+        if (hasColorTracking && totalColorQuantity < 1) return toast.error('Enter quantities for at least one color');
+
+        if (hasSizeTracking && assigned !== totalSizeQuantity) {
+            return toast.error('Total assigned must match the size breakdown total');
+        }
+        if (!hasSizeTracking && hasColorTracking && assigned !== totalColorQuantity) {
+            return toast.error('Total assigned must match the color breakdown total');
+        }
+
         const fields: any = {};
         if (form.ownerSupplyPrice !== undefined) fields.owner_supply_price = Number(form.ownerSupplyPrice) || 0;
         if (form.commissionPercent !== undefined) fields.commission_percent = Number(form.commissionPercent) || 0;
         if (form.storeSellingPrice !== undefined) fields.store_selling_price = Number(form.storeSellingPrice) || 0;
-        if (form.quantityAssigned !== undefined) fields.quantity_assigned = Number(form.quantityAssigned) || 0;
+        if (form.quantityAssigned !== undefined || hasSizeTracking || hasColorTracking) fields.quantity_assigned = effectiveQuantityAssigned;
         if (form.quantityRemaining !== undefined) fields.quantity_remaining = Number(form.quantityRemaining) || 0;
         if (form.storeName) fields.storeName = form.storeName;
+        if (hasSizeTracking) fields.size_quantities_assigned = form.sizeQuantitiesAssigned;
+        if (hasColorTracking) fields.color_quantities_assigned = form.colorQuantitiesAssigned;
+        if (form.extraQty !== undefined) fields.extra_Qty = Number(form.extraQty) || 0;
 
         onSave(fields);
         onClose();
@@ -1142,9 +1238,10 @@ export function EditStoreInventoryModal({ item, storeNames, onSave, onClose }: {
                             <Badge type={sold > 0 ? 'blue' : 'gray'}>Items Sold: {sold}</Badge>
                         </div>
 
-                        <div className="form-grid-2" style={{ marginBottom: 12 }}>
+                        {/* Row 1: Store Name + Item Name */}
+                        <div className="form-grid-2" style={{ marginBottom: 16 }}>
                             <div className="input-group">
-                                <label>Store</label>
+                                <label>Store Name</label>
                                 <select value={form.storeName} onChange={(e) => setForm({ ...form, storeName: e.target.value })} required>
                                     {(storeNames || []).map((s) => (
                                         <option key={s} value={s}>{s}</option>
@@ -1153,49 +1250,109 @@ export function EditStoreInventoryModal({ item, storeNames, onSave, onClose }: {
                             </div>
 
                             <div className="input-group">
-                                <label>Item (Batch)</label>
+                                <label>Item Name</label>
                                 <input readOnly value={item?.productName || item?.batchNumber || 'Unknown'} style={{ background: 'var(--surface-2)', fontWeight: 700 }} />
                             </div>
                         </div>
 
-                        <div className="form-grid-2" style={{ marginBottom: 12 }}>
+                        {/* Row 2: Quantity + Cost/PC (Warehouse) */}
+                        <div className="form-grid-2" style={{ marginBottom: 16 }}>
                             <div className="input-group">
-                                <label>Owner Supply Price</label>
-                                <input type="text" inputMode="decimal" value={form.ownerSupplyPrice} onChange={(e) => setForm({ ...form, ownerSupplyPrice: parseFloat(e.target.value) || 0 })} />
+                                <label>Quantity (Max {Math.max(0, (item?.totalQty || item?.quantityAssigned || 0) - (item?.allotedQty || 0) + (item?.quantityAssigned || 0))})</label>
+                                {hasSizeTracking || hasColorTracking ? (
+                                    <input type="text" inputMode="numeric" value={form.quantityAssigned} onChange={(e) => handleAssignedChange(e.target.value)} placeholder="Enter total for equal distribution" />
+                                ) : (
+                                    <input type="text" inputMode="numeric" value={form.quantityAssigned} onChange={(e) => handleAssignedChange(e.target.value)} required />
+                                )}
+                                <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 6 }}>
+                                    Total Qty: <b>{item?.totalQty || item?.quantityAssigned || 0}</b> · Aloted Qty: <b>{item?.allotedQty || item?.quantityAssigned || 0}</b> · In Stock: <b>{item?.quantityRemaining || 0}</b>
+                                </div>
                             </div>
                             <div className="input-group">
-                                <label>Quantity Assigned (Total Sent)</label>
-                                <input type="text" inputMode="numeric" value={form.quantityAssigned} onChange={(e) => handleAssignedChange(e.target.value)} />
-                                <div style={{ fontSize: '10px', color: 'var(--text-muted)', marginTop: 4 }}>Increasing this will also increase In-Shop Stock</div>
+                                <label>Cost/PC (Warehouse)</label>
+                                <input readOnly value={'Rs ' + (Number(item?.ownerSupplyPrice) || 0).toLocaleString()} style={{ background: 'var(--surface-2)', fontWeight: 800 }} />
                             </div>
                         </div>
 
-                        <div className="form-grid-2" style={{ marginBottom: 12 }}>
+                        {/* Size tracking */}
+                        {hasSizeTracking && (
+                            <div style={{ marginBottom: 16, padding: 16, background: 'var(--surface-2)', borderRadius: 10, border: '1px solid var(--border)' }}>
+                                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
+                                    <div style={{ fontSize: 13, fontWeight: 800, color: 'var(--text)' }}>Quantity per Size</div>
+                                    <button type="button" className="btn btn-sm btn-primary" onClick={distributeSizeEqually} style={{ padding: '4px 12px', fontSize: 11 }}>Equal Distribution</button>
+                                </div>
+                                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(100px, 1fr))', gap: 12 }}>
+                                    {sizeKeys.map((size) => (
+                                        <div key={size} style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+                                            <label style={{ fontSize: 11, fontWeight: 700, color: 'var(--text-muted)' }}>
+                                                {size} <span style={{ fontSize: 10 }}>(max: {(item?.sizeQuantities as any)?.[size] ?? (item?.sizeQuantitiesRemaining as any)?.[size] ?? (item?.sizeQuantitiesAssigned as any)?.[size] ?? '∞'})</span>
+                                            </label>
+                                            <input type="number" min="0" value={form.sizeQuantitiesAssigned[size] || 0} onChange={e => updateSizeQuantity(size, parseInt(e.target.value) || 0)} style={{ padding: '8px 10px', fontSize: 13 }} />
+                                        </div>
+                                    ))}
+                                </div>
+                                <div style={{ marginTop: 12, padding: '8px 12px', background: totalSizeQuantity > 0 ? 'var(--primary)' : 'var(--surface-1)', color: 'var(--text)', borderRadius: 6, fontSize: 13, fontWeight: 800, textAlign: 'center' }}>
+                                    Total: {totalSizeQuantity} units
+                                </div>
+                            </div>
+                        )}
+
+                        {/* Color tracking */}
+                        {hasColorTracking && (
+                            <div style={{ marginBottom: 16, padding: 16, background: 'var(--surface-2)', borderRadius: 10, border: '1px solid var(--border)' }}>
+                                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
+                                    <div style={{ fontSize: 13, fontWeight: 800, color: 'var(--text)' }}>Quantity per Color</div>
+                                    <button type="button" className="btn btn-sm btn-primary" onClick={distributeColorEqually} style={{ padding: '4px 12px', fontSize: 11 }}>Equal Distribution</button>
+                                </div>
+                                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(100px, 1fr))', gap: 12 }}>
+                                    {colorKeys.map((color) => (
+                                        <div key={color} style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+                                            <label style={{ fontSize: 11, fontWeight: 700, color: 'var(--text-muted)', textTransform: 'capitalize' }}>
+                                                {color} <span style={{ fontSize: 10 }}>(max: {(item?.colorQuantities as any)?.[color] ?? (item?.colorQuantitiesRemaining as any)?.[color] ?? '∞'})</span>
+                                            </label>
+                                            <input type="number" min="0" value={form.colorQuantitiesAssigned[color] || 0} onChange={e => updateColorQuantity(color, parseInt(e.target.value) || 0)} style={{ padding: '8px 10px', fontSize: 13 }} />
+                                        </div>
+                                    ))}
+                                </div>
+                                <div style={{ marginTop: 12, padding: '8px 12px', background: totalColorQuantity > 0 ? 'var(--primary)' : 'var(--surface-1)', color: 'var(--text)', borderRadius: 6, fontSize: 13, fontWeight: 800, textAlign: 'center' }}>
+                                    Total: {totalColorQuantity} units
+                                </div>
+                            </div>
+                        )}
+
+                        {/* Row 3: New Price (Supply to Store) + Partner Commission % */}
+                        <div className="form-grid-2" style={{ marginBottom: 18 }}>
                             <div className="input-group">
-                                <label>Quantity Remaining (In Shop Stock)</label>
-                                <input type="text" inputMode="numeric" value={form.quantityRemaining} onChange={(e) => setForm({ ...form, quantityRemaining: parseInt(e.target.value) || 0 })} />
+                                <label>New Price (Supply to Store)</label>
+                                <input
+                                    type="text"
+                                    inputMode="decimal"
+                                    value={form.ownerSupplyPrice}
+                                    onChange={(e) => setForm({ ...form, ownerSupplyPrice: parseFloat(e.target.value) || 0 })}
+                                    required
+                                    style={{ borderColor: (Number(item?.ownerSupplyPrice) > 0 && Number(form.ownerSupplyPrice) < Number(item?.ownerSupplyPrice)) ? 'var(--danger)' : undefined }}
+                                />
+                                {Number(item?.ownerSupplyPrice) > 0 && (
+                                    <div style={{ fontSize: 11, marginTop: 4, fontWeight: 600, color: Number(form.ownerSupplyPrice) < Number(item?.ownerSupplyPrice) ? 'var(--danger)' : 'var(--text-muted)' }}>
+                                        Min: Rs {Number(item?.ownerSupplyPrice).toLocaleString()} (warehouse cost)
+                                    </div>
+                                )}
                             </div>
                             <div className="input-group">
                                 <label>Partner Commission %</label>
-                                <input type="text" inputMode="decimal" value={form.commissionPercent} onChange={(e) => setForm({ ...form, commissionPercent: parseFloat(e.target.value) || 0 })} />
+                                <input type="text" inputMode="decimal" value={form.commissionPercent} onChange={(e) => setForm({ ...form, commissionPercent: parseFloat(e.target.value) || 0 })} required />
                             </div>
                         </div>
 
-                        <div className="form-grid-2" style={{ marginBottom: 16 }}>
-                            <div className="input-group">
-                                <label>Store Selling Price</label>
-                                <input type="text" inputMode="decimal" value={form.storeSellingPrice} onChange={(e) => setForm({ ...form, storeSellingPrice: parseFloat(e.target.value) || 0 })} />
-                            </div>
-                            <div className="input-group">
-                                <label>Inventory ID</label>
-                                <input readOnly value={item?.inventoryId || item?.inventory_id || item?.id || ''} style={{ background: 'var(--surface-2)', fontWeight: 700 }} />
+                        {/* Row 4: Extra Qty — half width left only, matching Alot to Store */}
+                        <div style={{ marginBottom: 18 }}>
+                            <div className="input-group" style={{ maxWidth: '50%' }}>
+                                <label>Extra Qty <span style={{ fontSize: '10px', fontWeight: 400, color: '#8c8c8c' }}>(gift / display — expensed at cost)</span></label>
+                                <input type="text" inputMode="numeric" value={form.extraQty} onChange={(e) => setForm({ ...form, extraQty: parseInt(e.target.value) || 0 })} placeholder="0" />
                             </div>
                         </div>
 
-                        <div style={{ display: 'flex', gap: 8 }}>
-                            <button type="submit" className="btn btn-primary">Save</button>
-                            <button type="button" className="btn btn-glass" onClick={onClose}>Cancel</button>
-                        </div>
+                        <button type="submit" className="btn btn-primary btn-full" style={{ height: 48, fontSize: '14px', fontWeight: 800 }}>Save Allotment</button>
                     </form>
                 </div>
             </div>
@@ -2524,13 +2681,16 @@ export function AllotToStoreModal({ onSave, onClose, stores, inventory, allotedQ
         ownerSupplyPrice: 0,
         commissionPercent: 0,
         extraQty: 0,
-        sizeQuantitiesAssigned: {} as Record<string, number>
+        sizeQuantitiesAssigned: {} as Record<string, number>,
+        colorQuantitiesAssigned: {} as Record<string, number>
     });
 
     const selectedInv = (inventory || []).find(i => i.batchNumber === form.batchNumber);
     const productName = selectedInv?.productName || '';
     const sizeQuantities = selectedInv?.sizeQuantities;
+    const colorQuantities = selectedInv?.colorQuantities;
     const hasSizeTracking = sizeQuantities && Object.keys(sizeQuantities).length > 0;
+    const hasColorTracking = colorQuantities && Object.keys(colorQuantities).length > 0;
     
     // Key by inventory.id (batch-level) to avoid mixing up different batches of same product
     const allotedQty = allotedQtyByProduct?.[selectedInv?.id || ''] || 0;
@@ -2544,6 +2704,17 @@ export function AllotToStoreModal({ onSave, onClose, stores, inventory, allotedQ
             sizeQuantitiesAssigned: { 
                 ...curr.sizeQuantitiesAssigned, 
                 [size]: Math.max(0, Math.min(qty, maxForSize))
+            }
+        }));
+    };
+
+    const updateColorQuantity = (color: string, qty: number) => {
+        const maxForColor = (colorQuantities?.[color] as number) || 0;
+        setForm(curr => ({
+            ...curr,
+            colorQuantitiesAssigned: {
+                ...curr.colorQuantitiesAssigned,
+                [color]: Math.max(0, Math.min(qty, maxForColor))
             }
         }));
     };
@@ -2563,7 +2734,23 @@ export function AllotToStoreModal({ onSave, onClose, stores, inventory, allotedQ
         toast.success('Distributed equally across sizes');
     };
 
+    const distributeColorEqually = () => {
+        if (!hasColorTracking) return;
+        const colors = Object.keys(colorQuantities);
+        if (colors.length === 0) return;
+
+        const qtyPerColor = Math.floor(form.quantity / colors.length);
+        const newColorQuantities: Record<string, number> = {};
+        colors.forEach(color => {
+            const maxForColor = (colorQuantities[color] as number) || 0;
+            newColorQuantities[color] = Math.min(qtyPerColor, maxForColor);
+        });
+        setForm(curr => ({ ...curr, colorQuantitiesAssigned: newColorQuantities }));
+        toast.success('Distributed equally across colors');
+    };
+
     const totalSizeQuantity = Object.values(form.sizeQuantitiesAssigned).reduce((sum, qty) => sum + qty, 0);
+    const totalColorQuantity = Object.values(form.colorQuantitiesAssigned).reduce((sum, qty) => sum + qty, 0);
 
     React.useEffect(() => {
         if (!form.storeName && stores?.length) {
@@ -2593,6 +2780,9 @@ export function AllotToStoreModal({ onSave, onClose, stores, inventory, allotedQ
         if (hasSizeTracking) {
             finalQuantity = totalSizeQuantity;
             if (finalQuantity === 0) return toast.error('Enter quantities for at least one size');
+        } else if (hasColorTracking) {
+            finalQuantity = totalColorQuantity;
+            if (finalQuantity === 0) return toast.error('Enter quantities for at least one color');
         } else {
             if (!form.quantity || form.quantity < 1) return toast.error('Enter quantity');
         }
@@ -2609,6 +2799,7 @@ export function AllotToStoreModal({ onSave, onClose, stores, inventory, allotedQ
             batchNumber: form.batchNumber,
             quantity: finalQuantity,
             sizeQuantitiesAssigned: hasSizeTracking ? form.sizeQuantitiesAssigned : undefined,
+            colorQuantitiesAssigned: hasColorTracking ? form.colorQuantitiesAssigned : undefined,
             ownerSupplyPrice: Number(form.ownerSupplyPrice) || 0,
             commissionPercent: Number(form.commissionPercent) || 0,
             extraQty,
@@ -2714,6 +2905,44 @@ export function AllotToStoreModal({ onSave, onClose, stores, inventory, allotedQ
                                 </div>
                                 <div style={{ marginTop: 12, padding: '8px 12px', background: totalSizeQuantity > 0 ? 'var(--primary)' : 'var(--surface-1)', color: 'var(--text)', borderRadius: 6, fontSize: 13, fontWeight: 800, textAlign: 'center' }}>
                                     Total: {totalSizeQuantity} units
+                                </div>
+                            </div>
+                        )}
+
+                        {hasColorTracking && (
+                            <div style={{ marginBottom: 16, padding: 16, background: 'var(--surface-2)', borderRadius: 10, border: '1px solid var(--border)' }}>
+                                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
+                                    <div style={{ fontSize: 13, fontWeight: 800, color: 'var(--text)' }}>
+                                        Quantity per Color
+                                    </div>
+                                    <button
+                                        type="button"
+                                        className="btn btn-sm btn-primary"
+                                        onClick={distributeColorEqually}
+                                        style={{ padding: '4px 12px', fontSize: 11 }}
+                                    >
+                                        Equal Distribution
+                                    </button>
+                                </div>
+                                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(100px, 1fr))', gap: 12 }}>
+                                    {Object.entries(colorQuantities).map(([color, availableQty]) => (
+                                        <div key={color} style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+                                            <label style={{ fontSize: 11, fontWeight: 700, color: 'var(--text-muted)', textTransform: 'capitalize' }}>
+                                                {color} <span style={{ fontSize: 10, color: 'var(--text-muted)' }}>(max: {availableQty})</span>
+                                            </label>
+                                            <input
+                                                type="number"
+                                                min="0"
+                                                max={availableQty as number}
+                                                value={form.colorQuantitiesAssigned[color] || 0}
+                                                onChange={e => updateColorQuantity(color, parseInt(e.target.value) || 0)}
+                                                style={{ padding: '8px 10px', fontSize: 13 }}
+                                            />
+                                        </div>
+                                    ))}
+                                </div>
+                                <div style={{ marginTop: 12, padding: '8px 12px', background: totalColorQuantity > 0 ? 'var(--primary)' : 'var(--surface-1)', color: 'var(--text)', borderRadius: 6, fontSize: 13, fontWeight: 800, textAlign: 'center' }}>
+                                    Total: {totalColorQuantity} units
                                 </div>
                             </div>
                         )}

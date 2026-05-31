@@ -211,6 +211,8 @@ create table if not exists public.store_inventory (
   quantity_remaining int not null default 0,
   size_quantities_assigned jsonb,
   size_quantities_remaining jsonb,
+  color_quantities_assigned jsonb,
+  color_quantities_remaining jsonb,
 
   owner text,
 

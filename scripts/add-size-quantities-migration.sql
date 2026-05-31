@@ -19,8 +19,16 @@ ADD COLUMN IF NOT EXISTS size_quantities_assigned jsonb;
 ALTER TABLE public.store_inventory 
 ADD COLUMN IF NOT EXISTS size_quantities_remaining jsonb;
 
+ALTER TABLE public.store_inventory 
+ADD COLUMN IF NOT EXISTS color_quantities_assigned jsonb;
+
+ALTER TABLE public.store_inventory 
+ADD COLUMN IF NOT EXISTS color_quantities_remaining jsonb;
+
 COMMENT ON COLUMN public.store_inventory.size_quantities_assigned IS 'JSONB object storing initially assigned quantities per size. NULL for legacy records.';
 COMMENT ON COLUMN public.store_inventory.size_quantities_remaining IS 'JSONB object storing remaining quantities per size. NULL for legacy records.';
+COMMENT ON COLUMN public.store_inventory.color_quantities_assigned IS 'JSONB object storing initially assigned quantities per color. NULL for legacy records.';
+COMMENT ON COLUMN public.store_inventory.color_quantities_remaining IS 'JSONB object storing remaining quantities per color. NULL for legacy records.';
 
 -- Step 3: Add size column to orders table
 ALTER TABLE public.orders 

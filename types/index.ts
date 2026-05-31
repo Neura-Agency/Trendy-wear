@@ -128,6 +128,10 @@ export interface StoreInventoryItem {
   quantityAssigned: number;
   quantityRemaining: number;
   extraQty?: number;    // gift / display units allotted (not sold, expensed at cost)
+  sizeQuantitiesAssigned?: Record<string, number> | null;
+  sizeQuantitiesRemaining?: Record<string, number> | null;
+  colorQuantitiesAssigned?: Record<string, number> | null;
+  colorQuantitiesRemaining?: Record<string, number> | null;
   storeName?: string;   // populated when flattened out of the Record
   owner?: string;
 }
@@ -264,5 +268,6 @@ export interface AllotToStoreModalProps extends ModalProps {
     commissionPercent: number;
     extraQty: number;
     sizeQuantitiesAssigned?: Record<string, number> | undefined;
+    colorQuantitiesAssigned?: Record<string, number> | undefined;
   }) => void;
 }
