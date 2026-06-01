@@ -1250,7 +1250,14 @@ input[type="number"] {
   align-items: center;
   justify-content: center;
   backdrop-filter: blur(2px);
+  /* Allow scrolling on the overlay so the scrollbar is on the page edge */
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+  /* Hide the visible scrollbar while preserving scroll behavior */
+  scrollbar-width: none; /* Firefox */
 }
+
+.modal-overlay::-webkit-scrollbar { display: none; } /* WebKit */
 
 .modal-box {
   background: #fff;
@@ -1258,10 +1265,11 @@ input[type="number"] {
   box-shadow: var(--shadow-lg);
   width: 100%;
   max-width: 820px;
-  max-height: 90vh;
+  /* Allow the overlay to handle scrolling; let the box size naturally */
+  max-height: none;
   display: flex;
   flex-direction: column;
-  overflow: hidden;
+  overflow: visible;
   border: 1px solid var(--border);
   margin: 20px;
 }
@@ -1286,8 +1294,8 @@ input[type="number"] {
 
 .modal-body {
   padding: 20px;
-  overflow-y: auto;
-  flex: 1;
+  /* Let the overlay provide scrolling; body content should expand naturally */
+  overflow: visible;
 }
 
 @media (max-width: 576px) {

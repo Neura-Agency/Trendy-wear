@@ -602,13 +602,40 @@ export default function InventoryPage({ user, onLogin }: PageProps) {
                                                                 className="btn btn-sm"
                                                                 onClick={() => {
                                                                 const warehouseItem = data.inventory.find((i: any) => i.id === item.inventoryId);
+                                                                // Compute per-variant warehouse remaining = warehouse total - OTHER stores' allotments.
+                                                                // This is used as the cap in Edit Allotment so "X left" shows the correct number.
+                                                                const warehouseVariants = warehouseItem?.variantQuantities || {};
+                                                                const warehouseVariantRemaining: Record<string, Record<string, number>> = {};
+                                                                if (warehouseItem && Object.keys(warehouseVariants).length > 0) {
+                                                                    Object.entries(warehouseVariants).forEach(([color, sizes]: [string, any]) => {
+                                                                        warehouseVariantRemaining[color] = {};
+                                                                        Object.entries(sizes || {}).forEach(([size, total]: [string, any]) => {
+                                                                            let otherStoresAllotted = 0;
+                                                                            Object.values(data.storeInventory || {}).forEach((storeItems: any) => {
+                                                                                Object.values(storeItems || {}).forEach((si: any) => {
+                                                                                    if (si.inventoryId === item.inventoryId && si.id !== item.id) {
+                                                                                        otherStoresAllotted += Number((si.variantQuantitiesAssigned?.[color])?.[size] || 0);
+                                                                                    }
+                                                                                });
+                                                                            });
+                                                                            warehouseVariantRemaining[color][size] = Math.max(0, Number(total) - otherStoresAllotted);
+                                                                        });
+                                                                    });
+                                                                }
                                                                 setEditingRow({
                                                                     ...item,
+                                                                    // warehouse totals (fallbacks)
                                                                     sizeQuantities: warehouseItem?.sizeQuantities || {},
                                                                     colorQuantities: warehouseItem?.colorQuantities || {},
                                                                     variantQuantities: warehouseItem?.variantQuantities || {},
                                                                     totalQty: warehouseItem?.quantityAvailable || 0,
                                                                     allotedQty: allotedQtyByProduct[item.inventoryId] || 0,
+                                                                    // authoritative remaining sources (prefer store row's remaining fields)
+                                                                    sizeQuantitiesRemaining: item.sizeQuantitiesRemaining ?? warehouseItem?.sizeQuantitiesRemaining ?? {},
+                                                                    colorQuantitiesRemaining: item.colorQuantitiesRemaining ?? warehouseItem?.colorQuantitiesRemaining ?? {},
+                                                                    variantQuantitiesRemaining: item.variantQuantitiesRemaining ?? warehouseItem?.variantQuantitiesRemaining ?? {},
+                                                                    // per-variant warehouse remaining for correct Edit Allotment caps
+                                                                    warehouseVariantQuantitiesRemaining: warehouseVariantRemaining,
                                                                 });
                                                                 setShowEditModalUI(true);
                                                             }}

@@ -318,6 +318,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
           sizeQuantities: row.size_quantities ?? null,
           colorQuantities: row.color_quantities ?? null,
           variantQuantities: row.variant_quantities ?? null,
+          variantQuantitiesRemaining: row.variant_quantities_remaining ?? null,
           otherVariants: { picture: p.product_image ?? null },
           productImage: p.product_image ?? null,
           batchNumber: derivedItemId,

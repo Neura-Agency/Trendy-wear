@@ -462,10 +462,12 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
         if (!invRow) return res.status(404).json({ error: 'Inventory batch not found' })
 
         const total = num(invRow.quantity_available)
-        const remainingForThisUpdate = Math.max(0, total - alreadyAssignedOther)
+        const currentAssigned = num(existingRow.quantity_assigned)
+        const strictRemaining = Math.max(0, total - alreadyAssignedOther - currentAssigned)
+        const increaseDelta = Math.max(0, num(fields.quantity_assigned) - currentAssigned)
 
-        if (Number(fields.quantity_assigned) > remainingForThisUpdate) {
-          return res.status(400).json({ error: `Quantity assigned (${fields.quantity_assigned}) exceeds available stock (${remainingForThisUpdate}) for this batch` })
+        if (increaseDelta > strictRemaining) {
+          return res.status(400).json({ error: `Quantity increase (${increaseDelta}) exceeds remaining stock (${strictRemaining}) for this batch` })
         }
 
         allowed.quantity_assigned = fields.quantity_assigned
@@ -477,7 +479,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 
         const { data: existingRowForVariants, error: existingErrForVariants } = await supabaseAdmin
           .from(TABLES.STORE_INVENTORY)
-          .select('id, inventory_id')
+          .select('id, inventory_id, quantity_assigned, variant_quantities_assigned')
           .eq('id', id)
           .maybeSingle()
 
@@ -489,7 +491,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 
         const { data: invRowForVariants, error: invRowErrForVariants } = await supabaseAdmin
           .from(TABLES.INVENTORY)
-          .select('variant_quantities')
+          .select('variant_quantities, quantity_available')
           .eq('id', existingRowForVariants.inventory_id)
           .maybeSingle()
 
@@ -502,7 +504,50 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
         const validationError = validateVariantRequest(normalizedVariants, invRowForVariants.variant_quantities)
         if (validationError) return res.status(400).json({ error: validationError })
 
+        const { data: assignedRowsOtherVariants, error: assignedOtherErrVariants } = await supabaseAdmin
+          .from(TABLES.STORE_INVENTORY)
+          .select('quantity_assigned, variant_quantities_assigned')
+          .eq('inventory_id', existingRowForVariants.inventory_id)
+          .neq('id', existingRowForVariants.id)
+
+        if (assignedOtherErrVariants) {
+          console.error('assigned sum error on patch (variants):', assignedOtherErrVariants)
+          return res.status(500).json({ error: 'Failed to validate available quantity for variants' })
+        }
+
+        const batchVariantAvail = (invRowForVariants.variant_quantities || {}) as Record<string, Record<string, number>>
+        const alreadyAssignedOtherVariants: Record<string, Record<string, number>> = {}
+        ;(assignedRowsOtherVariants || []).forEach((row: any) => {
+          const variants = normalizeVariantQuantities(row.variant_quantities_assigned) || {}
+          Object.entries(variants).forEach(([color, sizes]) => {
+            if (!alreadyAssignedOtherVariants[color]) alreadyAssignedOtherVariants[color] = {}
+            Object.entries(sizes).forEach(([size, qty]) => {
+              alreadyAssignedOtherVariants[color][size] = (alreadyAssignedOtherVariants[color][size] || 0) + num(qty)
+            })
+          })
+        })
+
+        for (const [color, sizes] of Object.entries(normalizedVariants)) {
+          for (const [size, requested] of Object.entries(sizes)) {
+            const available = num((batchVariantAvail as any)?.[color]?.[size])
+            const alreadyOther = num((alreadyAssignedOtherVariants as any)?.[color]?.[size])
+            if (requested + alreadyOther > available) {
+              return res.status(400).json({ error: `Variant ${color}/${size}: requested ${requested} exceeds remaining ${Math.max(0, available - alreadyOther)}` })
+            }
+          }
+        }
+
+        const alreadyAssignedOtherTotal = (assignedRowsOtherVariants || []).reduce((acc: number, row: any) => acc + num(row.quantity_assigned), 0)
+        const totalBatch = num((invRowForVariants as any).quantity_available)
+        const currentAssigned = num(existingRowForVariants.quantity_assigned)
+        const strictRemaining = Math.max(0, totalBatch - alreadyAssignedOtherTotal - currentAssigned)
+
         const rollups = rollupVariantQuantities(normalizedVariants)
+        const increaseDelta = Math.max(0, rollups.total - currentAssigned)
+        if (increaseDelta > strictRemaining) {
+          return res.status(400).json({ error: `Quantity increase (${increaseDelta}) exceeds remaining stock (${strictRemaining}) for this batch` })
+        }
+
         allowed.variant_quantities_assigned = normalizedVariants
         allowed.variant_quantities_remaining = normalizedVariants
         allowed.size_quantities_assigned = rollups.sizeQuantities

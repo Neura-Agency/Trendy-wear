@@ -774,7 +774,7 @@ function StoresOverviewSection({ stores, orders, storeInventory, filter, getFilt
 }
 
 // ─── ORDERS SECTION ──────────────────────────────────────────────────
-function OrdersSection({ orders, overallOrders = [], inventory = [], isAdmin, canDelete, onCommissionEdit, onTogglePayout, onEdit, onDelete, onReturn, onUndoReturn, confirmDialog }: any) {
+function OrdersSection({ orders, overallOrders = [], inventory = [], storeInventory = {}, isAdmin, canDelete, onCommissionEdit, onTogglePayout, onEdit, onDelete, onReturn, onUndoReturn, confirmDialog }: any) {
   const [editing, setEditing] = useState<any>(null);
   const [editingCurrency, setEditingCurrency] = useState<'PKR' | 'GBP'>('PKR');
   const [editingSizeQuantities, setEditingSizeQuantities] = useState<Record<string, number>>({});
@@ -806,7 +806,16 @@ function OrdersSection({ orders, overallOrders = [], inventory = [], isAdmin, ca
     return grid;
   };
 
-  const getVariantGridSource = (item: any) => {
+  const getVariantGridSource = (item: any, order?: any) => {
+    // For store orders, prefer variantQuantitiesRemaining from storeInventory
+    // (keyed by storeName → productName → first matching item)
+    if (order?.storeName && order.storeName !== 'Direct') {
+      const storeItems = Object.values(storeInventory[order.storeName] || {}) as any[];
+      const storeItem = storeItems.find((si: any) => normalizeCatalogValue(si.productName) === normalizeCatalogValue(order.productName));
+      if (storeItem?.variantQuantitiesRemaining && typeof storeItem.variantQuantitiesRemaining === 'object' && Object.keys(storeItem.variantQuantitiesRemaining).length > 0) {
+        return storeItem.variantQuantitiesRemaining;
+      }
+    }
     const direct = item?.variantQuantitiesRemaining ?? item?.variantQuantities;
     if (direct && typeof direct === 'object' && Object.keys(direct).length > 0) return direct;
     return buildLegacyMaxVariantGrid(item?.colorQuantitiesRemaining ?? item?.colorQuantities, item?.sizeQuantitiesRemaining ?? item?.sizeQuantities);
@@ -823,7 +832,7 @@ function OrdersSection({ orders, overallOrders = [], inventory = [], isAdmin, ca
     setEditingColorQuantities(colorKeys.length > 0 ? buildEmptyQuantities(colorKeys) : {});
 
     // Derive variant grid from product inventory OR fall back to the saved order's own variant data
-    const variantSource = getVariantGridSource(product);
+    const variantSource = getVariantGridSource(product, order);
     let variantColors = Object.keys(variantSource || {});
     let variantSizes = Array.from(new Set(Object.values(variantSource || {}).flatMap((sizes: any) => Object.keys(sizes || {}))));
 
@@ -868,7 +877,25 @@ function OrdersSection({ orders, overallOrders = [], inventory = [], isAdmin, ca
   const selectedEditProduct = editing
     ? inventory.find((item: any) => normalizeCatalogValue(item.productName) === normalizeCatalogValue(editing.productName))
     : null;
-  const editingVariantMax = getVariantGridSource(selectedEditProduct);
+  // When editing, add back this order's own variantQuantities to the remaining
+  // so the max correctly reflects: remaining + what this sale already consumed.
+  const editingVariantMax = (() => {
+    const base = getVariantGridSource(selectedEditProduct, editing);
+    const orderVariants = editing?.variantQuantities;
+    if (!base || !orderVariants || typeof orderVariants !== 'object') return base;
+    const result: Record<string, Record<string, number>> = {};
+    const allColors = new Set([...Object.keys(base), ...Object.keys(orderVariants)]);
+    allColors.forEach(color => {
+      result[color] = {};
+      const baseSizes = base[color] || {};
+      const orderSizes = (orderVariants as Record<string, Record<string, number>>)[color] || {};
+      const allSizes = new Set([...Object.keys(baseSizes), ...Object.keys(orderSizes)]);
+      allSizes.forEach(size => {
+        result[color][size] = (Number(baseSizes[size]) || 0) + (Number(orderSizes[size]) || 0);
+      });
+    });
+    return result;
+  })();
   const editingVariantColorKeys = Object.keys(editingVariantMax || {});
   const editingVariantSizeKeys = Array.from(new Set(Object.values(editingVariantMax || {}).flatMap((sizes: any) => Object.keys(sizes || {}))));
   const editingHasVariantTracking = editingVariantColorKeys.length > 0 && editingVariantSizeKeys.length > 0;
@@ -1133,21 +1160,35 @@ function OrdersSection({ orders, overallOrders = [], inventory = [], isAdmin, ca
         </thead>
         <tbody>
           {orders.map((o, idx) => {
+            const returnedQty = Number(o.returnQuantity) || 0;
+            const soldQty = Number(o.quantity) || 0;
+            const fullyReturned = returnedQty > 0 ? returnedQty >= soldQty : Boolean(o.orderReturned);
+            const remainingQty = Math.max(0, soldQty - returnedQty);
             const gross = o.sellingPrice * o.quantity;
             const shipment = o.shipmentCost || 0;
             const netAmount = gross - shipment;
             const totalCost = (o.costPrice || 0) * o.quantity;
             return (
-              <tr key={idx} style={{ cursor: 'pointer', opacity: o.orderReturned ? 0.6 : 1, background: o.orderReturned ? 'rgba(0,0,0,0.05)' : 'transparent' }}
+              <tr key={idx} style={{ cursor: 'pointer', opacity: returnedQty > 0 ? 0.6 : 1, background: returnedQty > 0 ? 'rgba(0,0,0,0.05)' : 'transparent' }}
                 onClick={() => openEdit(o)}
               >
                 <td className="text-muted" style={{ fontSize: '0.75rem' }}>
                   {new Date(o.date).toLocaleDateString()}
-                  {o.orderReturned && <div style={{ color: 'var(--danger)', fontWeight: 800, fontSize: '9px', marginTop: 2 }}>RETURNED</div>}
+                  {fullyReturned
+                    ? <div style={{ color: 'var(--danger)', fontWeight: 800, fontSize: '9px', marginTop: 2 }}>RETURNED</div>
+                    : returnedQty > 0
+                      ? <div style={{ color: '#d97706', fontWeight: 800, fontSize: '9px', marginTop: 2 }}>PARTIAL RETURN</div>
+                      : null
+                  }
                 </td>
                 <td className="font-bold" style={{ color: 'var(--pri-700)' }}>{o.storeName}</td>
                 <td className="font-bold">{o.productName}</td>
-                <td>{o.quantity}</td>
+                <td>
+                  {returnedQty > 0
+                    ? <><span style={{ textDecoration: 'line-through', opacity: 0.5 }}>{o.quantity}</span> <span style={{ color: 'var(--danger)', fontWeight: 700 }}>→ {returnedQty} returned{fullyReturned ? '' : `, ${remainingQty} left`}</span></>
+                    : o.quantity
+                  }
+                </td>
                 <td className="font-bold">{Rs(gross)}</td>
                 <td style={{ color: 'var(--danger)', fontWeight: 600 }}>-{Rs(shipment)}</td>
                 <td className="font-bold" style={{ color: 'var(--text-main)' }}>{Rs(netAmount)}</td>
@@ -1177,7 +1218,17 @@ function OrdersSection({ orders, overallOrders = [], inventory = [], isAdmin, ca
                   >
                     Edit
                   </button>
-                  {o.orderReturned && (
+                  {canDelete && (
+                    <button
+                      className="btn btn-sm"
+                      style={{ padding: '4px 8px', fontSize: '10px', background: 'var(--danger)', color: '#fff', border: 'none', marginRight: 6 }}
+                      onClick={async (e) => { e.stopPropagation(); if (await confirmDialog('Delete this sale? This action cannot be undone.')) { onDelete(o.id); } }}
+                      title="Delete sale"
+                    >
+                      🗑
+                    </button>
+                  )}
+                  {fullyReturned && (
                     <button
                       className="btn btn-sm"
                       style={{ padding: '4px 8px', fontSize: '10px', background: '#6b7280', color: '#fff', border: 'none', whiteSpace: 'nowrap' }}
@@ -1187,7 +1238,7 @@ function OrdersSection({ orders, overallOrders = [], inventory = [], isAdmin, ca
                       ↻ Undo
                     </button>
                   )}
-                  {!o.orderReturned && (
+                  {!fullyReturned && (
                     <button 
                       className="btn btn-sm" 
                       style={{ padding: '4px 8px', fontSize: '10px', background: '#f59e0b', color: '#fff', border: 'none' }}
@@ -1225,6 +1276,10 @@ function OrdersSection({ orders, overallOrders = [], inventory = [], isAdmin, ca
             sizeQuantities: returningOrder.sizeQuantities ?? null,
             colorQuantities: returningOrder.colorQuantities ?? null,
             variantQuantities: returningOrder.variantQuantities ?? null,
+            returnQuantity: returningOrder.returnQuantity ?? null,
+            returnSizeQuantities: returningOrder.returnSizeQuantities ?? null,
+            returnColorQuantities: returningOrder.returnColorQuantities ?? null,
+            returnVariantQuantities: returningOrder.returnVariantQuantities ?? null,
             storeInventoryId: returningOrder.storeInventoryId ?? null,
           }}
           onConfirm={async (payload) => { await onReturn(payload); setReturningOrder(null); }}
@@ -1986,6 +2041,7 @@ const [loading, setLoading] = useState<boolean>(true);
               orders={partnerOrders.slice(-20).reverse()}
               overallOrders={partnerAll}
               inventory={data.inventory}
+              storeInventory={data.storeInventory}
               isAdmin={isAdmin}
               onCommissionEdit={async (id, v) => {
                 try {
@@ -2021,7 +2077,13 @@ const [loading, setLoading] = useState<boolean>(true);
                       colorQuantities: order.colorQuantities || null,
                     }),
                   });
-                  const result = await res.json();
+                  let result: any = null;
+                  try {
+                    result = await res.json();
+                  } catch (parseErr) {
+                    const text = await res.text();
+                    result = { error: text || `HTTP ${res.status}` };
+                  }
                   if (!res.ok) toast.error(result.error || 'Failed to update sale');
                   else refresh();
                 } catch (e: any) { toast.error(e?.message || 'Failed to update sale'); }
@@ -2033,7 +2095,13 @@ const [loading, setLoading] = useState<boolean>(true);
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({ id }),
                   });
-                  const result = await res.json();
+                  let result: any = null;
+                  try {
+                    result = await res.json();
+                  } catch (parseErr) {
+                    const text = await res.text();
+                    result = { error: text || `HTTP ${res.status}` };
+                  }
                   if (!res.ok) toast.error(result.error || 'Failed to delete sale');
                   else refresh();
                 } catch (e: any) { toast.error(e?.message || 'Failed to delete sale'); }

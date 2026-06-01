@@ -3,6 +3,7 @@ import { supabaseAdmin, TABLES } from '../../lib/supabase'
 import { requireSession, getAllowedStoreIds, isSuperAdmin } from '../../lib/api/session'
 import {
   adjustVariantQuantities,
+  mergeVariantQuantities,
   normalizeFlatQuantities,
   normalizeVariantQuantities,
   rollupVariantQuantities,
@@ -59,6 +60,9 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
           order_returned,
           return_quantity,
           return_reason,
+          return_size_quantities,
+          return_color_quantities,
+          return_variant_quantities,
           returned_at,
           created_at,
           stores:store_id ( name ),
@@ -116,6 +120,9 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
           orderReturned: row.order_returned ?? false,
           returnQuantity: row.return_quantity ?? null,
           returnReason: row.return_reason ?? null,
+          returnSizeQuantities: row.return_size_quantities ?? null,
+          returnColorQuantities: row.return_color_quantities ?? null,
+          returnVariantQuantities: row.return_variant_quantities ?? null,
           returnedAt: row.returned_at ?? null,
           storeInventoryId: row.store_inventory_id ?? null,
         }
@@ -494,41 +501,74 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
         // Fetch order details
         const { data: order, error: fetchErr } = await supabaseAdmin
           .from(TABLES.ORDERS)
-          .select('id, quantity, size_quantities, color_quantities, variant_quantities, store_inventory_id, order_returned, commission_percent, selling_price, shipment_cost, cost_price')
+          .select('id, quantity, size_quantities, color_quantities, variant_quantities, return_quantity, return_size_quantities, return_color_quantities, return_variant_quantities, store_inventory_id, order_returned, commission_percent, selling_price, shipment_cost, cost_price')
           .eq('id', id)
           .single();
 
         if (fetchErr || !order) return res.status(404).json({ error: 'Order not found' });
-        if (order.order_returned) return res.status(400).json({ error: 'Order already marked as returned' });
 
         const originalQty = num(order.quantity);
-        const retQty = returnQuantity != null ? Math.min(num(returnQuantity), originalQty) : originalQty;
+        const alreadyReturnedQty = Math.max(0, num(order.return_quantity));
+        const remainingQty = Math.max(0, originalQty - alreadyReturnedQty);
+        if (remainingQty < 1) return res.status(400).json({ error: 'Order already fully returned' });
+
+        const retQty = returnQuantity != null ? Math.min(num(returnQuantity), remainingQty) : remainingQty;
         if (retQty < 1) return res.status(400).json({ error: 'returnQuantity must be at least 1' });
         const normalizedReturnVariants = normalizeVariantQuantities(returnVariantQuantities)
         const returnVariantRollups = rollupVariantQuantities(normalizedReturnVariants)
         const effectiveReturnSizeQuantities = returnVariantRollups.sizeQuantities ?? normalizeFlatQuantities(returnSizeQuantities)
         const effectiveReturnColorQuantities = returnVariantRollups.colorQuantities ?? normalizeFlatQuantities(returnColorQuantities)
+        const remainingVariantQuantities = adjustVariantQuantities(order.variant_quantities, order.return_variant_quantities, -1)
 
-        // 1. Mark as returned and zero financials
+        if (normalizedReturnVariants) {
+          const variantValidationError = validateVariantRequest(normalizedReturnVariants, remainingVariantQuantities)
+          if (variantValidationError) {
+            return res.status(400).json({ error: `returnVariantQuantities exceed remaining quantity: ${variantValidationError}` })
+          }
+        }
+
+        const mergeFlatQuantities = (base: unknown, incoming: unknown) => {
+          const next = { ...(normalizeFlatQuantities(base) || {}) }
+          const additions = normalizeFlatQuantities(incoming) || {}
+          Object.entries(additions).forEach(([key, value]) => {
+            next[key] = (next[key] || 0) + num(value)
+          })
+          return Object.keys(next).length ? next : null
+        }
+
+        const mergedReturnSizeQuantities = mergeFlatQuantities(order.return_size_quantities, effectiveReturnSizeQuantities)
+        const mergedReturnColorQuantities = mergeFlatQuantities(order.return_color_quantities, effectiveReturnColorQuantities)
+        const mergedReturnVariantQuantities = mergeVariantQuantities(order.return_variant_quantities, normalizedReturnVariants)
+        const newReturnQty = alreadyReturnedQty + retQty
+        const fullyReturned = newReturnQty >= originalQty
+
+        const remainingUnits = Math.max(0, originalQty - newReturnQty)
+        const remainingGross = num(order.selling_price) * remainingUnits - num(order.shipment_cost)
+        const remainingCommission = Math.round(remainingGross * num(order.commission_percent)) / 100
+        const remainingAdminTake = remainingGross - remainingCommission
+        const remainingProfit = remainingGross - (num(order.cost_price) * remainingUnits)
+
+        // 1. Update return progress and remaining financials
         const { error: updErr } = await supabaseAdmin
           .from(TABLES.ORDERS)
           .update({
-            order_returned: true,
-            profit: 0,
-            admin_take: 0,
-            commission_amount: 0,
-            return_quantity: retQty,
+            order_returned: fullyReturned,
+            profit: Math.max(0, remainingProfit),
+            admin_take: Math.max(0, remainingAdminTake),
+            commission_amount: Math.max(0, remainingCommission),
+            return_quantity: newReturnQty,
             return_reason: returnReason || null,
-            return_size_quantities: effectiveReturnSizeQuantities,
-            return_color_quantities: effectiveReturnColorQuantities,
-            return_variant_quantities: normalizedReturnVariants,
+            return_size_quantities: mergedReturnSizeQuantities,
+            return_color_quantities: mergedReturnColorQuantities,
+            return_variant_quantities: mergedReturnVariantQuantities,
             returned_at: new Date().toISOString(),
           })
           .eq('id', id);
 
         if (updErr) {
           console.error('Return update error:', updErr);
-          return res.status(500).json({ error: 'Failed to mark order as returned' });
+          const message = updErr.message || JSON.stringify(updErr);
+          return res.status(500).json({ error: `Failed to mark order as returned: ${message}` });
         }
 
         // 2. Restore store_inventory quantities
