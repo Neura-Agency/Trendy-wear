@@ -79,6 +79,7 @@ export interface Order {
   profit: number;
   paymentStatus?: boolean | null;
   orderReturned?: boolean;
+  variantQuantities?: Record<string, Record<string, number>> | null;
 }
 
 export interface Purchase {
@@ -111,6 +112,7 @@ export interface InventoryItem {
   productImage?: string | null;
   sizeQuantities?: Record<string, number> | null;
   colorQuantities?: Record<string, number> | null;
+  variantQuantities?: Record<string, Record<string, number>> | null;
   batchNumber: string;
   costPrice: number;
   sellingPrice: number;
@@ -124,6 +126,8 @@ export interface StoreInventoryItem {
   inventoryId?: string; // FK → inventory.id (batch FK)
   productId?: string;
   productName: string;
+  sizes?: string[];
+  colors?: string[];
   ownerSupplyPrice: number;
   commissionPercent: number;
   storeSellingPrice: number;
@@ -134,6 +138,8 @@ export interface StoreInventoryItem {
   sizeQuantitiesRemaining?: Record<string, number> | null;
   colorQuantitiesAssigned?: Record<string, number> | null;
   colorQuantitiesRemaining?: Record<string, number> | null;
+  variantQuantitiesAssigned?: Record<string, Record<string, number>> | null;
+  variantQuantitiesRemaining?: Record<string, Record<string, number>> | null;
   storeName?: string;   // populated when flattened out of the Record
   owner?: string;
 }
@@ -271,5 +277,6 @@ export interface AllotToStoreModalProps extends ModalProps {
     extraQty: number;
     sizeQuantitiesAssigned?: Record<string, number> | undefined;
     colorQuantitiesAssigned?: Record<string, number> | undefined;
+    variantQuantitiesAssigned?: Record<string, Record<string, number>> | undefined;
   }) => void;
 }

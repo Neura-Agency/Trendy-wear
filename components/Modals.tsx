@@ -3,6 +3,7 @@ import { usePopup } from './Popup';
 import Badge from './Badge';
 import { SaleModalProps, CreateStoreModalProps, ReportModalProps, AddInventoryModalProps, AllotToStoreModalProps, InventoryItem, Order, Product, Store, Expense } from '../types';
 import { buildDeterministicProductId, findMatchingProduct, formatItemCodeFromUuid, resolveCanonicalBrand } from '../lib/catalog';
+import { rollupVariantQuantities, VariantQuantities } from '../lib/variantQuantities';
 
 type SaleInventoryItem = Pick<InventoryItem, 'productName' | 'quantityAvailable' | 'sellingPrice'> & {
     productId?: string;
@@ -15,6 +16,8 @@ type SaleInventoryItem = Pick<InventoryItem, 'productName' | 'quantityAvailable'
     sizeQuantitiesRemaining?: Record<string, number>;
     colorQuantities?: Record<string, number>;
     colorQuantitiesRemaining?: Record<string, number>;
+    variantQuantities?: VariantQuantities;
+    variantQuantitiesRemaining?: VariantQuantities;
 };
 
 interface SaleModalPropsLocal {
@@ -50,6 +53,141 @@ const uniqueCatalogValues = (values: string[], preferAllCaps = false) => {
     });
     return Array.from(canonicalByKey.values());
 };
+
+const normalizeQty = (qty: unknown) => Math.max(0, Number(qty) || 0);
+
+export const buildVariantGrid = (colors: string[], sizes: string[], existing?: VariantQuantities | null) => {
+    const grid: VariantQuantities = {};
+    colors.forEach(color => {
+        grid[color] = {};
+        sizes.forEach(size => {
+            grid[color][size] = normalizeQty(existing?.[color]?.[size]);
+        });
+    });
+    return grid;
+};
+
+export const variantGrandTotal = (variants?: VariantQuantities | null) => rollupVariantQuantities(variants).total;
+const variantRowTotal = (variants: VariantQuantities, color: string) => Object.values(variants[color] || {}).reduce((sum, qty) => sum + normalizeQty(qty), 0);
+const variantColumnTotal = (variants: VariantQuantities, size: string) => Object.values(variants || {}).reduce((sum, sizes) => sum + normalizeQty(sizes?.[size]), 0);
+
+const buildLegacyMaxVariantGrid = (colorQuantities?: Record<string, number> | null, sizeQuantities?: Record<string, number> | null) => {
+    const colors = colorQuantities && typeof colorQuantities === 'object' ? Object.keys(colorQuantities) : [];
+    const sizes = sizeQuantities && typeof sizeQuantities === 'object' ? Object.keys(sizeQuantities) : [];
+    const grid: VariantQuantities = {};
+    colors.forEach(color => {
+        grid[color] = {};
+        sizes.forEach(size => {
+            grid[color][size] = Math.min(normalizeQty(colorQuantities?.[color]), normalizeQty(sizeQuantities?.[size]));
+        });
+    });
+    return grid;
+};
+
+export function VariantQuantityGrid({
+    colors,
+    sizes,
+    values,
+    onChange,
+    maxValues,
+    title = 'Quantity by Color & Size',
+    showRemainingLabel = false,
+}: {
+    colors: string[];
+    sizes: string[];
+    values: VariantQuantities;
+    onChange: (next: VariantQuantities) => void;
+    maxValues?: VariantQuantities | null;
+    title?: string;
+    showRemainingLabel?: boolean;
+}) {
+    if (!colors.length || !sizes.length) return null;
+    const total = variantGrandTotal(values);
+    const setCell = (color: string, size: string, qty: number) => {
+        const max = maxValues?.[color]?.[size];
+        const nextQty = max === undefined ? normalizeQty(qty) : Math.min(normalizeQty(qty), normalizeQty(max));
+        onChange({
+            ...values,
+            [color]: {
+                ...(values[color] || {}),
+                [size]: nextQty,
+            },
+        });
+    };
+
+    return (
+        <div style={{ marginBottom: 16, padding: 16, background: 'var(--surface-2)', borderRadius: 10, border: '1px solid var(--border)', overflowX: 'auto' }}>
+            <div style={{ fontSize: 13, fontWeight: 800, marginBottom: 12, color: 'var(--text)' }}>{title}</div>
+            <table style={{ minWidth: Math.max(420, 150 + sizes.length * 96), width: '100%', borderCollapse: 'separate', borderSpacing: 0 }}>
+                <thead>
+                    <tr>
+                        <th style={{ textAlign: 'left', padding: 8, fontSize: 11, color: 'var(--text-muted)' }}>Color</th>
+                        {sizes.map(size => (
+                            <th key={size} style={{ textAlign: 'center', padding: 8, fontSize: 11, color: 'var(--text-muted)' }}>{size}</th>
+                        ))}
+                        <th style={{ textAlign: 'right', padding: 8, fontSize: 11, color: 'var(--text-muted)' }}>Total</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {colors.map(color => (
+                        <tr key={color}>
+                            <td style={{ padding: 8, fontWeight: 800, textTransform: 'capitalize', whiteSpace: 'nowrap' }}>
+                                <span style={{ display: 'inline-flex', width: 8, height: 8, borderRadius: '50%', background: color, marginRight: 8, verticalAlign: 'middle' }} />
+                                {color}
+                            </td>
+                            {sizes.map(size => {
+                                const max = maxValues?.[color]?.[size];
+                                const currentVal = normalizeQty(values[color]?.[size]);
+                                const remaining = max !== undefined ? normalizeQty(max) - currentVal : undefined;
+                                const isAtLimit = showRemainingLabel && remaining !== undefined && remaining === 0 && currentVal > 0;
+                                const isNearLimit = showRemainingLabel && remaining !== undefined && remaining > 0 && remaining <= 2;
+                                return (
+                                    <td key={`${color}-${size}`} style={{ padding: 6 }}>
+                                        <input
+                                            type="number"
+                                            min="0"
+                                            max={max}
+                                            value={currentVal || 0}
+                                            onChange={e => setCell(color, size, parseInt(e.target.value) || 0)}
+                                            title={max !== undefined ? `Max ${max}` : undefined}
+                                            style={{
+                                                width: '100%', minWidth: 72, padding: '8px 10px', textAlign: 'center',
+                                                borderColor: isAtLimit ? 'var(--danger)' : isNearLimit ? '#f59e0b' : undefined,
+                                                background: isAtLimit ? 'rgba(239,68,68,0.06)' : undefined,
+                                            }}
+                                        />
+                                        {max !== undefined && (
+                                            showRemainingLabel ? (
+                                                <div style={{
+                                                    fontSize: 9, textAlign: 'center', marginTop: 2, fontWeight: 700,
+                                                    color: isAtLimit ? 'var(--danger)' : isNearLimit ? '#f59e0b' : 'var(--text-muted)',
+                                                }}>
+                                                    {remaining === 0 ? 'sold out' : `${remaining} left`}
+                                                </div>
+                                            ) : (
+                                                <div style={{ fontSize: 9, color: 'var(--text-muted)', textAlign: 'center', marginTop: 2 }}>max {max}</div>
+                                            )
+                                        )}
+                                    </td>
+                                );
+                            })}
+                            <td style={{ padding: 8, textAlign: 'right', fontWeight: 900 }}>{variantRowTotal(values, color)}</td>
+                        </tr>
+                    ))}
+                </tbody>
+                <tfoot>
+                    <tr>
+                        <td style={{ padding: 8, fontWeight: 900 }}>Total</td>
+                        {sizes.map(size => (
+                            <td key={size} style={{ padding: 8, textAlign: 'center', fontWeight: 900 }}>{variantColumnTotal(values, size)}</td>
+                        ))}
+                        <td style={{ padding: 8, textAlign: 'right', fontWeight: 900 }}>{total}</td>
+                    </tr>
+                </tfoot>
+            </table>
+        </div>
+    );
+}
 
 const DEFAULT_PRODUCT_TYPES = [
     'T-shirt', 'Shirt', 'Polo', 'Hoodie', 'Sweatshirt', 'Sweater', 'Cardigan', 'Jacket', 'Coat', 'Blazer',
@@ -197,7 +335,8 @@ export function AddInventoryModal({ onSave, onClose, stores, products, hiddenPro
         pricePerPiece: 0,
         picture: '',
         sizeQuantities: {} as Record<string, number>,
-        colorQuantities: {} as Record<string, number>
+        colorQuantities: {} as Record<string, number>,
+        variantQuantities: {} as VariantQuantities
     });
 
     const [newProduct, setNewProduct] = useState({ productName: '', brandName: '', productType: '', customType: '' });
@@ -215,7 +354,8 @@ export function AddInventoryModal({ onSave, onClose, stores, products, hiddenPro
             pricePerPiece: 0,
             picture: '',
             sizeQuantities: {} as Record<string, number>,
-            colorQuantities: {} as Record<string, number>
+            colorQuantities: {} as Record<string, number>,
+            variantQuantities: {} as VariantQuantities
         });
         setNewProduct({ productName: '', brandName: '', productType: '', customType: '' });
         setColors([]);
@@ -403,7 +543,22 @@ export function AddInventoryModal({ onSave, onClose, stores, products, hiddenPro
 
     const sizeQuantityTotal = Object.values(item.sizeQuantities).reduce((s, q) => s + (Number(q) || 0), 0);
     const colorQuantityTotal = Object.values(item.colorQuantities).reduce((s, q) => s + (Number(q) || 0), 0);
-    const totalQuantity = Math.max(0, Number(item.quantity) || 0);
+    const hasVariantGrid = colors.length > 0 && sizes.length > 0;
+    const variantQuantityTotal = variantGrandTotal(item.variantQuantities);
+    const totalQuantity = hasVariantGrid ? variantQuantityTotal : Math.max(0, Number(item.quantity) || 0);
+
+    React.useEffect(() => {
+        setItem(curr => {
+            const nextVariants = buildVariantGrid(colors, sizes, curr.variantQuantities);
+            const rollups = rollupVariantQuantities(nextVariants);
+            return {
+                ...curr,
+                variantQuantities: nextVariants,
+                sizeQuantities: rollups.sizeQuantities || {},
+                colorQuantities: rollups.colorQuantities || {},
+            };
+        });
+    }, [colors, sizes]);
 
     const toggleStore = (store: string) => setAllotedStores(prev => prev.includes(store) ? prev.filter(s => s !== store) : [...prev, store]);
 
@@ -658,12 +813,15 @@ export function AddInventoryModal({ onSave, onClose, stores, products, hiddenPro
 
         if (!newProduct.productName.trim()) return toast.error('Enter product name');
         if (!newProduct.brandName.trim()) return toast.error('Enter brand name');
-        if (sizes.length > 0 && sizeQuantityTotal === 0) return toast.error('Enter quantities for at least one size');
-        if (colors.length > 0 && colorQuantityTotal === 0) return toast.error('Enter quantities for at least one color');
+        if (hasVariantGrid && variantQuantityTotal === 0) return toast.error('Enter quantities for at least one color-size pair');
+        if (!hasVariantGrid && sizes.length > 0 && sizeQuantityTotal === 0) return toast.error('Enter quantities for at least one size');
+        if (!hasVariantGrid && colors.length > 0 && colorQuantityTotal === 0) return toast.error('Enter quantities for at least one color');
         if (totalQuantity <= 0) return toast.error('Enter a valid total quantity');
 
-        const normalizedSizeQuantities = Object.keys(item.sizeQuantities).length ? item.sizeQuantities : null;
-        const normalizedColorQuantities = Object.keys(item.colorQuantities).length ? item.colorQuantities : null;
+        const variantRollups = rollupVariantQuantities(item.variantQuantities);
+        const normalizedVariantQuantities = hasVariantGrid && variantRollups.total > 0 ? item.variantQuantities : null;
+        const normalizedSizeQuantities = normalizedVariantQuantities ? variantRollups.sizeQuantities : (Object.keys(item.sizeQuantities).length ? item.sizeQuantities : null);
+        const normalizedColorQuantities = normalizedVariantQuantities ? variantRollups.colorQuantities : (Object.keys(item.colorQuantities).length ? item.colorQuantities : null);
         try {
             const savedProduct = await uploadCatalogProduct();
             // Derive Item ID from the product's real UUID (same format as the dropdown)
@@ -675,6 +833,7 @@ export function AddInventoryModal({ onSave, onClose, stores, products, hiddenPro
                 quantity: totalQuantity,
                 pricePerPiece: Number(item.pricePerPiece) || 0,
                 picture: item.picture,
+                variantQuantities: normalizedVariantQuantities,
                 sizeQuantities: normalizedSizeQuantities,
                 colorQuantities: normalizedColorQuantities,
                 productId: savedProduct.id,
@@ -811,7 +970,7 @@ export function AddInventoryModal({ onSave, onClose, stores, products, hiddenPro
                             </div>
                         </div>
 
-                        {colors.length > 0 && (
+                        {colors.length > 0 && !hasVariantGrid && (
                             <div style={{ marginBottom: 20, padding: 16, background: 'var(--surface-2)', borderRadius: 10, border: '1px solid var(--border)' }}>
                                 <div style={{ fontSize: 13, fontWeight: 800, marginBottom: 12, color: 'var(--text)' }}>Quantity per Color</div>
                                 <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(120px, 1fr))', gap: 12 }}>
@@ -837,7 +996,7 @@ export function AddInventoryModal({ onSave, onClose, stores, products, hiddenPro
                                 <button type="button" className="btn btn-sm" onClick={handleAddCustomSize}>+ Custom Size</button>
                             </div>
 
-                            {sizes.length > 0 && (
+                            {sizes.length > 0 && !hasVariantGrid && (
                                 <div style={{ marginTop: 16, padding: 16, background: 'var(--surface-2)', borderRadius: 10, border: '1px solid var(--border)' }}>
                                     <div style={{ fontSize: 13, fontWeight: 800, marginBottom: 12, color: 'var(--text)' }}>Quantity per Size</div>
                                     <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(120px, 1fr))', gap: 12 }}>
@@ -851,6 +1010,28 @@ export function AddInventoryModal({ onSave, onClose, stores, products, hiddenPro
                                 </div>
                             )}
                         </div>
+
+                        {hasVariantGrid && (
+                            <>
+                                <VariantQuantityGrid
+                                    colors={colors}
+                                    sizes={sizes}
+                                    values={item.variantQuantities}
+                                    onChange={next => {
+                                        const rollups = rollupVariantQuantities(next);
+                                        setItem(curr => ({
+                                            ...curr,
+                                            variantQuantities: next,
+                                            sizeQuantities: rollups.sizeQuantities || {},
+                                            colorQuantities: rollups.colorQuantities || {},
+                                        }));
+                                    }}
+                                />
+                                <div style={{ marginBottom: 16, padding: '8px 12px', background: variantQuantityTotal > 0 ? 'var(--primary)' : 'var(--surface-1)', color: 'var(--text)', borderRadius: 6, fontSize: 13, fontWeight: 800, textAlign: 'center' }}>
+                                    Total inventory quantity: {variantQuantityTotal} units
+                                </div>
+                            </>
+                        )}
 
                         <div style={{ display: 'flex', gap: 8 }}>
                             <button type="submit" className="btn btn-primary btn-full" disabled={savingCatalog} style={{ height: 52, fontSize: 16, fontWeight: 800 }}>{savingCatalog ? 'Saving...' : 'Add to Warehouse Inventory'}</button>
@@ -1118,6 +1299,11 @@ export function EditStoreInventoryModal({ item, storeNames, onSave, onClose }: {
         ...safeKeys(item?.colorQuantitiesAssigned),
         ...safeKeys(item?.colorQuantitiesRemaining),
     ]));
+    const initialVariantQuantitiesAssigned = Object.keys(safeObj(item?.variantQuantitiesAssigned)).length > 0
+        ? item?.variantQuantitiesAssigned
+        : (item?.variantQuantitiesRemaining || {});
+    const variantKeys = Object.keys(item?.variantQuantities || item?.variantQuantitiesAssigned || item?.variantQuantitiesRemaining || {});
+    const variantSizeKeys = Array.from(new Set(Object.values((item?.variantQuantities || item?.variantQuantitiesAssigned || item?.variantQuantitiesRemaining || {}) as VariantQuantities).flatMap(sizes => Object.keys(sizes || {}))));
     const [form, setForm] = useState({
         storeName: item?.storeName || (storeNames && storeNames[0]) || '',
         ownerSupplyPrice: item?.ownerSupplyPrice || 0,
@@ -1127,6 +1313,7 @@ export function EditStoreInventoryModal({ item, storeNames, onSave, onClose }: {
         quantityRemaining: item?.quantityRemaining || 0,
         sizeQuantitiesAssigned: initialSizeQuantitiesAssigned as Record<string, number>,
         colorQuantitiesAssigned: initialColorQuantitiesAssigned as Record<string, number>,
+        variantQuantitiesAssigned: buildVariantGrid(variantKeys, variantSizeKeys, initialVariantQuantitiesAssigned) as VariantQuantities,
         extraQty: item?.extraQty || item?.extra_Qty || 0,
     });
 
@@ -1137,11 +1324,13 @@ export function EditStoreInventoryModal({ item, storeNames, onSave, onClose }: {
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [storeNames]);
 
-    const hasSizeTracking = sizeKeys.length > 0;
-    const hasColorTracking = colorKeys.length > 0;
+    const hasVariantTracking = variantKeys.length > 0 && variantSizeKeys.length > 0;
+    const hasSizeTracking = !hasVariantTracking && sizeKeys.length > 0;
+    const hasColorTracking = !hasVariantTracking && colorKeys.length > 0;
     const totalSizeQuantity = Object.values(form.sizeQuantitiesAssigned).reduce((sum, qty) => sum + (Number(qty) || 0), 0);
     const totalColorQuantity = Object.values(form.colorQuantitiesAssigned).reduce((sum, qty) => sum + (Number(qty) || 0), 0);
-    const effectiveQuantityAssigned = hasSizeTracking ? totalSizeQuantity : hasColorTracking ? totalColorQuantity : Number(form.quantityAssigned) || 0;
+    const totalVariantQuantity = variantGrandTotal(form.variantQuantitiesAssigned);
+    const effectiveQuantityAssigned = hasVariantTracking ? totalVariantQuantity : hasSizeTracking ? totalSizeQuantity : hasColorTracking ? totalColorQuantity : Number(form.quantityAssigned) || 0;
 
     const updateSizeQuantity = (size: string, qty: number) => {
         const maxForSize = ((item?.sizeQuantities as any)?.[size] ?? (item?.sizeQuantitiesRemaining as any)?.[size] ?? Infinity) as number;
@@ -1201,9 +1390,13 @@ export function EditStoreInventoryModal({ item, storeNames, onSave, onClose }: {
         if (remaining < 0) return toast.error('Remaining quantity cannot be less than 0');
         if (remaining > assigned) return toast.error('Remaining cannot exceed total sent');
 
+        if (hasVariantTracking && totalVariantQuantity < 1) return toast.error('Enter quantities for at least one color-size pair');
         if (hasSizeTracking && totalSizeQuantity < 1) return toast.error('Enter quantities for at least one size');
         if (hasColorTracking && totalColorQuantity < 1) return toast.error('Enter quantities for at least one color');
 
+        if (hasVariantTracking && assigned !== totalVariantQuantity) {
+            return toast.error('Total assigned must match the variant grid total');
+        }
         if (hasSizeTracking && assigned !== totalSizeQuantity) {
             return toast.error('Total assigned must match the size breakdown total');
         }
@@ -1218,6 +1411,7 @@ export function EditStoreInventoryModal({ item, storeNames, onSave, onClose }: {
         if (form.quantityAssigned !== undefined || hasSizeTracking || hasColorTracking) fields.quantity_assigned = effectiveQuantityAssigned;
         if (form.quantityRemaining !== undefined) fields.quantity_remaining = Number(form.quantityRemaining) || 0;
         if (form.storeName) fields.storeName = form.storeName;
+        if (hasVariantTracking) fields.variant_quantities_assigned = form.variantQuantitiesAssigned;
         if (hasSizeTracking) fields.size_quantities_assigned = form.sizeQuantitiesAssigned;
         if (hasColorTracking) fields.color_quantities_assigned = form.colorQuantitiesAssigned;
         if (form.extraQty !== undefined) fields.extra_Qty = Number(form.extraQty) || 0;
@@ -1284,6 +1478,28 @@ export function EditStoreInventoryModal({ item, storeNames, onSave, onClose }: {
                                 <input readOnly value={'Rs ' + (Number(item?.ownerSupplyPrice) || 0).toLocaleString()} style={{ background: 'var(--surface-2)', fontWeight: 800 }} />
                             </div>
                         </div>
+
+                        {/* Variant tracking */}
+                        {hasVariantTracking && (
+                            <VariantQuantityGrid
+                                colors={variantKeys}
+                                sizes={variantSizeKeys}
+                                values={form.variantQuantitiesAssigned}
+                                maxValues={item?.variantQuantities || item?.variantQuantitiesRemaining || item?.variantQuantitiesAssigned}
+                                title="Allotment by Color & Size"
+                                onChange={next => {
+                                    const rollups = rollupVariantQuantities(next);
+                                    setForm(curr => ({
+                                        ...curr,
+                                        variantQuantitiesAssigned: next,
+                                        sizeQuantitiesAssigned: rollups.sizeQuantities || {},
+                                        colorQuantitiesAssigned: rollups.colorQuantities || {},
+                                        quantityAssigned: rollups.total,
+                                        quantityRemaining: Math.min(curr.quantityRemaining, rollups.total),
+                                    }));
+                                }}
+                            />
+                        )}
 
                         {/* Size tracking */}
                         {hasSizeTracking && (
@@ -1384,6 +1600,7 @@ export function EditInventoryModal({ item, minQuantity, onSave, onClose, product
     const initialSizes = Array.isArray(item.size) ? item.size : item.size ? [item.size] : [];
     const initialSizeQuantities = (item.sizeQuantities && typeof item.sizeQuantities === 'object') ? item.sizeQuantities : {};
     const initialColorQuantities = (item.colorQuantities && typeof item.colorQuantities === 'object') ? item.colorQuantities : {};
+    const initialVariantQuantities = (item.variantQuantities && typeof item.variantQuantities === 'object') ? item.variantQuantities : {};
     const hasCustomType = item.category && !catalogTypes.some(t => normalizeCatalogValue(t) === normalizeCatalogValue(item.category));
 
     const [form, setForm] = useState({
@@ -1404,11 +1621,22 @@ export function EditInventoryModal({ item, minQuantity, onSave, onClose, product
     const [sizes, setSizes] = useState<string[]>(initialSizes);
     const [customSize, setCustomSize] = useState('');
     const [sizeQuantities, setSizeQuantities] = useState<Record<string, number>>(initialSizeQuantities);
+    const [variantQuantities, setVariantQuantities] = useState<VariantQuantities>(buildVariantGrid(initialColors, initialSizes, initialVariantQuantities));
     const [newPicture, setNewPicture] = useState<string | null>(null);
 
     const previewImage = newPicture || item.productImage || (item.otherVariants?.picture as string | undefined) || '';
 
     React.useEffect(() => {
+        if (colors.length && sizes.length) {
+            setVariantQuantities(curr => {
+                const next = buildVariantGrid(colors, sizes, curr);
+                const rollups = rollupVariantQuantities(next);
+                setSizeQuantities(rollups.sizeQuantities || {});
+                setColorQuantities(rollups.colorQuantities || {});
+                return next;
+            });
+            return;
+        }
         setSizeQuantities((curr) => {
             const next = { ...curr };
             sizes.forEach((s) => {
@@ -1419,7 +1647,7 @@ export function EditInventoryModal({ item, minQuantity, onSave, onClose, product
             });
             return next;
         });
-    }, [sizes]);
+    }, [sizes, colors]);
 
     React.useEffect(() => {
         setColorQuantities((curr) => {
@@ -1434,7 +1662,9 @@ export function EditInventoryModal({ item, minQuantity, onSave, onClose, product
         });
     }, [colors]);
 
-    const totalQuantity = Math.max(0, Number(form.quantityAvailable) || 0);
+    const hasVariantGrid = colors.length > 0 && sizes.length > 0;
+    const variantQuantityTotal = variantGrandTotal(variantQuantities);
+    const totalQuantity = hasVariantGrid ? variantQuantityTotal : Math.max(0, Number(form.quantityAvailable) || 0);
 
     const handleAddColor = () => {
         const color = colorInput.trim();
@@ -1540,8 +1770,10 @@ export function EditInventoryModal({ item, minQuantity, onSave, onClose, product
             return toast.error('Enter a valid total quantity');
         }
 
-        const normalizedSizeQuantities = Object.keys(sizeQuantities).length ? sizeQuantities : null;
-        const normalizedColorQuantities = Object.keys(colorQuantities).length ? colorQuantities : null;
+        const variantRollups = rollupVariantQuantities(variantQuantities);
+        const normalizedVariantQuantities = hasVariantGrid && variantRollups.total > 0 ? variantQuantities : null;
+        const normalizedSizeQuantities = normalizedVariantQuantities ? variantRollups.sizeQuantities : (Object.keys(sizeQuantities).length ? sizeQuantities : null);
+        const normalizedColorQuantities = normalizedVariantQuantities ? variantRollups.colorQuantities : (Object.keys(colorQuantities).length ? colorQuantities : null);
         const payload: any = {
             inventory: {
                 batchNumber,
@@ -1549,6 +1781,7 @@ export function EditInventoryModal({ item, minQuantity, onSave, onClose, product
                 sellingPrice: Number(form.sellingPrice) || 0,
                 lowStockWarning: Number(form.lowStockWarning) || 0,
                 quantityAvailable: totalQuantity,
+                variantQuantities: normalizedVariantQuantities ?? undefined,
                 sizeQuantities: normalizedSizeQuantities ?? undefined,
                 colorQuantities: normalizedColorQuantities ?? undefined,
             },
@@ -1723,7 +1956,7 @@ export function EditInventoryModal({ item, minQuantity, onSave, onClose, product
                             </div>
                         </div>
 
-                        {colors.length > 0 && (
+                        {colors.length > 0 && !hasVariantGrid && (
                             <div style={{ marginBottom: 16, padding: 16, background: 'var(--surface-2)', borderRadius: 10, border: '1px solid var(--border)' }}>
                                 <div style={{ fontSize: 13, fontWeight: 800, marginBottom: 12, color: 'var(--text)' }}>Quantity per Color</div>
                                 <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(120px, 1fr))', gap: 12 }}>
@@ -1784,7 +2017,7 @@ export function EditInventoryModal({ item, minQuantity, onSave, onClose, product
                             </div>
                         </div>
 
-                        {sizes.length > 0 && (
+                        {sizes.length > 0 && !hasVariantGrid && (
                             <div style={{ marginBottom: 16, padding: 16, background: 'var(--surface-2)', borderRadius: 10, border: '1px solid var(--border)' }}>
                                 <div style={{ fontSize: 13, fontWeight: 800, marginBottom: 12, color: 'var(--text)' }}>
                                     Quantity per Size
@@ -1806,6 +2039,25 @@ export function EditInventoryModal({ item, minQuantity, onSave, onClose, product
                                     Total from variants: {totalQuantity} units
                                 </div>
                             </div>
+                        )}
+
+                        {hasVariantGrid && (
+                            <>
+                                <VariantQuantityGrid
+                                    colors={colors}
+                                    sizes={sizes}
+                                    values={variantQuantities}
+                                    onChange={next => {
+                                        const rollups = rollupVariantQuantities(next);
+                                        setVariantQuantities(next);
+                                        setSizeQuantities(rollups.sizeQuantities || {});
+                                        setColorQuantities(rollups.colorQuantities || {});
+                                    }}
+                                />
+                                <div style={{ marginBottom: 16, padding: '8px 12px', background: variantQuantityTotal > 0 ? 'var(--primary)' : 'var(--surface-1)', color: 'var(--text)', borderRadius: 6, fontSize: 13, fontWeight: 800, textAlign: 'center' }}>
+                                    Total from variants: {variantQuantityTotal} units
+                                </div>
+                            </>
                         )}
 
                         <div style={{ display: 'flex', gap: 8 }}>
@@ -1843,6 +2095,12 @@ export function SaleModal({ inventory, storeName, isAdmin, storeNames, onAdd, on
     const gbpRate = 360; // 1 GBP = 360 PKR (Default)
 
     const selectedItem = inventory.find(i => (sale.productId && i.productId === sale.productId) || (!sale.productId && i.productName === sale.productName));
+    const variantQuantitiesRemaining = selectedItem?.variantQuantitiesRemaining
+        ?? selectedItem?.variantQuantities
+        ?? buildLegacyMaxVariantGrid(selectedItem?.colorQuantitiesRemaining ?? selectedItem?.colorQuantities, selectedItem?.sizeQuantitiesRemaining ?? selectedItem?.sizeQuantities);
+    const variantColors = Object.keys(variantQuantitiesRemaining || {});
+    const variantSizes = Array.from(new Set(Object.values(variantQuantitiesRemaining || {}).flatMap(sizes => Object.keys(sizes || {}))));
+    const hasVariantGrid = variantColors.length > 0 && variantSizes.length > 0;
     const sizeQuantitiesRemaining = selectedItem?.sizeQuantitiesRemaining ?? selectedItem?.sizeQuantities;
     const colorQuantitiesRemaining = selectedItem?.colorQuantitiesRemaining ?? selectedItem?.colorQuantities;
     const availableSizesFromQuantities = sizeQuantitiesRemaining ? Object.entries(sizeQuantitiesRemaining).filter(([_, qty]) => (qty as number) > 0) : [];
@@ -1857,19 +2115,23 @@ export function SaleModal({ inventory, storeName, isAdmin, storeNames, onAdd, on
         : Array.isArray(selectedItem?.colors)
             ? selectedItem.colors.map(color => [color, selectedItem?.quantityAvailable ?? 0] as [string, number])
             : [];
-    const hasSizeTracking = availableSizes.length > 0;
-    const hasColorTracking = availableColors.length > 0;
+    const hasSizeTracking = !hasVariantGrid && availableSizes.length > 0;
+    const hasColorTracking = !hasVariantGrid && availableColors.length > 0;
 
     const [sizeQuantities, setSizeQuantities] = useState<Record<string, number>>({});
     const [colorQuantities, setColorQuantities] = useState<Record<string, number>>({});
+    const [variantQuantities, setVariantQuantities] = useState<VariantQuantities>({});
 
     const sizeKeys = availableSizes.map(([size]) => size);
     const colorKeys = availableColors.map(([color]) => color);
 
     const sizeQuantityTotal = Object.values(sizeQuantities).reduce((sum, qty) => sum + (Number(qty) || 0), 0);
     const colorQuantityTotal = Object.values(colorQuantities).reduce((sum, qty) => sum + (Number(qty) || 0), 0);
-    const hasAnyVariantBreakdown = hasSizeTracking || hasColorTracking;
-    const totalQuantity = hasAnyVariantBreakdown
+    const variantQuantityTotal = variantGrandTotal(variantQuantities);
+    const hasAnyVariantBreakdown = hasVariantGrid || hasSizeTracking || hasColorTracking;
+    const totalQuantity = hasVariantGrid
+        ? variantQuantityTotal
+        : hasAnyVariantBreakdown
         ? Math.max(sizeQuantityTotal, colorQuantityTotal, Number(sale.quantity) || 0)
         : Math.max(0, Number(sale.quantity) || 0);
 
@@ -1886,6 +2148,11 @@ export function SaleModal({ inventory, storeName, isAdmin, storeNames, onAdd, on
     const handleSubmit = (e: React.FormEvent) => {
         e.preventDefault();
         
+        if (hasVariantGrid && variantQuantityTotal < 1) {
+            toast.error('Enter quantities for at least one color-size pair');
+            return;
+        }
+
         if (hasSizeTracking && sizeQuantityTotal < 1) {
             toast.error('Enter quantities for at least one size');
             return;
@@ -1937,6 +2204,7 @@ export function SaleModal({ inventory, storeName, isAdmin, storeNames, onAdd, on
             extraQty: sale.extraQty || 0,
             sizeQuantities: hasSizeTracking ? sizeQuantities : null,
             colorQuantities: hasColorTracking ? colorQuantities : null,
+            variantQuantities: hasVariantGrid ? variantQuantities : null,
             productId: selectedItem?.productId || sale.productId || null,
         });
         onClose();
@@ -1978,6 +2246,9 @@ export function SaleModal({ inventory, storeName, isAdmin, storeNames, onAdd, on
                                     value={sale.productId || ''}
                                     onChange={e => {
                                         const item = inventory.find(i => (i.productId && i.productId === e.target.value) || i.productName === e.target.value);
+                                        const nextVariants = item?.variantQuantitiesRemaining ?? item?.variantQuantities ?? {};
+                                        const nextVariantColors = Object.keys(nextVariants);
+                                        const nextVariantSizes = Array.from(new Set(Object.values(nextVariants).flatMap((sizes: any) => Object.keys(sizes || {}))));
                                         const nextSizeKeys = Array.isArray(item?.sizes) && item.sizes.length > 0 ? item.sizes : [];
                                         const nextColorKeys = Array.isArray(item?.colors) && item.colors.length > 0 ? item.colors : [];
                                         setSale({
@@ -1987,6 +2258,7 @@ export function SaleModal({ inventory, storeName, isAdmin, storeNames, onAdd, on
                                             sellingPrice: item?.sellingPrice || 0,
                                             quantity: 0,
                                         });
+                                        setVariantQuantities(nextVariantColors.length && nextVariantSizes.length ? buildVariantGrid(nextVariantColors, nextVariantSizes) : {});
                                         setSizeQuantities(buildEmptyQuantities(nextSizeKeys));
                                         setColorQuantities(buildEmptyQuantities(nextColorKeys));
                                         setCurrency('PKR'); // Reset to PKR on item select
@@ -2001,6 +2273,20 @@ export function SaleModal({ inventory, storeName, isAdmin, storeNames, onAdd, on
                                     ))}
                                 </select>
                             </div>
+
+                            {hasVariantGrid && (
+                                <div className="input-group full-width">
+                                    <VariantQuantityGrid
+                                        colors={variantColors}
+                                        sizes={variantSizes}
+                                        values={variantQuantities}
+                                        maxValues={variantQuantitiesRemaining}
+                                        title="Sale by Color & Size"
+                                        showRemainingLabel={true}
+                                        onChange={setVariantQuantities}
+                                    />
+                                </div>
+                            )}
 
                             {hasSizeTracking && (
                                 <div className="input-group full-width">
@@ -2801,15 +3087,20 @@ export function AllotToStoreModal({ onSave, onClose, stores, inventory, allotedQ
         commissionPercent: 0,
         extraQty: 0,
         sizeQuantitiesAssigned: {} as Record<string, number>,
-        colorQuantitiesAssigned: {} as Record<string, number>
+        colorQuantitiesAssigned: {} as Record<string, number>,
+        variantQuantitiesAssigned: {} as VariantQuantities
     });
 
     const selectedInv = (inventory || []).find(i => i.batchNumber === form.batchNumber);
     const productName = selectedInv?.productName || '';
     const sizeQuantities = selectedInv?.sizeQuantities;
     const colorQuantities = selectedInv?.colorQuantities;
-    const hasSizeTracking = sizeQuantities && Object.keys(sizeQuantities).length > 0;
-    const hasColorTracking = colorQuantities && Object.keys(colorQuantities).length > 0;
+    const variantQuantities = selectedInv?.variantQuantities;
+    const variantColors = Object.keys(variantQuantities || {});
+    const variantSizes = Array.from(new Set(Object.values(variantQuantities || {}).flatMap(sizes => Object.keys(sizes || {}))));
+    const hasVariantGrid = variantColors.length > 0 && variantSizes.length > 0;
+    const hasSizeTracking = !hasVariantGrid && sizeQuantities && Object.keys(sizeQuantities).length > 0;
+    const hasColorTracking = !hasVariantGrid && colorQuantities && Object.keys(colorQuantities).length > 0;
     
     // Key by inventory.id (batch-level) to avoid mixing up different batches of same product
     const allotedQty = allotedQtyByProduct?.[selectedInv?.id || ''] || 0;
@@ -2870,6 +3161,7 @@ export function AllotToStoreModal({ onSave, onClose, stores, inventory, allotedQ
 
     const totalSizeQuantity = Object.values(form.sizeQuantitiesAssigned).reduce((sum, qty) => sum + qty, 0);
     const totalColorQuantity = Object.values(form.colorQuantitiesAssigned).reduce((sum, qty) => sum + qty, 0);
+    const totalVariantQuantity = variantGrandTotal(form.variantQuantitiesAssigned);
 
     React.useEffect(() => {
         if (!form.storeName && stores?.length) {
@@ -2881,10 +3173,14 @@ export function AllotToStoreModal({ onSave, onClose, stores, inventory, allotedQ
         const inv = (inventory || []).find(i => i.batchNumber === form.batchNumber);
         const cost = Number(inv?.costPrice) || 0;
         const commission = Number(storeCommissionByName?.[form.storeName]) || 0;
+        const invVariants = inv?.variantQuantities || {};
+        const invColors = Object.keys(invVariants);
+        const invSizes = Array.from(new Set(Object.values(invVariants).flatMap(sizes => Object.keys(sizes || {}))));
         setForm(prev => ({
             ...prev,
             ownerSupplyPrice: prev.ownerSupplyPrice || cost,
             commissionPercent: prev.commissionPercent || commission,
+            variantQuantitiesAssigned: invColors.length && invSizes.length ? buildVariantGrid(invColors, invSizes, prev.variantQuantitiesAssigned) : {},
         }));
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [form.batchNumber, form.storeName]);
@@ -2896,7 +3192,10 @@ export function AllotToStoreModal({ onSave, onClose, stores, inventory, allotedQ
         if (!form.batchNumber) return toast.error('Select item');
         
         let finalQuantity = form.quantity;
-        if (hasSizeTracking) {
+        if (hasVariantGrid) {
+            finalQuantity = totalVariantQuantity;
+            if (finalQuantity === 0) return toast.error('Enter quantities for at least one color-size pair');
+        } else if (hasSizeTracking) {
             finalQuantity = totalSizeQuantity;
             if (finalQuantity === 0) return toast.error('Enter quantities for at least one size');
         } else if (hasColorTracking) {
@@ -2917,6 +3216,7 @@ export function AllotToStoreModal({ onSave, onClose, stores, inventory, allotedQ
             storeName: form.storeName,
             batchNumber: form.batchNumber,
             quantity: finalQuantity,
+            variantQuantitiesAssigned: hasVariantGrid ? form.variantQuantitiesAssigned : undefined,
             sizeQuantitiesAssigned: hasSizeTracking ? form.sizeQuantitiesAssigned : undefined,
             colorQuantitiesAssigned: hasColorTracking ? form.colorQuantitiesAssigned : undefined,
             ownerSupplyPrice: Number(form.ownerSupplyPrice) || 0,
@@ -2989,6 +3289,26 @@ export function AllotToStoreModal({ onSave, onClose, stores, inventory, allotedQ
                                 <input readOnly value={Rs(Number(selectedInv?.costPrice) || 0)} style={{ background: 'var(--surface-2)', fontWeight: 800 }} />
                             </div>
                         </div>
+
+                        {hasVariantGrid && (
+                            <VariantQuantityGrid
+                                colors={variantColors}
+                                sizes={variantSizes}
+                                values={form.variantQuantitiesAssigned}
+                                maxValues={variantQuantities}
+                                title="Allot by Color & Size"
+                                onChange={next => {
+                                    const rollups = rollupVariantQuantities(next);
+                                    setForm(curr => ({
+                                        ...curr,
+                                        variantQuantitiesAssigned: next,
+                                        sizeQuantitiesAssigned: rollups.sizeQuantities || {},
+                                        colorQuantitiesAssigned: rollups.colorQuantities || {},
+                                        quantity: rollups.total,
+                                    }));
+                                }}
+                            />
+                        )}
 
                         {hasSizeTracking && (
                             <div style={{ marginBottom: 16, padding: 16, background: 'var(--surface-2)', borderRadius: 10, border: '1px solid var(--border)' }}>
@@ -3332,6 +3652,7 @@ export interface SaleReturnModalProps {
         quantity: number;
         sizeQuantities?: Record<string, number> | null;
         colorQuantities?: Record<string, number> | null;
+        variantQuantities?: VariantQuantities | null;
         storeInventoryId?: string | null;
     };
     onConfirm: (payload: {
@@ -3340,6 +3661,7 @@ export interface SaleReturnModalProps {
         returnReason: string;
         returnSizeQuantities?: Record<string, number> | null;
         returnColorQuantities?: Record<string, number> | null;
+        returnVariantQuantities?: VariantQuantities | null;
     }) => Promise<void>;
     onClose: () => void;
 }
@@ -3347,6 +3669,17 @@ export interface SaleReturnModalProps {
 const RETURN_REASONS = ['Cancelled', 'Customer Refused', 'Defective', 'Wrong Item', 'Other'];
 
 export function SaleReturnModal({ order, onConfirm, onClose }: SaleReturnModalProps) {
+    const variantMax = order.variantQuantities && Object.keys(order.variantQuantities).length > 0
+        ? order.variantQuantities
+        : buildLegacyMaxVariantGrid(order.colorQuantities, order.sizeQuantities);
+    const variantColors = Object.keys(variantMax || {});
+    const variantSizes = Array.from(new Set(Object.values(variantMax || {}).flatMap(sizes => Object.keys(sizes || {}))));
+    const hasVariantGrid = variantColors.length > 0 && variantSizes.length > 0;
+    const [variantInputs, setVariantInputs] = useState<VariantQuantities>(
+        order.variantQuantities && Object.keys(order.variantQuantities).length > 0
+            ? buildVariantGrid(variantColors, variantSizes, order.variantQuantities)
+            : buildVariantGrid(variantColors, variantSizes)
+    );
     const [returnQty, setReturnQty] = useState(order.quantity);
     const [reason, setReason] = useState(RETURN_REASONS[0]);
     const [sizeInputs, setSizeInputs] = useState<Record<string, number>>(
@@ -3357,19 +3690,22 @@ export function SaleReturnModal({ order, onConfirm, onClose }: SaleReturnModalPr
     );
     const [saving, setSaving] = useState(false);
 
-    const hasSizes = order.sizeQuantities && Object.keys(order.sizeQuantities).length > 0;
-    const hasColors = order.colorQuantities && Object.keys(order.colorQuantities).length > 0;
+    const hasSizes = !hasVariantGrid && order.sizeQuantities && Object.keys(order.sizeQuantities).length > 0;
+    const hasColors = !hasVariantGrid && order.colorQuantities && Object.keys(order.colorQuantities).length > 0;
+    const effectiveReturnQty = hasVariantGrid ? variantGrandTotal(variantInputs) : returnQty;
 
     const handleSubmit = async () => {
         if (saving) return;
+        if (effectiveReturnQty < 1) return;
         setSaving(true);
         try {
             await onConfirm({
                 id: order.id,
-                returnQuantity: returnQty,
+                returnQuantity: effectiveReturnQty,
                 returnReason: reason,
                 returnSizeQuantities: hasSizes ? sizeInputs : null,
                 returnColorQuantities: hasColors ? colorInputs : null,
+                returnVariantQuantities: hasVariantGrid ? variantInputs : null,
             });
         } finally {
             setSaving(false);
@@ -3397,11 +3733,23 @@ export function SaleReturnModal({ order, onConfirm, onClose }: SaleReturnModalPr
                         </label>
                         <input
                             type="number" min={1} max={order.quantity}
-                            value={returnQty}
+                            value={effectiveReturnQty}
+                            readOnly={hasVariantGrid}
                             onChange={e => setReturnQty(Math.min(order.quantity, Math.max(1, Number(e.target.value))))}
-                            style={{ width: '100%' }}
+                            style={hasVariantGrid ? { width: '100%', background: 'var(--surface-2)', cursor: 'default' } : { width: '100%' }}
                         />
                     </div>
+
+                    {hasVariantGrid && (
+                        <VariantQuantityGrid
+                            colors={variantColors}
+                            sizes={variantSizes}
+                            values={variantInputs}
+                            maxValues={variantMax}
+                            title="Returned by Color & Size"
+                            onChange={setVariantInputs}
+                        />
+                    )}
 
                     {/* Size breakdown */}
                     {hasSizes && (
@@ -3463,9 +3811,9 @@ export function SaleReturnModal({ order, onConfirm, onClose }: SaleReturnModalPr
                             className="btn btn-sm"
                             style={{ background: 'var(--warning, #f59e0b)', borderColor: 'var(--warning, #f59e0b)', color: '#fff' }}
                             onClick={handleSubmit}
-                            disabled={saving}
+                            disabled={saving || effectiveReturnQty < 1}
                         >
-                            {saving ? 'Processing…' : `Return ${returnQty} piece${returnQty !== 1 ? 's' : ''}`}
+                            {saving ? 'Processing...' : `Return ${effectiveReturnQty} piece${effectiveReturnQty !== 1 ? 's' : ''}`}
                         </button>
                     </div>
                 </div>
@@ -3486,14 +3834,17 @@ export interface ReturnToWarehouseModalProps {
         pendingReturnQty: number;
         pendingReturnSizeQuantities?: Record<string, number> | null;
         pendingReturnColorQuantities?: Record<string, number> | null;
+        pendingReturnVariantQuantities?: VariantQuantities | null;
         sizeQuantitiesRemaining?: Record<string, number> | null;
         colorQuantitiesRemaining?: Record<string, number> | null;
+        variantQuantitiesRemaining?: VariantQuantities | null;
     };
     onConfirm: (payload: {
         id: string;
         returnQty: number;
         returnSizeQuantities?: Record<string, number> | null;
         returnColorQuantities?: Record<string, number> | null;
+        returnVariantQuantities?: VariantQuantities | null;
         returnReason?: string;
         returnNote?: string;
         proofImage?: string | null;
@@ -3507,15 +3858,27 @@ export function ReturnToWarehouseModal({ allotment, onConfirm, onClose }: Return
     const [returnQty, setReturnQty] = useState(Math.max(1, defaultQty));
     const baseSizes = allotment.sizeQuantitiesRemaining || allotment.pendingReturnSizeQuantities;
     const baseColors = allotment.colorQuantitiesRemaining || allotment.pendingReturnColorQuantities;
+    const baseVariants = allotment.pendingReturnVariantQuantities
+        || allotment.variantQuantitiesRemaining
+        || buildLegacyMaxVariantGrid(baseColors, baseSizes);
+    const variantColors = Object.keys(baseVariants || {});
+    const variantSizes = Array.from(new Set(Object.values(baseVariants || {}).flatMap(sizes => Object.keys(sizes || {}))));
+    const hasVariantGrid = variantColors.length > 0 && variantSizes.length > 0;
     const [sizeInputs, setSizeInputs] = useState<Record<string, number>>(baseSizes ? { ...baseSizes } : {});
     const [colorInputs, setColorInputs] = useState<Record<string, number>>(baseColors ? { ...baseColors } : {});
+    const [variantInputs, setVariantInputs] = useState<VariantQuantities>(
+        allotment.pendingReturnVariantQuantities || allotment.variantQuantitiesRemaining
+            ? buildVariantGrid(variantColors, variantSizes, baseVariants)
+            : buildVariantGrid(variantColors, variantSizes)
+    );
     const [reason, setReason] = useState(allotment.pendingReturnQty > 0 ? 'Customer return' : 'Unsold stock');
     const [note, setNote] = useState('');
     const [proofImage, setProofImage] = useState<string | null>(null);
     const [saving, setSaving] = useState(false);
 
-    const hasSizes = baseSizes && Object.keys(baseSizes).length > 0;
-    const hasColors = baseColors && Object.keys(baseColors).length > 0;
+    const hasSizes = !hasVariantGrid && baseSizes && Object.keys(baseSizes).length > 0;
+    const hasColors = !hasVariantGrid && baseColors && Object.keys(baseColors).length > 0;
+    const effectiveReturnQty = hasVariantGrid ? variantGrandTotal(variantInputs) : returnQty;
 
     const handleSubmit = async () => {
         if (saving) return;
@@ -3523,9 +3886,10 @@ export function ReturnToWarehouseModal({ allotment, onConfirm, onClose }: Return
         try {
             await onConfirm({
                 id: allotment.id,
-                returnQty,
+                returnQty: effectiveReturnQty,
                 returnSizeQuantities: hasSizes ? sizeInputs : null,
                 returnColorQuantities: hasColors ? colorInputs : null,
+                returnVariantQuantities: hasVariantGrid ? variantInputs : null,
                 returnReason: reason,
                 returnNote: note || undefined,
                 proofImage: proofImage || null,
@@ -3562,10 +3926,23 @@ export function ReturnToWarehouseModal({ allotment, onConfirm, onClose }: Return
                         </label>
                         <input
                             type="number" min={1} max={maxQty}
-                            value={returnQty}
+                            value={effectiveReturnQty}
+                            readOnly={hasVariantGrid}
                             onChange={e => setReturnQty(Math.min(maxQty, Math.max(1, Number(e.target.value))))}
+                            style={hasVariantGrid ? { background: 'var(--surface-2)', cursor: 'default' } : undefined}
                         />
                     </div>
+
+                    {hasVariantGrid && (
+                        <VariantQuantityGrid
+                            colors={variantColors}
+                            sizes={variantSizes}
+                            values={variantInputs}
+                            maxValues={baseVariants}
+                            title="Return by Color & Size"
+                            onChange={setVariantInputs}
+                        />
+                    )}
 
                     {/* Size breakdown */}
                     {hasSizes && (
@@ -3656,9 +4033,9 @@ export function ReturnToWarehouseModal({ allotment, onConfirm, onClose }: Return
                         <button
                             className="btn btn-sm btn-primary"
                             onClick={handleSubmit}
-                            disabled={saving || maxQty === 0}
+                            disabled={saving || maxQty === 0 || effectiveReturnQty < 1}
                         >
-                            {saving ? 'Returning…' : `Return ${returnQty} piece${returnQty !== 1 ? 's' : ''} to Main Store`}
+                            {saving ? 'Returning...' : `Return ${effectiveReturnQty} piece${effectiveReturnQty !== 1 ? 's' : ''} to Main Store`}
                         </button>
                     </div>
                 </div>

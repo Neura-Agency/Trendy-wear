@@ -215,7 +215,7 @@ export default function InventoryPage({ user, onLogin }: PageProps) {
         }
     }
 
-    const handleReturnToWarehouse = async (payload: { id: string; returnQty: number; returnSizeQuantities?: any; returnColorQuantities?: any }) => {
+    const handleReturnToWarehouse = async (payload: { id: string; returnQty: number; returnSizeQuantities?: any; returnColorQuantities?: any; returnVariantQuantities?: any }) => {
         const response = await fetch('/api/storeInventory', {
             method: 'PATCH',
             headers: { 'Content-Type': 'application/json' },
@@ -606,6 +606,7 @@ export default function InventoryPage({ user, onLogin }: PageProps) {
                                                                     ...item,
                                                                     sizeQuantities: warehouseItem?.sizeQuantities || {},
                                                                     colorQuantities: warehouseItem?.colorQuantities || {},
+                                                                    variantQuantities: warehouseItem?.variantQuantities || {},
                                                                     totalQty: warehouseItem?.quantityAvailable || 0,
                                                                     allotedQty: allotedQtyByProduct[item.inventoryId] || 0,
                                                                 });
@@ -746,7 +747,7 @@ export default function InventoryPage({ user, onLogin }: PageProps) {
                         inventory={data.inventory}
                         allotedQtyByProduct={allotedQtyByProduct}
                         storeCommissionByName={storeCommissionByName}
-                        onSave={async ({ storeName, batchNumber, quantity, ownerSupplyPrice, commissionPercent, extraQty, sizeQuantitiesAssigned, colorQuantitiesAssigned }) => {
+                        onSave={async ({ storeName, batchNumber, quantity, ownerSupplyPrice, commissionPercent, extraQty, sizeQuantitiesAssigned, colorQuantitiesAssigned, variantQuantitiesAssigned }) => {
                             try {
                                 const resp = await fetch('/api/storeInventory', {
                                     method: 'POST',
@@ -755,6 +756,7 @@ export default function InventoryPage({ user, onLogin }: PageProps) {
                                         storeName,
                                         batchNumber,
                                         quantity,
+                                        variantQuantitiesAssigned,
                                         sizeQuantitiesAssigned,
                                         colorQuantitiesAssigned,
                                         ownerSupplyPrice,
@@ -971,8 +973,10 @@ export default function InventoryPage({ user, onLogin }: PageProps) {
                         pendingReturnQty: Number(returnToWarehouseRow.pendingReturnQty) || 0,
                         pendingReturnSizeQuantities: returnToWarehouseRow.pendingReturnSizeQuantities ?? null,
                         pendingReturnColorQuantities: returnToWarehouseRow.pendingReturnColorQuantities ?? null,
+                        pendingReturnVariantQuantities: returnToWarehouseRow.pendingReturnVariantQuantities ?? null,
                         sizeQuantitiesRemaining: returnToWarehouseRow.sizeQuantitiesRemaining ?? null,
                         colorQuantitiesRemaining: returnToWarehouseRow.colorQuantitiesRemaining ?? null,
+                        variantQuantitiesRemaining: returnToWarehouseRow.variantQuantitiesRemaining ?? null,
                     }}
                     onConfirm={handleReturnToWarehouse}
                     onClose={() => setReturnToWarehouseRow(null)}

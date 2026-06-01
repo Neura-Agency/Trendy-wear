@@ -2,6 +2,12 @@ import { NextApiRequest, NextApiResponse } from 'next'
 import { supabaseAdmin, TABLES } from '../../lib/supabase'
 import { requireSession, toUserPayload, isSuperAdmin } from '../../lib/api/session'
 import { buildDeterministicProductId, findMatchingProduct, resolveCanonicalBrand } from '../../lib/catalog'
+import {
+  mergeVariantQuantities,
+  normalizeFlatQuantities,
+  normalizeVariantQuantities,
+  rollupVariantQuantities,
+} from '../../lib/variantQuantities'
 
 export const config = {
   api: {
@@ -80,6 +86,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
         quantity,
         sizeQuantities,
         colorQuantities,
+        variantQuantities,
         pricePerPiece,
         picture,
         productId,
@@ -185,7 +192,11 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
           .eq('id', finalProductId)
       }
 
-      const totalQuantity = Math.max(0, num(quantity))
+      const normalizedIncomingVariants = normalizeVariantQuantities(variantQuantities)
+      const incomingRollups = rollupVariantQuantities(normalizedIncomingVariants)
+      const effectiveSizeQuantities = incomingRollups.sizeQuantities ?? normalizeFlatQuantities(sizeQuantities)
+      const effectiveColorQuantities = incomingRollups.colorQuantities ?? normalizeFlatQuantities(colorQuantities)
+      const totalQuantity = Math.max(0, normalizedIncomingVariants ? incomingRollups.total : num(quantity))
 
       const { data: existingInventory, error: inventoryLookupError } = await supabaseAdmin
         .from(TABLES.INVENTORY)
@@ -198,8 +209,10 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
         return res.status(500).json({ error: 'Failed to fetch existing inventory' })
       }
 
-      const nextSizeQuantities = mergeQuantities(existingInventory?.size_quantities, sizeQuantities)
-      const nextColorQuantities = mergeQuantities(existingInventory?.color_quantities, colorQuantities)
+      const nextVariantQuantities = mergeVariantQuantities(existingInventory?.variant_quantities, normalizedIncomingVariants)
+      const variantRollups = rollupVariantQuantities(nextVariantQuantities)
+      const nextSizeQuantities = variantRollups.sizeQuantities ?? mergeQuantities(existingInventory?.size_quantities, effectiveSizeQuantities)
+      const nextColorQuantities = variantRollups.colorQuantities ?? mergeQuantities(existingInventory?.color_quantities, effectiveColorQuantities)
 
       let inventoryItem
       let inventoryError
@@ -213,6 +226,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
             owner: existingInventory.owner || user.username,
             low_stock_warning: Number(existingInventory.low_stock_warning) || 5
           }
+          if (nextVariantQuantities) updatePayload.variant_quantities = nextVariantQuantities
           if (Object.keys(nextSizeQuantities).length) updatePayload.size_quantities = nextSizeQuantities
           if (Object.keys(nextColorQuantities).length) updatePayload.color_quantities = nextColorQuantities
 
@@ -235,8 +249,9 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
             owner: user.username,
             low_stock_warning: 5
           }
-          if (sizeQuantities && typeof sizeQuantities === 'object' && Object.keys(sizeQuantities).length) insertPayload.size_quantities = sizeQuantities
-          if (colorQuantities && typeof colorQuantities === 'object' && Object.keys(colorQuantities).length) insertPayload.color_quantities = colorQuantities
+          if (normalizedIncomingVariants) insertPayload.variant_quantities = normalizedIncomingVariants
+          if (effectiveSizeQuantities && Object.keys(effectiveSizeQuantities).length) insertPayload.size_quantities = effectiveSizeQuantities
+          if (effectiveColorQuantities && Object.keys(effectiveColorQuantities).length) insertPayload.color_quantities = effectiveColorQuantities
 
         const result = await supabaseAdmin
           .from(TABLES.INVENTORY)
@@ -302,6 +317,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
           color: p.colors ?? [],
           sizeQuantities: row.size_quantities ?? null,
           colorQuantities: row.color_quantities ?? null,
+          variantQuantities: row.variant_quantities ?? null,
           otherVariants: { picture: p.product_image ?? null },
           productImage: p.product_image ?? null,
           batchNumber: derivedItemId,
@@ -331,7 +347,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 
       const { data: currentInventory, error: currentInventoryError } = await supabaseAdmin
         .from(TABLES.INVENTORY)
-        .select('id, size_quantities, color_quantities')
+        .select('id, size_quantities, color_quantities, variant_quantities')
         .eq('id', id)
         .maybeSingle()
 
@@ -351,6 +367,23 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
         const warn = num(inventoryFields.lowStockWarning)
         if (warn < 0) return res.status(400).json({ error: 'lowStockWarning must be >= 0' })
         inventoryUpdate.low_stock_warning = warn
+      }
+
+      const rawVariantQuantities = inventoryFields.variantQuantities
+      if (rawVariantQuantities !== undefined) {
+        if (rawVariantQuantities === null) {
+          inventoryUpdate.variant_quantities = null
+          inventoryUpdate.size_quantities = null
+          inventoryUpdate.color_quantities = null
+        } else {
+          const normalized = normalizeVariantQuantities(rawVariantQuantities)
+          if (!normalized) return res.status(400).json({ error: 'variantQuantities must be a color-size object or null' })
+          const rollups = rollupVariantQuantities(normalized)
+          inventoryUpdate.variant_quantities = normalized
+          inventoryUpdate.size_quantities = rollups.sizeQuantities
+          inventoryUpdate.color_quantities = rollups.colorQuantities
+          inventoryUpdate.quantity_available = rollups.total
+        }
       }
 
       const rawSizeQuantities = inventoryFields.sizeQuantities
@@ -528,4 +561,3 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     return res.status(500).json({ error: error.message || 'Internal server error' })
   }
 }
-

@@ -1,6 +1,13 @@
 import type { NextApiRequest, NextApiResponse } from 'next'
 import { supabaseAdmin, TABLES } from '../../lib/supabase'
 import { getAllowedStoreIds, requireAdmin, requireSession } from '../../lib/api/session'
+import {
+  adjustVariantQuantities,
+  normalizeFlatQuantities,
+  normalizeVariantQuantities,
+  rollupVariantQuantities,
+  validateVariantRequest,
+} from '../../lib/variantQuantities'
 
 function num(v: any): number {
   const n = Number(v)
@@ -38,9 +45,12 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
           size_quantities_remaining,
           color_quantities_assigned,
           color_quantities_remaining,
+          variant_quantities_assigned,
+          variant_quantities_remaining,
           pending_return_qty,
           pending_return_size_quantities,
-          pending_return_color_quantities
+          pending_return_color_quantities,
+          pending_return_variant_quantities
         `)
         .order('created_at', { ascending: false })
 
@@ -96,10 +106,13 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
           sizeQuantitiesRemaining: row.size_quantities_remaining ?? null,
           colorQuantitiesAssigned: row.color_quantities_assigned ?? null,
           colorQuantitiesRemaining: row.color_quantities_remaining ?? null,
+          variantQuantitiesAssigned: row.variant_quantities_assigned ?? null,
+          variantQuantitiesRemaining: row.variant_quantities_remaining ?? null,
           extraQty: num(row['extra_Qty'] ?? 0),
           pendingReturnQty: num(row.pending_return_qty ?? 0),
           pendingReturnSizeQuantities: row.pending_return_size_quantities ?? null,
           pendingReturnColorQuantities: row.pending_return_color_quantities ?? null,
+          pendingReturnVariantQuantities: row.pending_return_variant_quantities ?? null,
           created_at: row.created_at,
           updated_at: row.updated_at
         }
@@ -115,7 +128,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     }
 
     if (req.method === 'POST') {
-      const { storeName, batchNumber, quantity, sizeQuantitiesAssigned, colorQuantitiesAssigned, ownerSupplyPrice, commissionPercent, extraQty: rawExtra } = req.body || {}
+      const { storeName, batchNumber, quantity, sizeQuantitiesAssigned, colorQuantitiesAssigned, variantQuantitiesAssigned, ownerSupplyPrice, commissionPercent, extraQty: rawExtra } = req.body || {}
       const extraQty = num(rawExtra)
 
       if (!storeName || !batchNumber) {
@@ -136,7 +149,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 
       const { data: inv, error: invErr } = await supabaseAdmin
         .from(TABLES.INVENTORY)
-        .select('id, product_id, quantity_available, size_quantities, color_quantities, cost_price, products:product_id(product_name)')
+        .select('id, product_id, quantity_available, size_quantities, color_quantities, variant_quantities, cost_price, products:product_id(product_name)')
         .eq('batch_number', String(batchNumber))
         .maybeSingle()
 
@@ -149,13 +162,20 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 
       // Calculate total quantity from detailed variant allocations if provided
       let qty = num(quantity)
-      if (sizeQuantitiesAssigned && typeof sizeQuantitiesAssigned === 'object') {
-        qty = Object.values(sizeQuantitiesAssigned as Record<string, unknown>).reduce<number>(
+      const normalizedVariantsAssigned = normalizeVariantQuantities(variantQuantitiesAssigned)
+      const variantRollups = rollupVariantQuantities(normalizedVariantsAssigned)
+      const effectiveSizeQuantitiesAssigned = variantRollups.sizeQuantities ?? normalizeFlatQuantities(sizeQuantitiesAssigned)
+      const effectiveColorQuantitiesAssigned = variantRollups.colorQuantities ?? normalizeFlatQuantities(colorQuantitiesAssigned)
+
+      if (normalizedVariantsAssigned) {
+        qty = variantRollups.total
+      } else if (effectiveSizeQuantitiesAssigned) {
+        qty = Object.values(effectiveSizeQuantitiesAssigned).reduce<number>(
           (sum, q) => sum + (Number(q) || 0),
           0
         )
-      } else if (colorQuantitiesAssigned && typeof colorQuantitiesAssigned === 'object') {
-        qty = Object.values(colorQuantitiesAssigned as Record<string, unknown>).reduce<number>(
+      } else if (effectiveColorQuantitiesAssigned) {
+        qty = Object.values(effectiveColorQuantitiesAssigned).reduce<number>(
           (sum, q) => sum + (Number(q) || 0),
           0
         )
@@ -166,10 +186,15 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
         return res.status(400).json({ error: 'quantity must be >= 1' })
       }
 
+      const variantValidationError = validateVariantRequest(normalizedVariantsAssigned, inv.variant_quantities)
+      if (variantValidationError) {
+        return res.status(400).json({ error: variantValidationError })
+      }
+
       // Validate size quantities against available inventory
-      if (sizeQuantitiesAssigned && inv.size_quantities) {
+      if (effectiveSizeQuantitiesAssigned && inv.size_quantities) {
         // Check each size
-        for (const [size, requestedQty] of Object.entries(sizeQuantitiesAssigned)) {
+        for (const [size, requestedQty] of Object.entries(effectiveSizeQuantitiesAssigned)) {
           const availableQty = (inv.size_quantities as any)[size] || 0
           if (Number(requestedQty) > availableQty) {
             return res.status(400).json({ 
@@ -179,8 +204,8 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
         }
       }
 
-      if (colorQuantitiesAssigned && inv.color_quantities) {
-        for (const [color, requestedQty] of Object.entries(colorQuantitiesAssigned)) {
+      if (effectiveColorQuantitiesAssigned && inv.color_quantities) {
+        for (const [color, requestedQty] of Object.entries(effectiveColorQuantitiesAssigned)) {
           const availableQty = (inv.color_quantities as any)[color] || 0
           if (Number(requestedQty) > availableQty) {
             return res.status(400).json({
@@ -231,10 +256,12 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
           store_selling_price: supply,
           quantity_assigned: qty,
           quantity_remaining: qty,
-          size_quantities_assigned: normalizeBreakdown(sizeQuantitiesAssigned),
-          size_quantities_remaining: normalizeBreakdown(sizeQuantitiesAssigned),
-          color_quantities_assigned: normalizeBreakdown(colorQuantitiesAssigned),
-          color_quantities_remaining: normalizeBreakdown(colorQuantitiesAssigned),
+          size_quantities_assigned: normalizeBreakdown(effectiveSizeQuantitiesAssigned),
+          size_quantities_remaining: normalizeBreakdown(effectiveSizeQuantitiesAssigned),
+          color_quantities_assigned: normalizeBreakdown(effectiveColorQuantitiesAssigned),
+          color_quantities_remaining: normalizeBreakdown(effectiveColorQuantitiesAssigned),
+          variant_quantities_assigned: normalizedVariantsAssigned,
+          variant_quantities_remaining: normalizedVariantsAssigned,
           'extra_Qty': extraQty || null
         })
         .select('id')
@@ -277,7 +304,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     if (req.method === 'PATCH') {
       // ── Scenario B: Return pending stock back to warehouse ──────────────────
       if (req.body?.action === 'returnToWarehouse') {
-        const { id, returnQty, returnSizeQuantities, returnColorQuantities } = req.body || {}
+        const { id, returnQty, returnSizeQuantities, returnColorQuantities, returnVariantQuantities } = req.body || {}
         if (!id) return res.status(400).json({ error: 'id is required' })
         const retQty = num(returnQty)
         if (retQty < 1) return res.status(400).json({ error: 'returnQty must be at least 1' })
@@ -285,7 +312,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
         // Fetch the allotment row
         const { data: siRow, error: siFetchErr } = await supabaseAdmin
           .from(TABLES.STORE_INVENTORY)
-          .select('id, inventory_id, quantity_remaining, size_quantities_remaining, color_quantities_remaining, pending_return_qty, pending_return_size_quantities, pending_return_color_quantities')
+          .select('id, inventory_id, quantity_remaining, size_quantities_remaining, color_quantities_remaining, variant_quantities_remaining, pending_return_qty, pending_return_size_quantities, pending_return_color_quantities, pending_return_variant_quantities')
           .eq('id', id)
           .single()
 
@@ -296,11 +323,16 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
           return res.status(400).json({ error: `Can only return up to ${pendingQty} pending piece(s) to warehouse` })
         }
 
+        const normalizedReturnVariants = normalizeVariantQuantities(returnVariantQuantities)
+        const returnVariantRollups = rollupVariantQuantities(normalizedReturnVariants)
+        const effectiveReturnSizeQuantities = returnVariantRollups.sizeQuantities ?? normalizeFlatQuantities(returnSizeQuantities)
+        const effectiveReturnColorQuantities = returnVariantRollups.colorQuantities ?? normalizeFlatQuantities(returnColorQuantities)
+
         // Rebuild pending & remaining size/color
         const newPendingSize = { ...(siRow.pending_return_size_quantities || {}) } as Record<string, number>
         const newSizeRem = { ...(siRow.size_quantities_remaining || {}) } as Record<string, number>
-        if (returnSizeQuantities) {
-          Object.entries(returnSizeQuantities as Record<string, number>).forEach(([size, qty]) => {
+        if (effectiveReturnSizeQuantities) {
+          Object.entries(effectiveReturnSizeQuantities).forEach(([size, qty]) => {
             newPendingSize[size] = Math.max(0, (newPendingSize[size] || 0) - num(qty))
             newSizeRem[size] = Math.max(0, (newSizeRem[size] || 0) - num(qty))
           })
@@ -308,8 +340,8 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 
         const newPendingColor = { ...(siRow.pending_return_color_quantities || {}) } as Record<string, number>
         const newColorRem = { ...(siRow.color_quantities_remaining || {}) } as Record<string, number>
-        if (returnColorQuantities) {
-          Object.entries(returnColorQuantities as Record<string, number>).forEach(([color, qty]) => {
+        if (effectiveReturnColorQuantities) {
+          Object.entries(effectiveReturnColorQuantities).forEach(([color, qty]) => {
             newPendingColor[color] = Math.max(0, (newPendingColor[color] || 0) - num(qty))
             newColorRem[color] = Math.max(0, (newColorRem[color] || 0) - num(qty))
           })
@@ -322,9 +354,11 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
             quantity_remaining: Math.max(0, num(siRow.quantity_remaining) - retQty),
             size_quantities_remaining: Object.keys(newSizeRem).length ? newSizeRem : null,
             color_quantities_remaining: Object.keys(newColorRem).length ? newColorRem : null,
+            variant_quantities_remaining: adjustVariantQuantities(siRow.variant_quantities_remaining, normalizedReturnVariants, -1),
             pending_return_qty: Math.max(0, pendingQty - retQty),
             pending_return_size_quantities: Object.values(newPendingSize).some(v => v > 0) ? newPendingSize : null,
             pending_return_color_quantities: Object.values(newPendingColor).some(v => v > 0) ? newPendingColor : null,
+            pending_return_variant_quantities: adjustVariantQuantities(siRow.pending_return_variant_quantities, normalizedReturnVariants, -1),
           })
           .eq('id', id)
 
@@ -337,20 +371,20 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
         if (siRow.inventory_id) {
           const { data: invRow, error: invFetchErr } = await supabaseAdmin
             .from(TABLES.INVENTORY)
-            .select('id, quantity_available, size_quantities, color_quantities')
+            .select('id, quantity_available, size_quantities, color_quantities, variant_quantities')
             .eq('id', siRow.inventory_id)
             .single()
 
           if (!invFetchErr && invRow) {
             const newInvSizes = { ...(invRow.size_quantities || {}) } as Record<string, number>
-            if (returnSizeQuantities) {
-              Object.entries(returnSizeQuantities as Record<string, number>).forEach(([size, qty]) => {
+            if (effectiveReturnSizeQuantities) {
+              Object.entries(effectiveReturnSizeQuantities).forEach(([size, qty]) => {
                 newInvSizes[size] = (newInvSizes[size] || 0) + num(qty)
               })
             }
             const newInvColors = { ...(invRow.color_quantities || {}) } as Record<string, number>
-            if (returnColorQuantities) {
-              Object.entries(returnColorQuantities as Record<string, number>).forEach(([color, qty]) => {
+            if (effectiveReturnColorQuantities) {
+              Object.entries(effectiveReturnColorQuantities).forEach(([color, qty]) => {
                 newInvColors[color] = (newInvColors[color] || 0) + num(qty)
               })
             }
@@ -361,6 +395,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
                 quantity_available: num(invRow.quantity_available) + retQty,
                 size_quantities: Object.keys(newInvSizes).length ? newInvSizes : invRow.size_quantities,
                 color_quantities: Object.keys(newInvColors).length ? newInvColors : invRow.color_quantities,
+                variant_quantities: adjustVariantQuantities(invRow.variant_quantities, normalizedReturnVariants, 1) ?? invRow.variant_quantities,
               })
               .eq('id', siRow.inventory_id)
 
@@ -436,6 +471,48 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
         allowed.quantity_assigned = fields.quantity_assigned
       }
       // Support updating size/color breakdowns
+      if (fields.variant_quantities_assigned !== undefined) {
+        const normalizedVariants = normalizeVariantQuantities(fields.variant_quantities_assigned)
+        if (!normalizedVariants) return res.status(400).json({ error: 'variant_quantities_assigned must be a color-size object' })
+
+        const { data: existingRowForVariants, error: existingErrForVariants } = await supabaseAdmin
+          .from(TABLES.STORE_INVENTORY)
+          .select('id, inventory_id')
+          .eq('id', id)
+          .maybeSingle()
+
+        if (existingErrForVariants) {
+          console.error('storeInventory lookup error on patch (variants):', existingErrForVariants)
+          return res.status(500).json({ error: 'Failed to lookup allotment for variants' })
+        }
+        if (!existingRowForVariants) return res.status(404).json({ error: 'Allotment not found' })
+
+        const { data: invRowForVariants, error: invRowErrForVariants } = await supabaseAdmin
+          .from(TABLES.INVENTORY)
+          .select('variant_quantities')
+          .eq('id', existingRowForVariants.inventory_id)
+          .maybeSingle()
+
+        if (invRowErrForVariants) {
+          console.error('inventory lookup error on patch (variants):', invRowErrForVariants)
+          return res.status(500).json({ error: 'Failed to lookup inventory for variants' })
+        }
+        if (!invRowForVariants) return res.status(404).json({ error: 'Inventory batch not found' })
+
+        const validationError = validateVariantRequest(normalizedVariants, invRowForVariants.variant_quantities)
+        if (validationError) return res.status(400).json({ error: validationError })
+
+        const rollups = rollupVariantQuantities(normalizedVariants)
+        allowed.variant_quantities_assigned = normalizedVariants
+        allowed.variant_quantities_remaining = normalizedVariants
+        allowed.size_quantities_assigned = rollups.sizeQuantities
+        allowed.size_quantities_remaining = rollups.sizeQuantities
+        allowed.color_quantities_assigned = rollups.colorQuantities
+        allowed.color_quantities_remaining = rollups.colorQuantities
+        allowed.quantity_assigned = rollups.total
+        allowed.quantity_remaining = rollups.total
+      }
+
       if (fields.size_quantities_assigned !== undefined) {
         // Validate structure
         if (typeof fields.size_quantities_assigned !== 'object') return res.status(400).json({ error: 'size_quantities_assigned must be an object' })
@@ -713,4 +790,3 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     return res.status(500).json({ error: e?.message || 'Internal server error' })
   }
 }
-

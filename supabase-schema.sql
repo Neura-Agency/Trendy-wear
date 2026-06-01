@@ -179,6 +179,7 @@ create table if not exists public.inventory (
   quantity_available int not null default 0,
   size_quantities jsonb,
   color_quantities jsonb,
+  variant_quantities jsonb,
   low_stock_warning int not null default 5,
 
   owner text,
@@ -213,6 +214,8 @@ create table if not exists public.store_inventory (
   size_quantities_remaining jsonb,
   color_quantities_assigned jsonb,
   color_quantities_remaining jsonb,
+  variant_quantities_assigned jsonb,
+  variant_quantities_remaining jsonb,
 
   owner text,
 
@@ -249,6 +252,7 @@ create table if not exists public.orders (
   color text,
   size_quantities jsonb,
   color_quantities jsonb,
+  variant_quantities jsonb,
   selling_price numeric(12,2) not null,
   shipment_cost numeric(12,2) not null default 0.00,
   client_name text,

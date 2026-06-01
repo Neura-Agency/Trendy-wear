@@ -1,6 +1,13 @@
 import type { NextApiRequest, NextApiResponse } from 'next'
 import { supabaseAdmin, TABLES } from '../../lib/supabase'
 import { requireSession, getAllowedStoreIds, isSuperAdmin } from '../../lib/api/session'
+import {
+  adjustVariantQuantities,
+  normalizeFlatQuantities,
+  normalizeVariantQuantities,
+  rollupVariantQuantities,
+  validateVariantRequest,
+} from '../../lib/variantQuantities'
 
 function num(v: any): number {
   const n = Number(v)
@@ -47,6 +54,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
           profit,
           size_quantities,
           color_quantities,
+          variant_quantities,
           payment_status,
           order_returned,
           return_quantity,
@@ -91,6 +99,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
           color: row.color ?? null,
           sizeQuantities: row.size_quantities ?? null,
           colorQuantities: row.color_quantities ?? null,
+          variantQuantities: row.variant_quantities ?? null,
           sellingPrice: num(row.selling_price),
           shipmentCost: num(row.shipment_cost),
           storeName: row.stores?.name ?? '',
@@ -128,6 +137,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
         size,
         sizeQuantities,
         colorQuantities,
+        variantQuantities,
         extraQty,       // bonus/free units dispatched (stock deducted but not billed)
         sellingPrice,
         shipmentCost,
@@ -148,6 +158,10 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 
       // Total deductions rolled into shipment_cost column
       const totalDeductions = num(shipmentCost) + num(extraCharges)
+      const normalizedOrderVariants = normalizeVariantQuantities(variantQuantities)
+      const orderVariantRollups = rollupVariantQuantities(normalizedOrderVariants)
+      const effectiveSizeQuantities = orderVariantRollups.sizeQuantities ?? normalizeFlatQuantities(sizeQuantities)
+      const effectiveColorQuantities = orderVariantRollups.colorQuantities ?? normalizeFlatQuantities(colorQuantities)
 
       // ── Resolve store_id ─────────────────────────────────────────────────
       let storeId: string | null = null
@@ -216,7 +230,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
         // Query warehouse inventory for this product (FIFO: oldest batch first)
         let invQuery = supabaseAdmin
           .from(TABLES.INVENTORY)
-          .select('id, cost_price, quantity_available')
+          .select('id, cost_price, quantity_available, size_quantities, color_quantities, variant_quantities')
           .order('created_at', { ascending: true })
 
         if (resolvedProductId) {
@@ -236,6 +250,21 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
           return res.status(400).json({ error: `Insufficient warehouse stock. Only ${totalAvailableWarehouse} unit(s) available (need ${totalDispatch}).` })
         }
 
+        if (normalizedOrderVariants) {
+          const variantAvailable = warehouseRows.reduce((acc: Record<string, Record<string, number>>, row: any) => {
+            const variants = normalizeVariantQuantities(row.variant_quantities) || {}
+            Object.entries(variants).forEach(([color, sizes]) => {
+              if (!acc[color]) acc[color] = {}
+              Object.entries(sizes).forEach(([size, qty]) => {
+                acc[color][size] = (acc[color][size] || 0) + qty
+              })
+            })
+            return acc
+          }, {})
+          const validationError = validateVariantRequest(normalizedOrderVariants, variantAvailable)
+          if (validationError) return res.status(400).json({ error: validationError })
+        }
+
         const primaryWarehouseRow = warehouseRows[0] as any
         const costPrice = num(primaryWarehouseRow?.cost_price)
         const commissionPercent = 0
@@ -253,8 +282,9 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
             product_id: resolvedProductId,
             product_name: productName,
             color: req.body?.color || null,
-            size_quantities: sizeQuantities || null,
-            color_quantities: colorQuantities || null,
+            size_quantities: effectiveSizeQuantities,
+            color_quantities: effectiveColorQuantities,
+            variant_quantities: normalizedOrderVariants,
             store_inventory_id: null,
             quantity: qty,
             selling_price: price,
@@ -289,9 +319,10 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
           const rowQty = num((row as any).quantity_available)
           const deduct = Math.min(rowQty, remaining)
           
+          const updatePayload: Record<string, any> = { quantity_available: rowQty - deduct }
           await supabaseAdmin
             .from(TABLES.INVENTORY)
-            .update({ quantity_available: rowQty - deduct })
+            .update(updatePayload)
             .eq('id', (row as any).id)
           remaining -= deduct
         }
@@ -305,7 +336,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 
       let storeInvQuery = supabaseAdmin
         .from(TABLES.STORE_INVENTORY)
-        .select('id, commission_percent, owner_supply_price, quantity_remaining')
+        .select('id, commission_percent, owner_supply_price, quantity_remaining, size_quantities_remaining, color_quantities_remaining, variant_quantities_remaining')
         .eq('store_id', storeId)
         .order('created_at', { ascending: true })
 
@@ -321,6 +352,21 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       const totalAvailable = rows.reduce((s: number, r: any) => s + num(r.quantity_remaining), 0)
       if (totalAvailable < totalDispatch) {
         return res.status(400).json({ error: `Insufficient stock. Only ${totalAvailable} unit(s) available (need ${totalDispatch}: ${qty} sold + ${bonusQty} bonus).` })
+      }
+
+      if (normalizedOrderVariants) {
+        const variantAvailable = rows.reduce((acc: Record<string, Record<string, number>>, row: any) => {
+          const variants = normalizeVariantQuantities(row.variant_quantities_remaining) || {}
+          Object.entries(variants).forEach(([color, sizes]) => {
+            if (!acc[color]) acc[color] = {}
+            Object.entries(sizes).forEach(([size, qty]) => {
+              acc[color][size] = (acc[color][size] || 0) + qty
+            })
+          })
+          return acc
+        }, {})
+        const validationError = validateVariantRequest(normalizedOrderVariants, variantAvailable)
+        if (validationError) return res.status(400).json({ error: validationError })
       }
 
       // Use the first row's commission/cost for the order financials
@@ -345,8 +391,9 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
           product_id: resolvedProductId,
           product_name: productName,
           color: req.body?.color || null,
-          size_quantities: sizeQuantities || null,
-          color_quantities: colorQuantities || null,
+          size_quantities: effectiveSizeQuantities,
+          color_quantities: effectiveColorQuantities,
+          variant_quantities: normalizedOrderVariants,
           store_inventory_id: primaryStoreInvId,
           quantity: qty,
           selling_price: price,
@@ -376,14 +423,27 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 
       // ── Decrement quantity_remaining across rows FIFO (sold + bonus) ────
       let remaining = totalDispatch
+      let remainingVariants = normalizedOrderVariants
       for (const row of rows) {
         if (remaining <= 0) break
         const rowQty = num((row as any).quantity_remaining)
         const deduct = Math.min(rowQty, remaining)
         
+        const updatePayload: Record<string, any> = { quantity_remaining: rowQty - deduct }
+        if (remainingVariants) {
+          const validationError = validateVariantRequest(remainingVariants, (row as any).variant_quantities_remaining)
+          if (!validationError) {
+            const nextVariants = adjustVariantQuantities((row as any).variant_quantities_remaining, remainingVariants, -1)
+            const rollups = rollupVariantQuantities(nextVariants)
+            updatePayload.variant_quantities_remaining = nextVariants
+            updatePayload.size_quantities_remaining = rollups.sizeQuantities
+            updatePayload.color_quantities_remaining = rollups.colorQuantities
+            remainingVariants = null
+          }
+        }
         const { error: updErr } = await supabaseAdmin
           .from(TABLES.STORE_INVENTORY)
-          .update({ quantity_remaining: rowQty - deduct })
+          .update(updatePayload)
           .eq('id', (row as any).id)
         if (updErr) console.error('stock decrement error:', updErr)
         remaining -= deduct
@@ -427,13 +487,14 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
           returnReason,
           returnSizeQuantities,
           returnColorQuantities,
+          returnVariantQuantities,
         } = req.body;
         if (!id) return res.status(400).json({ error: 'id is required' });
 
         // Fetch order details
         const { data: order, error: fetchErr } = await supabaseAdmin
           .from(TABLES.ORDERS)
-          .select('id, quantity, size_quantities, color_quantities, store_inventory_id, order_returned, commission_percent, selling_price, shipment_cost, cost_price')
+          .select('id, quantity, size_quantities, color_quantities, variant_quantities, store_inventory_id, order_returned, commission_percent, selling_price, shipment_cost, cost_price')
           .eq('id', id)
           .single();
 
@@ -443,6 +504,10 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
         const originalQty = num(order.quantity);
         const retQty = returnQuantity != null ? Math.min(num(returnQuantity), originalQty) : originalQty;
         if (retQty < 1) return res.status(400).json({ error: 'returnQuantity must be at least 1' });
+        const normalizedReturnVariants = normalizeVariantQuantities(returnVariantQuantities)
+        const returnVariantRollups = rollupVariantQuantities(normalizedReturnVariants)
+        const effectiveReturnSizeQuantities = returnVariantRollups.sizeQuantities ?? normalizeFlatQuantities(returnSizeQuantities)
+        const effectiveReturnColorQuantities = returnVariantRollups.colorQuantities ?? normalizeFlatQuantities(returnColorQuantities)
 
         // 1. Mark as returned and zero financials
         const { error: updErr } = await supabaseAdmin
@@ -454,8 +519,9 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
             commission_amount: 0,
             return_quantity: retQty,
             return_reason: returnReason || null,
-            return_size_quantities: returnSizeQuantities || null,
-            return_color_quantities: returnColorQuantities || null,
+            return_size_quantities: effectiveReturnSizeQuantities,
+            return_color_quantities: effectiveReturnColorQuantities,
+            return_variant_quantities: normalizedReturnVariants,
             returned_at: new Date().toISOString(),
           })
           .eq('id', id);
@@ -469,35 +535,35 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
         if (order.store_inventory_id) {
           const { data: inv, error: invFetchErr } = await supabaseAdmin
             .from(TABLES.STORE_INVENTORY)
-            .select('quantity_remaining, size_quantities_remaining, color_quantities_remaining, pending_return_qty, pending_return_size_quantities, pending_return_color_quantities')
+            .select('quantity_remaining, size_quantities_remaining, color_quantities_remaining, variant_quantities_remaining, pending_return_qty, pending_return_size_quantities, pending_return_color_quantities, pending_return_variant_quantities')
             .eq('id', order.store_inventory_id)
             .single();
 
           if (!invFetchErr && inv) {
             // Rebuild size/color remaining
             const newSizeRem = { ...(inv.size_quantities_remaining || {}) } as Record<string, number>;
-            if (returnSizeQuantities) {
-              Object.entries(returnSizeQuantities as Record<string, number>).forEach(([size, qty]) => {
+            if (effectiveReturnSizeQuantities) {
+              Object.entries(effectiveReturnSizeQuantities).forEach(([size, qty]) => {
                 newSizeRem[size] = (newSizeRem[size] || 0) + num(qty);
               });
             }
             const newColorRem = { ...(inv.color_quantities_remaining || {}) } as Record<string, number>;
-            if (returnColorQuantities) {
-              Object.entries(returnColorQuantities as Record<string, number>).forEach(([color, qty]) => {
+            if (effectiveReturnColorQuantities) {
+              Object.entries(effectiveReturnColorQuantities).forEach(([color, qty]) => {
                 newColorRem[color] = (newColorRem[color] || 0) + num(qty);
               });
             }
 
             // Pending return tracking (for Scenario B)
             const newPendingSize = { ...(inv.pending_return_size_quantities || {}) } as Record<string, number>;
-            if (returnSizeQuantities) {
-              Object.entries(returnSizeQuantities as Record<string, number>).forEach(([size, qty]) => {
+            if (effectiveReturnSizeQuantities) {
+              Object.entries(effectiveReturnSizeQuantities).forEach(([size, qty]) => {
                 newPendingSize[size] = (newPendingSize[size] || 0) + num(qty);
               });
             }
             const newPendingColor = { ...(inv.pending_return_color_quantities || {}) } as Record<string, number>;
-            if (returnColorQuantities) {
-              Object.entries(returnColorQuantities as Record<string, number>).forEach(([color, qty]) => {
+            if (effectiveReturnColorQuantities) {
+              Object.entries(effectiveReturnColorQuantities).forEach(([color, qty]) => {
                 newPendingColor[color] = (newPendingColor[color] || 0) + num(qty);
               });
             }
@@ -508,9 +574,11 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
                 quantity_remaining: num(inv.quantity_remaining) + retQty,
                 size_quantities_remaining: Object.keys(newSizeRem).length ? newSizeRem : null,
                 color_quantities_remaining: Object.keys(newColorRem).length ? newColorRem : null,
+                variant_quantities_remaining: adjustVariantQuantities(inv.variant_quantities_remaining, normalizedReturnVariants, 1) ?? inv.variant_quantities_remaining,
                 pending_return_qty: (num(inv.pending_return_qty) || 0) + retQty,
                 pending_return_size_quantities: Object.keys(newPendingSize).length ? newPendingSize : null,
                 pending_return_color_quantities: Object.keys(newPendingColor).length ? newPendingColor : null,
+                pending_return_variant_quantities: adjustVariantQuantities(inv.pending_return_variant_quantities, normalizedReturnVariants, 1) ?? inv.pending_return_variant_quantities,
               })
               .eq('id', order.store_inventory_id);
             if (invUpdErr) console.error('Inventory return error:', invUpdErr);
@@ -527,7 +595,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 
         const { data: order, error: fetchErr } = await supabaseAdmin
           .from(TABLES.ORDERS)
-          .select('id, quantity, selling_price, shipment_cost, cost_price, commission_percent, store_inventory_id, order_returned, return_quantity, return_size_quantities, return_color_quantities')
+          .select('id, quantity, selling_price, shipment_cost, cost_price, commission_percent, store_inventory_id, order_returned, return_quantity, return_size_quantities, return_color_quantities, return_variant_quantities')
           .eq('id', id)
           .single();
 
@@ -557,6 +625,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
             return_reason: null,
             return_size_quantities: null,
             return_color_quantities: null,
+            return_variant_quantities: null,
             returned_at: null,
           })
           .eq('id', id);
@@ -570,7 +639,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
         if (order.store_inventory_id) {
           const { data: inv, error: invFetchErr } = await supabaseAdmin
             .from(TABLES.STORE_INVENTORY)
-            .select('quantity_remaining, size_quantities_remaining, color_quantities_remaining, pending_return_qty, pending_return_size_quantities, pending_return_color_quantities')
+            .select('quantity_remaining, size_quantities_remaining, color_quantities_remaining, variant_quantities_remaining, pending_return_qty, pending_return_size_quantities, pending_return_color_quantities, pending_return_variant_quantities')
             .eq('id', order.store_inventory_id)
             .single();
 
@@ -578,6 +647,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
             const retQty = num(order.return_quantity) || qty;
             const retSizes = order.return_size_quantities as Record<string, number> | null;
             const retColors = order.return_color_quantities as Record<string, number> | null;
+            const retVariants = normalizeVariantQuantities(order.return_variant_quantities);
 
             const newSizeRem = { ...(inv.size_quantities_remaining || {}) } as Record<string, number>;
             if (retSizes) {
@@ -610,9 +680,11 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
                 quantity_remaining: Math.max(0, num(inv.quantity_remaining) - retQty),
                 size_quantities_remaining: Object.keys(newSizeRem).length ? newSizeRem : null,
                 color_quantities_remaining: Object.keys(newColorRem).length ? newColorRem : null,
+                variant_quantities_remaining: adjustVariantQuantities(inv.variant_quantities_remaining, retVariants, -1),
                 pending_return_qty: Math.max(0, (num(inv.pending_return_qty) || 0) - retQty),
                 pending_return_size_quantities: Object.keys(newPendingSize).length ? newPendingSize : null,
                 pending_return_color_quantities: Object.keys(newPendingColor).length ? newPendingColor : null,
+                pending_return_variant_quantities: adjustVariantQuantities(inv.pending_return_variant_quantities, retVariants, -1),
               })
               .eq('id', order.store_inventory_id);
             if (invUpdErr) console.error('Undo return inventory error:', invUpdErr);
@@ -670,7 +742,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     // PUT — full order edit (recalculates all financials)
     // ────────────────────────────────────────────────────────────────────────
     if (req.method === 'PUT') {
-      const { id, quantity, sellingPrice, shipmentCost, extraCharges, clientName, occurredAt, size, color, sizeQuantities, colorQuantities } = req.body
+      const { id, quantity, sellingPrice, shipmentCost, extraCharges, clientName, occurredAt, size, color, sizeQuantities, colorQuantities, variantQuantities } = req.body
       if (!id) return res.status(400).json({ error: 'id is required' })
 
       // Fetch existing to keep cost_price + commission_percent
@@ -694,6 +766,8 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       const commissionAmount = Math.round(amountReceived * commPct) / 100
       const adminTake      = amountReceived - commissionAmount
       const profit         = adminTake - costPrice
+      const normalizedVariants = normalizeVariantQuantities(variantQuantities)
+      const variantRollups = rollupVariantQuantities(normalizedVariants)
 
       const { error: updateErr } = await supabaseAdmin
         .from(TABLES.ORDERS)
@@ -705,8 +779,9 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
           occurred_at:        occurredAt,
           size:               size ?? null,
           color:              color ?? null,
-          size_quantities:    sizeQuantities ?? null,
-          color_quantities:   colorQuantities ?? null,
+          size_quantities:    variantRollups.sizeQuantities ?? sizeQuantities ?? null,
+          color_quantities:   variantRollups.colorQuantities ?? colorQuantities ?? null,
+          variant_quantities: normalizedVariants,
           commission_amount:  commissionAmount,
           admin_take:         adminTake,
           profit:             profit,

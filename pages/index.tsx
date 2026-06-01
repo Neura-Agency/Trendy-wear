@@ -5,7 +5,7 @@ import Login from "../components/Login";
 import WeekMonthPicker from '../components/WeekMonthPicker';
 import SectionCard from "../components/SectionCard";
 import Badge from "../components/Badge";
-import { SaleModal, CreateStoreModal, ReportModal, ExpenseBreakdownModal, SaleReturnModal } from "../components/Modals";
+import { SaleModal, CreateStoreModal, ReportModal, ExpenseBreakdownModal, SaleReturnModal, VariantQuantityGrid, buildVariantGrid, variantGrandTotal } from "../components/Modals";
 import { AddExpenseForm } from '../components/Forms';
 import CustomSelect from "../components/CustomSelect";
 import { User, Order, Store, InventoryItem, Expense, Client, StoreInventoryItem, AppData, PageProps } from "../types";
@@ -779,6 +779,7 @@ function OrdersSection({ orders, overallOrders = [], inventory = [], isAdmin, ca
   const [editingCurrency, setEditingCurrency] = useState<'PKR' | 'GBP'>('PKR');
   const [editingSizeQuantities, setEditingSizeQuantities] = useState<Record<string, number>>({});
   const [editingColorQuantities, setEditingColorQuantities] = useState<Record<string, number>>({});
+  const [editingVariantQuantities, setEditingVariantQuantities] = useState<Record<string, Record<string, number>>>({});
   const [returningOrder, setReturningOrder] = useState<any | null>(null);
 
   const normalizeCatalogValue = (value: string) => String(value ?? '').trim().toLowerCase();
@@ -792,6 +793,25 @@ function OrdersSection({ orders, overallOrders = [], inventory = [], isAdmin, ca
     return Array.isArray(raw) ? raw : [];
   };
 
+  const buildLegacyMaxVariantGrid = (colorQuantities?: Record<string, number> | null, sizeQuantities?: Record<string, number> | null) => {
+    const colors = colorQuantities && typeof colorQuantities === 'object' ? Object.keys(colorQuantities) : [];
+    const sizes = sizeQuantities && typeof sizeQuantities === 'object' ? Object.keys(sizeQuantities) : [];
+    const grid: Record<string, Record<string, number>> = {};
+    colors.forEach(color => {
+      grid[color] = {};
+      sizes.forEach(size => {
+        grid[color][size] = Math.min(Number(colorQuantities?.[color]) || 0, Number(sizeQuantities?.[size]) || 0);
+      });
+    });
+    return grid;
+  };
+
+  const getVariantGridSource = (item: any) => {
+    const direct = item?.variantQuantitiesRemaining ?? item?.variantQuantities;
+    if (direct && typeof direct === 'object' && Object.keys(direct).length > 0) return direct;
+    return buildLegacyMaxVariantGrid(item?.colorQuantitiesRemaining ?? item?.colorQuantities, item?.sizeQuantitiesRemaining ?? item?.sizeQuantities);
+  };
+
   const openEdit = (order: any) => {
     const product = inventory.find((item: any) => normalizeCatalogValue(item.productName) === normalizeCatalogValue(order.productName));
     const sizeKeys = getVariantKeys(product, 'size');
@@ -801,6 +821,19 @@ function OrdersSection({ orders, overallOrders = [], inventory = [], isAdmin, ca
     setEditingCurrency('PKR');
     setEditingSizeQuantities(sizeKeys.length > 0 ? buildEmptyQuantities(sizeKeys) : {});
     setEditingColorQuantities(colorKeys.length > 0 ? buildEmptyQuantities(colorKeys) : {});
+
+    // Derive variant grid from product inventory OR fall back to the saved order's own variant data
+    const variantSource = getVariantGridSource(product);
+    let variantColors = Object.keys(variantSource || {});
+    let variantSizes = Array.from(new Set(Object.values(variantSource || {}).flatMap((sizes: any) => Object.keys(sizes || {}))));
+
+    // If product not found in inventory, derive keys from the order's saved variantQuantities
+    if ((!variantColors.length || !variantSizes.length) && order.variantQuantities && typeof order.variantQuantities === 'object') {
+      variantColors = Object.keys(order.variantQuantities);
+      variantSizes = Array.from(new Set(Object.values(order.variantQuantities as Record<string, Record<string, number>>).flatMap(sizes => Object.keys(sizes || {}))));
+    }
+
+    setEditingVariantQuantities(variantColors.length && variantSizes.length ? buildVariantGrid(variantColors, variantSizes, order.variantQuantities || {}) : {});
 
     const savedSizeBreakdown = order.sizeQuantities && typeof order.sizeQuantities === 'object' ? order.sizeQuantities : null;
     const savedColorBreakdown = order.colorQuantities && typeof order.colorQuantities === 'object' ? order.colorQuantities : null;
@@ -835,13 +868,20 @@ function OrdersSection({ orders, overallOrders = [], inventory = [], isAdmin, ca
   const selectedEditProduct = editing
     ? inventory.find((item: any) => normalizeCatalogValue(item.productName) === normalizeCatalogValue(editing.productName))
     : null;
+  const editingVariantMax = getVariantGridSource(selectedEditProduct);
+  const editingVariantColorKeys = Object.keys(editingVariantMax || {});
+  const editingVariantSizeKeys = Array.from(new Set(Object.values(editingVariantMax || {}).flatMap((sizes: any) => Object.keys(sizes || {}))));
+  const editingHasVariantTracking = editingVariantColorKeys.length > 0 && editingVariantSizeKeys.length > 0;
   const editingSizeKeys = getVariantKeys(selectedEditProduct, 'size');
   const editingColorKeys = getVariantKeys(selectedEditProduct, 'color');
-  const editingHasSizeTracking = editingSizeKeys.length > 0;
-  const editingHasColorTracking = editingColorKeys.length > 0;
+  const editingHasSizeTracking = !editingHasVariantTracking && editingSizeKeys.length > 0;
+  const editingHasColorTracking = !editingHasVariantTracking && editingColorKeys.length > 0;
   const editingSizeTotal = Object.values(editingSizeQuantities).reduce((sum, qty) => sum + (Number(qty) || 0), 0);
   const editingColorTotal = Object.values(editingColorQuantities).reduce((sum, qty) => sum + (Number(qty) || 0), 0);
-  const editingQuantity = editingHasSizeTracking || editingHasColorTracking
+  const editingVariantTotal = variantGrandTotal(editingVariantQuantities);
+  const editingQuantity = editingHasVariantTracking
+    ? editingVariantTotal
+    : editingHasSizeTracking || editingHasColorTracking
     ? Math.max(editingSizeTotal, editingColorTotal)
     : Number(editing?.quantity) || 0;
   const editingPriceInPKR = editingCurrency === 'GBP' ? Number(editing?.sellingPrice || 0) * 360 : Number(editing?.sellingPrice || 0);
@@ -894,6 +934,20 @@ function OrdersSection({ orders, overallOrders = [], inventory = [], isAdmin, ca
                   </div>
                 </div>
 
+                {editingHasVariantTracking && (
+                  <div className="input-group full-width">
+                    <VariantQuantityGrid
+                      colors={editingVariantColorKeys}
+                      sizes={editingVariantSizeKeys}
+                      values={editingVariantQuantities}
+                      maxValues={editingVariantMax}
+                      title="Sale by Color & Size"
+                      showRemainingLabel={true}
+                      onChange={setEditingVariantQuantities}
+                    />
+                  </div>
+                )}
+
                 {editingHasSizeTracking && (
                   <div className="input-group full-width">
                     <label>Quantity by Size</label>
@@ -938,13 +992,13 @@ function OrdersSection({ orders, overallOrders = [], inventory = [], isAdmin, ca
                     <input
                       type="text"
                       inputMode="numeric"
-                      value={editingHasSizeTracking || editingHasColorTracking ? editingQuantity : editing.quantity}
-                      readOnly={editingHasSizeTracking || editingHasColorTracking}
+                      value={editingHasVariantTracking || editingHasSizeTracking || editingHasColorTracking ? editingQuantity : editing.quantity}
+                      readOnly={editingHasVariantTracking || editingHasSizeTracking || editingHasColorTracking}
                       onChange={e => setEditing(prev => ({ ...prev, quantity: e.target.value }))}
-                      style={(editingHasSizeTracking || editingHasColorTracking) ? { background: 'var(--surface-2)', cursor: 'default' } : undefined}
+                      style={(editingHasVariantTracking || editingHasSizeTracking || editingHasColorTracking) ? { background: 'var(--surface-2)', cursor: 'default' } : undefined}
                     />
-                    {(editingHasSizeTracking || editingHasColorTracking) && (
-                      <div style={{ fontSize: 11, marginTop: 4, color: 'var(--text-muted)' }}>Auto-calculated from size/color quantities.</div>
+                    {(editingHasVariantTracking || editingHasSizeTracking || editingHasColorTracking) && (
+                      <div style={{ fontSize: 11, marginTop: 4, color: 'var(--text-muted)' }}>Auto-calculated from variant quantities.</div>
                     )}
                   </div>
                   <div className="input-group">
@@ -1037,10 +1091,11 @@ function OrdersSection({ orders, overallOrders = [], inventory = [], isAdmin, ca
                 onClick={() => {
                   onEdit({
                     ...editing,
-                    quantity: Number(editingHasSizeTracking || editingHasColorTracking ? editingQuantity : editing.quantity),
+                    quantity: Number(editingHasVariantTracking || editingHasSizeTracking || editingHasColorTracking ? editingQuantity : editing.quantity),
                     sellingPrice: Number(editing.sellingPrice),
                     shipmentCost: Number(editing.shipmentCost),
                     extraCharges: Number(editing.extraCharges || 0),
+                    variantQuantities: editingHasVariantTracking ? editingVariantQuantities : null,
                     sizeQuantities: editingHasSizeTracking ? editingSizeQuantities : null,
                     colorQuantities: editingHasColorTracking ? editingColorQuantities : null,
                     productName: editing.productName,
@@ -1084,7 +1139,7 @@ function OrdersSection({ orders, overallOrders = [], inventory = [], isAdmin, ca
             const totalCost = (o.costPrice || 0) * o.quantity;
             return (
               <tr key={idx} style={{ cursor: 'pointer', opacity: o.orderReturned ? 0.6 : 1, background: o.orderReturned ? 'rgba(0,0,0,0.05)' : 'transparent' }}
-                onClick={() => setEditing({ ...o })}
+                onClick={() => openEdit(o)}
               >
                 <td className="text-muted" style={{ fontSize: '0.75rem' }}>
                   {new Date(o.date).toLocaleDateString()}
@@ -1169,6 +1224,7 @@ function OrdersSection({ orders, overallOrders = [], inventory = [], isAdmin, ca
             quantity: returningOrder.quantity || 1,
             sizeQuantities: returningOrder.sizeQuantities ?? null,
             colorQuantities: returningOrder.colorQuantities ?? null,
+            variantQuantities: returningOrder.variantQuantities ?? null,
             storeInventoryId: returningOrder.storeInventoryId ?? null,
           }}
           onConfirm={async (payload) => { await onReturn(payload); setReturningOrder(null); }}
@@ -1612,6 +1668,7 @@ const [loading, setLoading] = useState<boolean>(true);
           quantity:     order.quantity,
           sizeQuantities: order.sizeQuantities || null,
           colorQuantities: order.colorQuantities || null,
+          variantQuantities: order.variantQuantities || null,
           extraQty:     order.extraQty || 0,
           sellingPrice: order.sellingPrice,
           shipmentCost: order.shipmentCost || 0,
@@ -1722,7 +1779,7 @@ const [loading, setLoading] = useState<boolean>(true);
     }
   };
 
-  const handleReturnOrder = async (payload: { id: string; returnQuantity: number; returnReason: string; returnSizeQuantities?: Record<string,number>|null; returnColorQuantities?: Record<string,number>|null }) => {
+  const handleReturnOrder = async (payload: { id: string; returnQuantity: number; returnReason: string; returnSizeQuantities?: Record<string,number>|null; returnColorQuantities?: Record<string,number>|null; returnVariantQuantities?: Record<string, Record<string, number>>|null }) => {
     try {
       const res = await fetch('/api/orders', {
         method: 'PATCH',
@@ -2091,6 +2148,7 @@ const [loading, setLoading] = useState<boolean>(true);
                         ownerSupplyPrice: si.ownerSupplyPrice,
                         sizeQuantitiesRemaining: si.sizeQuantitiesRemaining,
                         colorQuantitiesRemaining: si.colorQuantitiesRemaining,
+                        variantQuantitiesRemaining: si.variantQuantitiesRemaining,
                       }))
                     )
                 : user.role === 'store'
@@ -2104,6 +2162,7 @@ const [loading, setLoading] = useState<boolean>(true);
                       ownerSupplyPrice: si.ownerSupplyPrice,
                       sizeQuantitiesRemaining: si.sizeQuantitiesRemaining,
                       colorQuantitiesRemaining: si.colorQuantitiesRemaining,
+                      variantQuantitiesRemaining: si.variantQuantitiesRemaining,
                     }))
                   : data.inventory
             }
