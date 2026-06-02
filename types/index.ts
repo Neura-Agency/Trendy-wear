@@ -113,6 +113,9 @@ export interface InventoryItem {
   sizeQuantities?: Record<string, number> | null;
   colorQuantities?: Record<string, number> | null;
   variantQuantities?: Record<string, Record<string, number>> | null;
+  sizeQuantitiesRemaining?: Record<string, number> | null;
+  colorQuantitiesRemaining?: Record<string, number> | null;
+  variantQuantitiesRemaining?: Record<string, Record<string, number>> | null;
   batchNumber: string;
   costPrice: number;
   sellingPrice: number;

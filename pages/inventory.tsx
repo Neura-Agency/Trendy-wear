@@ -216,16 +216,20 @@ export default function InventoryPage({ user, onLogin }: PageProps) {
     }
 
     const handleReturnToWarehouse = async (payload: { id: string; returnQty: number; returnSizeQuantities?: any; returnColorQuantities?: any; returnVariantQuantities?: any }) => {
-        const response = await fetch('/api/storeInventory', {
-            method: 'PATCH',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ action: 'returnToWarehouse', ...payload }),
-        })
-        const result = await response.json()
-        if (!response.ok) throw new Error(result.error || 'Failed to return to warehouse')
-        toast.success(`✅ ${payload.returnQty} piece${payload.returnQty !== 1 ? 's' : ''} returned to warehouse`)
-        setReturnToWarehouseRow(null)
-        refresh()
+        try {
+            const response = await fetch('/api/storeInventory', {
+                method: 'PATCH',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ action: 'returnToWarehouse', ...payload }),
+            })
+            const result = await response.json()
+            if (!response.ok) throw new Error(result.error || 'Failed to return to warehouse')
+            toast.success(`✅ ${payload.returnQty} piece${payload.returnQty !== 1 ? 's' : ''} returned to warehouse`)
+            setReturnToWarehouseRow(null)
+            refresh()
+        } catch (e: any) {
+            toast.error(e?.message || 'Return to warehouse failed')
+        }
     }
 
     // Flatten store inventory for the table

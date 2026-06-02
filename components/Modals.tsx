@@ -116,9 +116,9 @@ export function VariantQuantityGrid({
     };
 
     return (
-        <div style={{ marginBottom: 16, padding: 16, background: 'var(--surface-2)', borderRadius: 10, border: '1px solid var(--border)', overflowX: 'auto' }}>
+        <div style={{ marginBottom: 16, padding: 16, background: 'var(--surface-2)', borderRadius: 10, border: '1px solid var(--border)' }}>
             <div style={{ fontSize: 13, fontWeight: 800, marginBottom: 12, color: 'var(--text)' }}>{title}</div>
-            <table style={{ minWidth: Math.max(420, 150 + sizes.length * 96), width: '100%', borderCollapse: 'separate', borderSpacing: 0 }}>
+            <table style={{ width: '100%', borderCollapse: 'separate', borderSpacing: 0 }}>
                 <thead>
                     <tr>
                         <th style={{ textAlign: 'left', padding: 8, fontSize: 11, color: 'var(--text-muted)' }}>Color</th>
@@ -630,6 +630,9 @@ export function AddInventoryModal({ onSave, onClose, stores, products, hiddenPro
         (async () => {
             try {
                 const res = await fetch('/api/inventory');
+                if (!res.ok) {
+                    throw new Error('Failed to check product assignments');
+                }
                 const data = await res.json();
                 const assigned = (data.inventory || []).filter((row: any) => normalizeCatalogValue(row.productName) === normalizeCatalogValue(productName));
                 if (assigned.length > 0) {
@@ -640,7 +643,8 @@ export function AddInventoryModal({ onSave, onClose, stores, products, hiddenPro
                     return;
                 }
             } catch (err) {
-                // ignore and continue to delete
+                toast.error('Could not verify product assignments. Please try again.');
+                return;
             }
 
             setDeletingProduct(target);
@@ -848,7 +852,7 @@ export function AddInventoryModal({ onSave, onClose, stores, products, hiddenPro
 
     return (
         <div className="modal-overlay">
-            <div className="modal-box" style={{ maxWidth: '820px', width: '95%' }}>
+            <div className="modal-box" style={{ maxWidth: '860px', width: '95%', maxHeight: '90vh', overflowY: 'auto' }}>
                 <div className="modal-head" style={{ padding: '16px 20px', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
                     <h3 style={{ fontSize: 18, fontWeight: 800 }}>Add Warehouse Inventory</h3>
                     <div style={{ display: 'flex', gap: 8 }}>
@@ -1480,7 +1484,7 @@ export function EditStoreInventoryModal({ item, storeNames, onSave, onClose }: {
 
     return (
         <div className="modal-overlay">
-            <div className="modal-box" style={{ maxWidth: '560px', width: '95%' }}>
+            <div className="modal-box" style={{ maxWidth: '780px', width: '95%', maxHeight: '90vh', overflowY: 'auto' }}>
                 <div className="modal-head" style={{ padding: '16px 20px' }}>
                     <h3 style={{ fontSize: '18px', fontWeight: 800 }}>Edit Allotment</h3>
                     <button className="btn btn-sm" onClick={onClose} style={{ border: 'none', fontSize: '18px' }}>✕</button>
@@ -1854,7 +1858,7 @@ export function EditInventoryModal({ item, minQuantity, onSave, onClose, product
 
     return (
         <div className="modal-overlay">
-            <div className="modal-box" style={{ maxWidth: '820px', width: '95%' }}>
+            <div className="modal-box" style={{ maxWidth: '860px', width: '95%', maxHeight: '90vh', overflowY: 'auto' }}>
                 <div className="modal-head" style={{ padding: '16px 20px' }}>
                     <h3 style={{ fontSize: '18px', fontWeight: 800 }}>Edit Inventory</h3>
                     <button className="btn btn-sm" onClick={onClose} style={{ border: 'none', fontSize: '18px' }}>✕</button>
@@ -2269,7 +2273,7 @@ export function SaleModal({ inventory, storeName, isAdmin, storeNames, onAdd, on
 
     return (
         <div className="modal-overlay">
-            <div className="modal-box" style={{ maxWidth: '480px' }}>
+            <div className="modal-box" style={{ maxWidth: '780px', width: '95%', maxHeight: '90vh', overflowY: 'auto' }}>
                 <div className="modal-head" style={{ padding: '12px 20px' }}>
                     <h3 style={{ fontSize: '16px' }}>New Sale</h3>
                     <div style={{ display: 'flex', gap: 8 }}>
@@ -3281,7 +3285,7 @@ export function AllotToStoreModal({ onSave, onClose, stores, inventory, allotedQ
 
     return (
         <div className="modal-overlay">
-            <div className="modal-box" style={{ maxWidth: '560px', width: '95%' }}>
+            <div className="modal-box" style={{ maxWidth: '780px', width: '95%', maxHeight: '90vh', overflowY: 'auto' }}>
                 <div className="modal-head" style={{ padding: '16px 20px' }}>
                     <h3 style={{ fontSize: '18px', fontWeight: 800 }}>Alot to Store</h3>
                     <button className="btn btn-sm" onClick={onClose} style={{ border: 'none', fontSize: '18px' }}>✕</button>
@@ -3977,7 +3981,7 @@ export function ReturnToWarehouseModal({ allotment, onConfirm, onClose }: Return
 
     return (
         <div className="modal-overlay" onClick={onClose}>
-            <div className="modal-box" style={{ maxWidth: 460, width: '95%' }} onClick={e => e.stopPropagation()}>
+            <div className="modal-box" style={{ maxWidth: 620, width: '95%', maxHeight: '90vh', overflowY: 'auto' }} onClick={e => e.stopPropagation()}>
                 <div className="modal-head" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                     <div>
                         <h3 style={{ margin: 0, fontSize: 17, fontWeight: 800 }}>Return to Main Store</h3>

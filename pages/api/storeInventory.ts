@@ -318,9 +318,9 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 
         if (siFetchErr || !siRow) return res.status(404).json({ error: 'Allotment not found' })
 
-        const pendingQty = num(siRow.pending_return_qty) || 0
-        if (retQty > pendingQty) {
-          return res.status(400).json({ error: `Can only return up to ${pendingQty} pending piece(s) to warehouse` })
+        const remainingQty = num(siRow.quantity_remaining) || 0
+        if (retQty > remainingQty) {
+          return res.status(400).json({ error: `Can only return up to ${remainingQty} piece(s) to warehouse` })
         }
 
         const normalizedReturnVariants = normalizeVariantQuantities(returnVariantQuantities)
@@ -355,7 +355,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
             size_quantities_remaining: Object.keys(newSizeRem).length ? newSizeRem : null,
             color_quantities_remaining: Object.keys(newColorRem).length ? newColorRem : null,
             variant_quantities_remaining: adjustVariantQuantities(siRow.variant_quantities_remaining, normalizedReturnVariants, -1),
-            pending_return_qty: Math.max(0, pendingQty - retQty),
+            pending_return_qty: Math.max(0, num(siRow.pending_return_qty) - retQty),
             pending_return_size_quantities: Object.values(newPendingSize).some(v => v > 0) ? newPendingSize : null,
             pending_return_color_quantities: Object.values(newPendingColor).some(v => v > 0) ? newPendingColor : null,
             pending_return_variant_quantities: adjustVariantQuantities(siRow.pending_return_variant_quantities, normalizedReturnVariants, -1),
