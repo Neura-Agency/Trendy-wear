@@ -224,22 +224,9 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
         return normalized
       }
 
-      // Server-side availability guard (per batch)
-      const { data: assignedRows, error: assignedErr } = await supabaseAdmin
-        .from(TABLES.STORE_INVENTORY)
-        .select('quantity_assigned')
-        .eq('inventory_id', inv.id)
-
-      if (assignedErr) {
-        console.error('assigned sum error:', assignedErr)
-        return res.status(500).json({ error: 'Failed to validate available quantity' })
-      }
-
-      const alreadyAssigned = (assignedRows || []).reduce((acc: number, r: any) => acc + num(r.quantity_assigned), 0)
       const total = num(inv.quantity_available)
-      const remaining = Math.max(0, total - alreadyAssigned)
-      if (qty + extraQty > remaining) {
-        return res.status(400).json({ error: `Quantity exceeds available stock (${remaining}) for this batch` })
+      if (qty + extraQty > total) {
+        return res.status(400).json({ error: `Quantity exceeds available stock (${total}) for this batch` })
       }
 
       const supply = num(ownerSupplyPrice)
@@ -272,18 +259,17 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
         return res.status(500).json({ error: 'Failed to save allotment' })
       }
 
-      // If extra qty was sent — deduct from warehouse + auto-record as expense
+      // Deduct alloted quantity from warehouse inventory (regular + extra)
+      const totalDeduction = qty + extraQty
+      await supabaseAdmin
+        .from(TABLES.INVENTORY)
+        .update({ quantity_available: Math.max(0, total - totalDeduction) })
+        .eq('id', inv.id)
+
+      // Auto-create expense for gifted (extra) units
       if (extraQty > 0) {
         const costPrice = num((inv as any).cost_price)
         const productName = (inv as any).products?.product_name || 'Unknown'
-
-        // Deduct extra units from warehouse quantity_available
-        await supabaseAdmin
-          .from(TABLES.INVENTORY)
-          .update({ quantity_available: total - extraQty })
-          .eq('id', inv.id)
-
-        // Auto-create expense: cost of gifted units
         const expenseAmount = costPrice * extraQty
         if (expenseAmount > 0) {
           await supabaseAdmin
