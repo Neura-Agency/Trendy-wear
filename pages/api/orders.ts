@@ -64,6 +64,13 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
           return_color_quantities,
           return_variant_quantities,
           returned_at,
+          refund_quantity,
+          refund_amount,
+          refund_reason,
+          refund_size_quantities,
+          refund_color_quantities,
+          refund_variant_quantities,
+          refunded_at,
           created_at,
           stores:store_id ( name ),
           store_inventory:store_inventory_id (
@@ -124,6 +131,13 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
           returnColorQuantities: row.return_color_quantities ?? null,
           returnVariantQuantities: row.return_variant_quantities ?? null,
           returnedAt: row.returned_at ?? null,
+          refundQuantity: row.refund_quantity ?? null,
+          refundAmount: row.refund_amount ?? null,
+          refundReason: row.refund_reason ?? null,
+          refundSizeQuantities: row.refund_size_quantities ?? null,
+          refundColorQuantities: row.refund_color_quantities ?? null,
+          refundVariantQuantities: row.refund_variant_quantities ?? null,
+          refundedAt: row.refunded_at ?? null,
           storeInventoryId: row.store_inventory_id ?? null,
         }
       })
@@ -626,6 +640,102 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
         }
 
         return res.json({ success: true });
+      }
+
+      // ── Refund ──────────────────────────────────────────────────────────────
+      // Customer KEEPS the item. No inventory restored. Full cost of goods is absorbed as loss.
+      // Commission is clawed back on refunded units (Option A).
+      if (req.body?.isRefund === true) {
+        const {
+          id,
+          refundQuantity,
+          refundReason,
+          refundSizeQuantities,
+          refundColorQuantities,
+          refundVariantQuantities,
+        } = req.body;
+        if (!id) return res.status(400).json({ error: 'id is required' });
+
+        const { data: order, error: fetchErr } = await supabaseAdmin
+          .from(TABLES.ORDERS)
+          .select('id, quantity, size_quantities, color_quantities, variant_quantities, return_quantity, refund_quantity, refund_size_quantities, refund_color_quantities, refund_variant_quantities, commission_percent, selling_price, shipment_cost, cost_price')
+          .eq('id', id)
+          .single();
+
+        if (fetchErr || !order) return res.status(404).json({ error: 'Order not found' });
+
+        const originalQty = num(order.quantity);
+        const alreadyReturnedQty = Math.max(0, num(order.return_quantity));
+        const alreadyRefundedQty = Math.max(0, num(order.refund_quantity));
+        const remainingQty = Math.max(0, originalQty - alreadyReturnedQty - alreadyRefundedQty);
+        if (remainingQty < 1) return res.status(400).json({ error: 'No remaining units available to refund' });
+
+        const normalizedRefundVariants = normalizeVariantQuantities(refundVariantQuantities);
+        const refundVariantRollups = rollupVariantQuantities(normalizedRefundVariants);
+        const effectiveRefundSizeQuantities = refundVariantRollups.sizeQuantities ?? normalizeFlatQuantities(refundSizeQuantities);
+        const effectiveRefundColorQuantities = refundVariantRollups.colorQuantities ?? normalizeFlatQuantities(refundColorQuantities);
+
+        const refQty = refundQuantity != null ? Math.min(num(refundQuantity), remainingQty) : remainingQty;
+        if (refQty < 1) return res.status(400).json({ error: 'refundQuantity must be at least 1' });
+
+        if (normalizedRefundVariants) {
+          const remainingVariantQuantities = adjustVariantQuantities(order.variant_quantities, order.refund_variant_quantities, -1);
+          const variantValidationError = validateVariantRequest(normalizedRefundVariants, remainingVariantQuantities);
+          if (variantValidationError) {
+            return res.status(400).json({ error: `refundVariantQuantities exceed remaining quantity: ${variantValidationError}` });
+          }
+        }
+
+        const mergeFlatQuantities = (base: unknown, incoming: unknown) => {
+          const next = { ...(normalizeFlatQuantities(base) || {}) };
+          const additions = normalizeFlatQuantities(incoming) || {};
+          Object.entries(additions).forEach(([key, value]) => {
+            next[key] = (next[key] || 0) + num(value);
+          });
+          return Object.keys(next).length ? next : null;
+        };
+
+        const mergedRefundSizeQuantities = mergeFlatQuantities(order.refund_size_quantities, effectiveRefundSizeQuantities);
+        const mergedRefundColorQuantities = mergeFlatQuantities(order.refund_color_quantities, effectiveRefundColorQuantities);
+        const mergedRefundVariantQuantities = mergeVariantQuantities(order.refund_variant_quantities, normalizedRefundVariants);
+        const newRefundQty = alreadyRefundedQty + refQty;
+
+        // Refund amount = selling_price x refunded units
+        const refundAmount = num(order.selling_price) * refQty;
+
+        // Remaining revenue = non-returned, non-refunded units only
+        // Cost stays for ALL original units (refunded items still cost us money)
+        const remainingUnits = Math.max(0, originalQty - alreadyReturnedQty - newRefundQty);
+        const remainingGross = num(order.selling_price) * remainingUnits - num(order.shipment_cost);
+        // Commission clawed back on refunded units (Option A)
+        const remainingCommission = Math.round(remainingGross * num(order.commission_percent)) / 100;
+        const remainingAdminTake = remainingGross - remainingCommission;
+        // Full original cost absorbed
+        const remainingProfit = remainingAdminTake - (num(order.cost_price) * originalQty);
+
+        const { error: updErr } = await supabaseAdmin
+          .from(TABLES.ORDERS)
+          .update({
+            profit: remainingProfit,
+            admin_take: Math.max(0, remainingAdminTake),
+            commission_amount: Math.max(0, remainingCommission),
+            refund_quantity: newRefundQty,
+            refund_amount: refundAmount,
+            refund_reason: refundReason || null,
+            refund_size_quantities: mergedRefundSizeQuantities,
+            refund_color_quantities: mergedRefundColorQuantities,
+            refund_variant_quantities: mergedRefundVariantQuantities,
+            refunded_at: new Date().toISOString(),
+          })
+          .eq('id', id);
+
+        if (updErr) {
+          console.error('Refund update error:', updErr);
+          return res.status(500).json({ error: `Failed to process refund: ${updErr.message || JSON.stringify(updErr)}` });
+        }
+
+        // NO inventory restoration — customer keeps the item
+        return res.json({ success: true, refundAmount });
       }
 
       // ── Undo Return ─────────────────────────────────────────────────────────

@@ -3903,6 +3903,212 @@ export function SaleReturnModal({ order, onConfirm, onClose }: SaleReturnModalPr
 }
 
 // ============================================================
+// SALE REFUND MODAL
+// Customer keeps the item. No inventory restored. Full cost absorbed as loss.
+// ============================================================
+export interface SaleRefundModalProps {
+    order: {
+        id: string;
+        productName: string;
+        storeName: string;
+        quantity: number;
+        sellingPrice: number;
+        costPrice: number;
+        sizeQuantities?: Record<string, number> | null;
+        colorQuantities?: Record<string, number> | null;
+        variantQuantities?: VariantQuantities | null;
+        returnQuantity?: number | null;
+        refundQuantity?: number | null;
+        refundSizeQuantities?: Record<string, number> | null;
+        refundColorQuantities?: Record<string, number> | null;
+        refundVariantQuantities?: VariantQuantities | null;
+    };
+    onConfirm: (payload: {
+        id: string;
+        refundQuantity: number;
+        refundReason: string;
+        refundSizeQuantities?: Record<string, number> | null;
+        refundColorQuantities?: Record<string, number> | null;
+        refundVariantQuantities?: VariantQuantities | null;
+    }) => Promise<void>;
+    onClose: () => void;
+}
+
+const REFUND_REASONS = ['Customer Dissatisfied', 'Wrong Item Sent', 'Damaged on Arrival', 'Goodwill Refund', 'Other'];
+
+export function SaleRefundModal({ order, onConfirm, onClose }: SaleRefundModalProps) {
+    const alreadyReturnedQty = Math.max(0, Number(order.returnQuantity) || 0);
+    const alreadyRefundedQty = Math.max(0, Number(order.refundQuantity) || 0);
+    const remainingQty = Math.max(0, order.quantity - alreadyReturnedQty - alreadyRefundedQty);
+
+    const remainingSizeQuantities = subtractFlatQuantities(
+        subtractFlatQuantities(order.sizeQuantities, order.returnSizeQuantities),
+        order.refundSizeQuantities
+    );
+    const remainingColorQuantities = subtractFlatQuantities(
+        subtractFlatQuantities(order.colorQuantities, order.returnColorQuantities),
+        order.refundColorQuantities
+    );
+    const remainingVariantQuantities = order.variantQuantities && Object.keys(order.variantQuantities).length > 0
+        ? adjustVariantQuantities(
+            adjustVariantQuantities(order.variantQuantities, order.returnVariantQuantities, -1),
+            order.refundVariantQuantities, -1
+          )
+        : null;
+    const variantMax = order.variantQuantities && Object.keys(order.variantQuantities).length > 0
+        ? remainingVariantQuantities ?? order.variantQuantities
+        : buildLegacyMaxVariantGrid(remainingColorQuantities ?? order.colorQuantities, remainingSizeQuantities ?? order.sizeQuantities);
+    const variantColors = Object.keys(variantMax || {});
+    const variantSizes = Array.from(new Set(Object.values(variantMax || {}).flatMap(sizes => Object.keys(sizes || {}))));
+    const hasVariantGrid = variantColors.length > 0 && variantSizes.length > 0;
+    const [variantInputs, setVariantInputs] = useState<VariantQuantities>(
+        buildVariantGrid(variantColors, variantSizes, variantMax)
+    );
+    const [refundQty, setRefundQty] = useState(remainingQty || order.quantity);
+    const [reason, setReason] = useState(REFUND_REASONS[0]);
+    const [sizeInputs, setSizeInputs] = useState<Record<string, number>>(
+        remainingSizeQuantities ? Object.fromEntries(Object.entries(remainingSizeQuantities).map(([k, v]) => [k, v])) : {}
+    );
+    const [colorInputs, setColorInputs] = useState<Record<string, number>>(
+        remainingColorQuantities ? Object.fromEntries(Object.entries(remainingColorQuantities).map(([k, v]) => [k, v])) : {}
+    );
+    const [saving, setSaving] = useState(false);
+
+    const hasSizes = !hasVariantGrid && remainingSizeQuantities && Object.keys(remainingSizeQuantities).length > 0;
+    const hasColors = !hasVariantGrid && remainingColorQuantities && Object.keys(remainingColorQuantities).length > 0;
+    const effectiveRefundQty = hasVariantGrid ? variantGrandTotal(variantInputs) : refundQty;
+    const refundAmount = (order.sellingPrice || 0) * effectiveRefundQty;
+
+    const handleSubmit = async () => {
+        if (saving) return;
+        if (effectiveRefundQty < 1) return;
+        setSaving(true);
+        try {
+            await onConfirm({
+                id: order.id,
+                refundQuantity: effectiveRefundQty,
+                refundReason: reason,
+                refundSizeQuantities: hasSizes ? sizeInputs : null,
+                refundColorQuantities: hasColors ? colorInputs : null,
+                refundVariantQuantities: hasVariantGrid ? variantInputs : null,
+            });
+        } finally {
+            setSaving(false);
+        }
+    };
+
+    return (
+        <div className="modal-overlay" onClick={onClose}>
+            <div className="modal-box" style={{ maxWidth: 620, width: '95%', maxHeight: '90vh', overflowY: 'auto' }} onClick={e => e.stopPropagation()}>
+                <div className="modal-head" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                    <div>
+                        <h3 style={{ margin: 0, fontSize: 17, fontWeight: 800 }}>Refund Sale</h3>
+                        <div style={{ fontSize: 12, color: 'var(--text-muted)', marginTop: 3 }}>
+                            {order.productName} — {order.storeName}
+                        </div>
+                    </div>
+                    <button className="btn btn-sm" onClick={onClose} style={{ border: 'none', fontSize: 18 }}>&#x2715;</button>
+                </div>
+                <div className="modal-body" style={{ padding: '16px 20px 24px', display: 'flex', flexDirection: 'column', gap: 16 }}>
+
+                    {/* Warning info box */}
+                    <div style={{ padding: '10px 14px', background: '#fef2f2', border: '1px solid #fecaca', borderRadius: 8, fontSize: 12, color: '#991b1b', fontWeight: 600 }}>
+                        🔴 <strong>Refund — customer keeps the item.</strong> No stock is restored. The cost of goods is fully absorbed as a loss. Commission is clawed back on refunded units.
+                    </div>
+
+                    {/* Refund Qty */}
+                    <div className="input-group">
+                        <label style={{ fontSize: 12, fontWeight: 700, color: 'var(--text-muted)', display: 'block', marginBottom: 6 }}>
+                            Refund Quantity <span style={{ color: 'var(--text-muted)', fontWeight: 400 }}>(max {remainingQty || order.quantity})</span>
+                        </label>
+                        <input
+                            type="number" min={1} max={remainingQty || order.quantity}
+                            value={effectiveRefundQty}
+                            readOnly={hasVariantGrid}
+                            onChange={e => setRefundQty(Math.min(remainingQty || order.quantity, Math.max(1, Number(e.target.value))))}
+                            style={hasVariantGrid ? { width: '100%', background: 'var(--surface-2)', cursor: 'default' } : { width: '100%' }}
+                        />
+                    </div>
+
+                    {hasVariantGrid && (
+                        <VariantQuantityGrid
+                            colors={variantColors}
+                            sizes={variantSizes}
+                            values={variantInputs}
+                            maxValues={variantMax}
+                            title="Refund by Color & Size"
+                            onChange={setVariantInputs}
+                        />
+                    )}
+
+                    {hasSizes && (
+                        <div>
+                            <div style={{ fontSize: 12, fontWeight: 700, color: 'var(--text-muted)', marginBottom: 8 }}>Sizes Being Refunded</div>
+                            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(100px,1fr))', gap: 8 }}>
+                                {Object.keys(remainingSizeQuantities!).map(size => (
+                                    <div key={size}>
+                                        <label style={{ fontSize: 11, fontWeight: 600, display: 'block', marginBottom: 3 }}>{size}</label>
+                                        <input
+                                            type="number" min={0} max={remainingSizeQuantities![size]}
+                                            value={sizeInputs[size] ?? 0}
+                                            onChange={e => setSizeInputs(prev => ({ ...prev, [size]: Math.min(remainingSizeQuantities![size], Math.max(0, Number(e.target.value))) }))}
+                                            style={{ width: '100%' }}
+                                        />
+                                    </div>
+                                ))}
+                            </div>
+                        </div>
+                    )}
+
+                    {hasColors && (
+                        <div>
+                            <div style={{ fontSize: 12, fontWeight: 700, color: 'var(--text-muted)', marginBottom: 8 }}>Colors Being Refunded</div>
+                            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(110px,1fr))', gap: 8 }}>
+                                {Object.keys(remainingColorQuantities!).map(color => (
+                                    <div key={color}>
+                                        <label style={{ fontSize: 11, fontWeight: 600, display: 'block', marginBottom: 3 }}>{color}</label>
+                                        <input
+                                            type="number" min={0} max={remainingColorQuantities![color]}
+                                            value={colorInputs[color] ?? 0}
+                                            onChange={e => setColorInputs(prev => ({ ...prev, [color]: Math.min(remainingColorQuantities![color], Math.max(0, Number(e.target.value))) }))}
+                                            style={{ width: '100%' }}
+                                        />
+                                    </div>
+                                ))}
+                            </div>
+                        </div>
+                    )}
+
+                    <div className="input-group">
+                        <label style={{ fontSize: 12, fontWeight: 700, color: 'var(--text-muted)', display: 'block', marginBottom: 6 }}>Refund Reason</label>
+                        <select value={reason} onChange={e => setReason(e.target.value)} style={{ width: '100%' }}>
+                            {REFUND_REASONS.map(r => <option key={r} value={r}>{r}</option>)}
+                        </select>
+                    </div>
+
+                    {/* Refund amount preview */}
+                    <div style={{ padding: '10px 14px', background: '#f0fdf4', border: '1px solid #bbf7d0', borderRadius: 8, fontSize: 12, color: '#14532d', fontWeight: 600 }}>
+                        💸 Refund amount: <strong>${refundAmount.toLocaleString()}</strong> ({effectiveRefundQty} × ${order.sellingPrice?.toLocaleString()})
+                    </div>
+
+                    <div style={{ display: 'flex', gap: 10, justifyContent: 'flex-end', marginTop: 4 }}>
+                        <button className="btn btn-sm btn-glass" onClick={onClose} disabled={saving}>Cancel</button>
+                        <button
+                            className="btn btn-sm"
+                            style={{ background: '#dc2626', borderColor: '#dc2626', color: '#fff' }}
+                            onClick={handleSubmit}
+                            disabled={saving || effectiveRefundQty < 1}
+                        >
+                            {saving ? 'Processing...' : `Refund ${effectiveRefundQty} piece${effectiveRefundQty !== 1 ? 's' : ''}`}
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </div>
+    );
+}
+
+// ============================================================
 // RETURN TO WAREHOUSE MODAL (Scenario B)
 // ============================================================
 export interface ReturnToWarehouseModalProps {

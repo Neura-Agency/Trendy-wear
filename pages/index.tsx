@@ -5,7 +5,7 @@ import Login from "../components/Login";
 import WeekMonthPicker from '../components/WeekMonthPicker';
 import SectionCard from "../components/SectionCard";
 import Badge from "../components/Badge";
-import { SaleModal, CreateStoreModal, ReportModal, ExpenseBreakdownModal, SaleReturnModal, VariantQuantityGrid, buildVariantGrid, variantGrandTotal } from "../components/Modals";
+import { SaleModal, CreateStoreModal, ReportModal, ExpenseBreakdownModal, SaleReturnModal, SaleRefundModal, VariantQuantityGrid, buildVariantGrid, variantGrandTotal } from "../components/Modals";
 import { AddExpenseForm } from '../components/Forms';
 import CustomSelect from "../components/CustomSelect";
 import { User, Order, Store, InventoryItem, Expense, Client, StoreInventoryItem, AppData, PageProps } from "../types";
@@ -774,13 +774,14 @@ function StoresOverviewSection({ stores, orders, storeInventory, filter, getFilt
 }
 
 // ─── ORDERS SECTION ──────────────────────────────────────────────────
-function OrdersSection({ orders, overallOrders = [], inventory = [], storeInventory = {}, isAdmin, canDelete, onCommissionEdit, onTogglePayout, onEdit, onDelete, onReturn, onUndoReturn, confirmDialog }: any) {
+function OrdersSection({ orders, overallOrders = [], inventory = [], storeInventory = {}, isAdmin, canDelete, onCommissionEdit, onTogglePayout, onEdit, onDelete, onReturn, onRefund, onUndoReturn, confirmDialog }: any) {
   const [editing, setEditing] = useState<any>(null);
   const [editingCurrency, setEditingCurrency] = useState<'PKR' | 'GBP'>('PKR');
   const [editingSizeQuantities, setEditingSizeQuantities] = useState<Record<string, number>>({});
   const [editingColorQuantities, setEditingColorQuantities] = useState<Record<string, number>>({});
   const [editingVariantQuantities, setEditingVariantQuantities] = useState<Record<string, Record<string, number>>>({});
   const [returningOrder, setReturningOrder] = useState<any | null>(null);
+  const [refundingOrder, setRefundingOrder] = useState<any | null>(null);
 
   const normalizeCatalogValue = (value: string) => String(value ?? '').trim().toLowerCase();
   const buildEmptyQuantities = (keys: string[]) => keys.reduce((acc, key) => {
@@ -1160,32 +1161,46 @@ function OrdersSection({ orders, overallOrders = [], inventory = [], storeInvent
         </thead>
         <tbody>
           {orders.map((o, idx) => {
-            const returnedQty = Number(o.returnQuantity) || 0;
             const soldQty = Number(o.quantity) || 0;
+            const returnedQty = Math.min(Number(o.returnQuantity) || 0, soldQty);
+            const refundedQty = Math.min(Number(o.refundQuantity) || 0, soldQty - returnedQty);
             const fullyReturned = returnedQty > 0 ? returnedQty >= soldQty : Boolean(o.orderReturned);
-            const remainingQty = Math.max(0, soldQty - returnedQty);
+            const fullyRefunded = refundedQty > 0 && refundedQty >= (soldQty - returnedQty);
+            const hasAnyAction = returnedQty > 0 || refundedQty > 0;
+            const remainingQty = soldQty - returnedQty - refundedQty;
             const gross = o.sellingPrice * o.quantity;
             const shipment = o.shipmentCost || 0;
             const netAmount = gross - shipment;
             const totalCost = (o.costPrice || 0) * o.quantity;
             return (
-              <tr key={idx} style={{ cursor: 'pointer', opacity: returnedQty > 0 ? 0.6 : 1, background: returnedQty > 0 ? 'rgba(0,0,0,0.05)' : 'transparent' }}
+              <tr key={idx} style={{ cursor: 'pointer', opacity: hasAnyAction ? 0.6 : 1, background: hasAnyAction ? 'rgba(0,0,0,0.05)' : 'transparent' }}
                 onClick={() => openEdit(o)}
               >
                 <td className="text-muted" style={{ fontSize: '0.75rem' }}>
                   {new Date(o.date).toLocaleDateString()}
                   {fullyReturned
                     ? <div style={{ color: 'var(--danger)', fontWeight: 800, fontSize: '9px', marginTop: 2 }}>RETURNED</div>
-                    : returnedQty > 0
-                      ? <div style={{ color: '#d97706', fontWeight: 800, fontSize: '9px', marginTop: 2 }}>PARTIAL RETURN</div>
-                      : null
+                    : fullyRefunded
+                      ? <div style={{ color: 'var(--danger)', fontWeight: 800, fontSize: '9px', marginTop: 2 }}>REFUNDED</div>
+                      : returnedQty > 0 && refundedQty > 0
+                        ? <div style={{ color: '#d97706', fontWeight: 800, fontSize: '9px', marginTop: 2 }}>RETURNED {returnedQty} · REFUNDED {refundedQty}</div>
+                        : returnedQty > 0
+                          ? <div style={{ color: '#d97706', fontWeight: 800, fontSize: '9px', marginTop: 2 }}>PARTIAL RETURN</div>
+                          : refundedQty > 0
+                            ? <div style={{ color: '#991b1b', fontWeight: 800, fontSize: '9px', marginTop: 2 }}>PARTIAL REFUND</div>
+                            : null
                   }
                 </td>
                 <td className="font-bold" style={{ color: 'var(--pri-700)' }}>{o.storeName}</td>
                 <td className="font-bold">{o.productName}</td>
                 <td>
-                  {returnedQty > 0
-                    ? <><span style={{ textDecoration: 'line-through', opacity: 0.5 }}>{o.quantity}</span> <span style={{ color: 'var(--danger)', fontWeight: 700 }}>→ {returnedQty} returned{fullyReturned ? '' : `, ${remainingQty} left`}</span></>
+                  {hasAnyAction
+                    ? <>
+                        <span style={{ textDecoration: 'line-through', opacity: 0.5 }}>{o.quantity}</span>
+                        {returnedQty > 0 && <span style={{ color: 'var(--warning,#f59e0b)', fontWeight: 700 }}> ↩ {returnedQty} returned</span>}
+                        {refundedQty > 0 && <span style={{ color: 'var(--danger)', fontWeight: 700 }}> 💸 {refundedQty} refunded</span>}
+                        {remainingQty > 0 && <span style={{ color: 'var(--text-muted)', fontWeight: 500 }}> ({remainingQty} left)</span>}
+                      </>
                     : o.quantity
                   }
                 </td>
@@ -1238,16 +1253,28 @@ function OrdersSection({ orders, overallOrders = [], inventory = [], storeInvent
                       ↻ Undo
                     </button>
                   )}
-                  {!fullyReturned && (
-                    <button 
-                      className="btn btn-sm" 
-                      style={{ padding: '4px 8px', fontSize: '10px', background: '#f59e0b', color: '#fff', border: 'none' }}
-                      onClick={(e) => { e.stopPropagation(); setReturningOrder(o); }}
-                      title="Return this sale"
-                    >
-                      ↩
-                    </button>
-                  )}
+                  <div style={{ display: 'flex', gap: 3, flexWrap: 'wrap' }}>
+                    {!fullyReturned && !fullyRefunded && remainingQty > 0 && (
+                      <button 
+                        className="btn btn-sm" 
+                        style={{ padding: '4px 8px', fontSize: '10px', background: '#f59e0b', color: '#fff', border: 'none' }}
+                        onClick={(e) => { e.stopPropagation(); setReturningOrder(o); }}
+                        title="Return this sale (stock restored)"
+                      >
+                        ↩
+                      </button>
+                    )}
+                    {!fullyReturned && !fullyRefunded && remainingQty > 0 && (
+                      <button 
+                        className="btn btn-sm" 
+                        style={{ padding: '4px 8px', fontSize: '10px', background: '#dc2626', color: '#fff', border: 'none' }}
+                        onClick={(e) => { e.stopPropagation(); setRefundingOrder(o); }}
+                        title="Refund this sale (no stock restored)"
+                      >
+                        💸
+                      </button>
+                    )}
+                  </div>
                 </td>
               </tr>
             );
@@ -1284,6 +1311,29 @@ function OrdersSection({ orders, overallOrders = [], inventory = [], storeInvent
           }}
           onConfirm={async (payload) => { await onReturn(payload); setReturningOrder(null); }}
           onClose={() => setReturningOrder(null)}
+        />
+      )}
+
+      {refundingOrder && (
+        <SaleRefundModal
+          order={{
+            id: refundingOrder.id,
+            productName: refundingOrder.productName || refundingOrder.product || '',
+            storeName: refundingOrder.storeName || '',
+            quantity: refundingOrder.quantity || 1,
+            sellingPrice: refundingOrder.sellingPrice ?? 0,
+            costPrice: refundingOrder.costPrice ?? 0,
+            sizeQuantities: refundingOrder.sizeQuantities ?? null,
+            colorQuantities: refundingOrder.colorQuantities ?? null,
+            variantQuantities: refundingOrder.variantQuantities ?? null,
+            returnQuantity: refundingOrder.returnQuantity ?? null,
+            refundQuantity: refundingOrder.refundQuantity ?? null,
+            refundSizeQuantities: refundingOrder.refundSizeQuantities ?? null,
+            refundColorQuantities: refundingOrder.refundColorQuantities ?? null,
+            refundVariantQuantities: refundingOrder.refundVariantQuantities ?? null,
+          }}
+          onConfirm={async (payload) => { await onRefund(payload); setRefundingOrder(null); }}
+          onClose={() => setRefundingOrder(null)}
         />
       )}
     </div>
@@ -1851,6 +1901,23 @@ const [loading, setLoading] = useState<boolean>(true);
     }
   };
 
+  const handleRefundOrder = async (payload: any) => {
+    try {
+      const res = await fetch('/api/orders', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ isRefund: true, ...payload }),
+      });
+      const result = await res.json();
+      if (!res.ok) toast.error(result.error || 'Failed to process refund');
+      else toast.success(`💸 Refund processed — $${(result.refundAmount || 0).toLocaleString()} issued`);
+    } catch (e: any) {
+      toast.error(e?.message || 'Failed to process refund');
+    } finally {
+      refresh();
+    }
+  };
+
   const handleUndoReturn = async (id: string) => {
     try {
       const res = await fetch('/api/orders', {
@@ -2107,6 +2174,7 @@ const [loading, setLoading] = useState<boolean>(true);
                 } catch (e: any) { toast.error(e?.message || 'Failed to delete sale'); }
               }}
               onReturn={handleReturnOrder}
+              onRefund={handleRefundOrder}
               onUndoReturn={handleUndoReturn}
               confirmDialog={confirmDialog}
             />
