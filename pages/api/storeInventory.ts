@@ -333,15 +333,40 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
           })
         }
 
-        // Update store_inventory: deduct from quantity_remaining and pending
+        const pendingQty = num(siRow.pending_return_qty) || 0
+
+        // ── Validate pending return quantities before subtracting ──────────────
+        if (retQty > pendingQty) {
+          return res.status(400).json({ error: `Cannot return ${retQty} piece(s); only ${pendingQty} piece(s) are pending return from this store.` })
+        }
+        if (effectiveReturnSizeQuantities) {
+          for (const [size, qty] of Object.entries(effectiveReturnSizeQuantities)) {
+            const pendingSize = num((siRow.pending_return_size_quantities as any)?.[size] || 0)
+            if (num(qty) > pendingSize) {
+              return res.status(400).json({ error: `Size ${size}: cannot return ${qty}, only ${pendingSize} pending` })
+            }
+          }
+        }
+        if (effectiveReturnColorQuantities) {
+          for (const [color, qty] of Object.entries(effectiveReturnColorQuantities)) {
+            const pendingColor = num((siRow.pending_return_color_quantities as any)?.[color] || 0)
+            if (num(qty) > pendingColor) {
+              return res.status(400).json({ error: `Color ${color}: cannot return ${qty}, only ${pendingColor} pending` })
+            }
+          }
+        }
+
+        // Update store_inventory: deduct from quantity_remaining (items physically leave the store)
+        // and deduct from pending_return_qty (tracking counter)
+        // (no Math.max(0, ...) needed since we validated above)
         const { error: siUpdErr } = await supabaseAdmin
           .from(TABLES.STORE_INVENTORY)
           .update({
-            quantity_remaining: Math.max(0, num(siRow.quantity_remaining) - retQty),
+            quantity_remaining: num(siRow.quantity_remaining) - retQty,
             size_quantities_remaining: Object.keys(newSizeRem).length ? newSizeRem : null,
             color_quantities_remaining: Object.keys(newColorRem).length ? newColorRem : null,
             variant_quantities_remaining: adjustVariantQuantities(siRow.variant_quantities_remaining, normalizedReturnVariants, -1),
-            pending_return_qty: Math.max(0, num(siRow.pending_return_qty) - retQty),
+            pending_return_qty: pendingQty - retQty,
             pending_return_size_quantities: Object.values(newPendingSize).some(v => v > 0) ? newPendingSize : null,
             pending_return_color_quantities: Object.values(newPendingColor).some(v => v > 0) ? newPendingColor : null,
             pending_return_variant_quantities: adjustVariantQuantities(siRow.pending_return_variant_quantities, normalizedReturnVariants, -1),

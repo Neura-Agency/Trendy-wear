@@ -51,10 +51,10 @@ export default function OrdersTable({ orders, onRefresh }: { orders: any[]; onRe
             {orders.length === 0 ? (
               <tr><td colSpan={12} style={{textAlign:'center', padding:'2rem'}} className="muted">No orders found.</td></tr>
             ) : orders.map(o => {
-              const returnedQty = Number(o.returnQuantity) || 0;
               const soldQty = Number(o.quantity) || 0;
+              const returnedQty = Math.min(Number(o.returnQuantity) || 0, soldQty);
               const fullyReturned = returnedQty > 0 ? returnedQty >= soldQty : Boolean(o.orderReturned);
-              const remainingQty = Math.max(0, soldQty - returnedQty);
+              const remainingQty = soldQty - returnedQty;
 
               return (
                 <tr key={o.id} style={{ opacity: returnedQty > 0 ? 0.6 : 1 }}>
