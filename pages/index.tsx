@@ -932,10 +932,10 @@ function OrdersSection({ orders, overallOrders = [], inventory = [], storeInvent
       {/* ── Edit modal ── */}
       {editing && (
         <div className="modal-overlay">
-          <div className="modal-box" style={{ maxWidth: '480px' }}>
-            <div className="modal-head" style={{ padding: '12px 20px' }}>
-              <h3 style={{ fontSize: '16px' }}>Edit Sale</h3>
-              <div style={{ display: 'flex', gap: 8 }}>
+          <div className="modal-box" style={{ maxWidth: '560px', width: 'min(96vw, 560px)', maxHeight: '85vh', overflow: 'hidden', display: 'flex', flexDirection: 'column' }}>
+            <div className="modal-head" style={{ padding: '12px 20px', borderBottom: '1px solid var(--border)', background: 'var(--surface)', flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12 }}>
+              <h3 style={{ fontSize: '16px', margin: 0, fontWeight: 700 }}>Edit Sale</h3>
+              <div style={{ display: 'flex', gap: 8, flexShrink: 0 }}>
                 {['PKR', 'GBP'].map(curr => (
                   <button
                     key={curr}
@@ -953,8 +953,8 @@ function OrdersSection({ orders, overallOrders = [], inventory = [], storeInvent
                 <button className="btn btn-sm" onClick={() => setEditing(null)} style={{ border: 'none', fontSize: '16px', marginLeft: 8 }}>✕</button>
               </div>
             </div>
-            <div className="modal-body" style={{ padding: '16px 20px' }}>
-              <div style={{ display: 'flex', flexDirection: 'column', gap: 18 }}>
+            <div className="modal-body" style={{ padding: '16px 20px 12px' }}>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 18, paddingBottom: 8 }}>
                 <div className="input-group full-width">
                   <label>Select Product</label>
                   <div style={{ padding: '12px 14px', borderRadius: 10, border: '1px solid var(--border)', background: 'var(--surface-2)', color: 'var(--text-muted)' }}>
@@ -1100,20 +1100,7 @@ function OrdersSection({ orders, overallOrders = [], inventory = [], storeInvent
                   </div>
                 </div>
               </div>
-              <div style={{ display: 'flex', flexWrap: 'wrap', gap: 10, marginTop: 24 }}>
-              {canDelete && (
-                <button className="btn" style={{ flex: '0 0 auto', background: 'var(--danger)', borderColor: 'var(--danger)', color: '#fff', fontWeight: 700, padding: '0 20px', height: 44 }}
-                  onClick={async () => { if (await confirmDialog('Delete this sale? This cannot be undone.')) { onDelete(editing.id); setEditing(null); } }}
-                ><svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{verticalAlign:'middle',marginRight:4}}><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>Delete</button>
-              )}
-              {!editing.orderReturned && (
-                <button className="btn" style={{ flex: '0 0 auto', background: '#f59e0b', borderColor: '#f59e0b', color: '#fff', fontWeight: 700, padding: '0 20px', height: 44 }}
-                  onClick={async () => { if (await confirmDialog('Mark this order as RETURNED? This will add stock back to inventory.')) { onReturn(editing.id); setEditing(null); } }}
-                >
-                  <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{verticalAlign:'middle',marginRight:6}}><polyline points="9 14 4 9 9 4"/><path d="M20 20v-7a4 4 0 0 0-4-4H4"/></svg>
-                  Return
-                </button>
-              )}
+              <div style={{ display: 'flex', flexWrap: 'wrap', gap: 10, marginTop: 20, position: 'sticky', bottom: 0, background: 'linear-gradient(180deg, rgba(255,255,255,0) 0%, var(--surface) 24px)', paddingTop: 14 }}>
               <button className="btn btn-glass" style={{ flex: 1, height: 44 }} onClick={() => setEditing(null)}>Cancel</button>
               <button className="btn btn-primary" style={{ flex: 1, height: 44, fontWeight: 700 }}
                 onClick={() => {

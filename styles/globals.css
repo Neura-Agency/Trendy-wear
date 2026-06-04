@@ -1265,11 +1265,10 @@ input[type="number"] {
   box-shadow: var(--shadow-lg);
   width: 100%;
   max-width: 820px;
-  /* Allow the overlay to handle scrolling; let the box size naturally */
-  max-height: none;
+  max-height: 90vh;
   display: flex;
   flex-direction: column;
-  overflow: visible;
+  overflow: hidden;
   border: 1px solid var(--border);
   margin: 20px;
 }
@@ -1294,8 +1293,9 @@ input[type="number"] {
 
 .modal-body {
   padding: 20px;
-  /* Let the overlay provide scrolling; body content should expand naturally */
-  overflow: visible;
+  overflow-y: auto;
+  flex: 1;
+  min-height: 0;
 }
 
 @media (max-width: 576px) {
@@ -1307,7 +1307,7 @@ input[type="number"] {
 
   .modal-box {
     margin: 0;
-    max-height: none;
+    max-height: 90vh;
     max-width: 100% !important;
   }
 
