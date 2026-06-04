@@ -845,6 +845,57 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
         return res.json({ success: true });
       }
 
+      // ── Undo Refund ─────────────────────────────────────────────────────────
+      if (req.body?.isUndoRefund === true) {
+        const { id } = req.body;
+        if (!id) return res.status(400).json({ error: 'id is required' });
+
+        const { data: order, error: fetchErr } = await supabaseAdmin
+          .from(TABLES.ORDERS)
+          .select('id, quantity, selling_price, shipment_cost, cost_price, commission_percent, return_quantity, refund_quantity')
+          .eq('id', id)
+          .single();
+
+        if (fetchErr || !order) return res.status(404).json({ error: 'Order not found' });
+        if (!num(order.refund_quantity)) return res.status(400).json({ error: 'Order has no refund to undo' });
+
+        // Recalculate financials as if refund never happened
+        const qty = num(order.quantity);
+        const price = num(order.selling_price);
+        const ship = num(order.shipment_cost);
+        const cost = num(order.cost_price);
+        const pct = num(order.commission_percent);
+        const alreadyReturnedQty = Math.max(0, num(order.return_quantity));
+        const remainingUnits = Math.max(0, qty - alreadyReturnedQty);
+        const gross = price * remainingUnits - ship;
+        const commission = Math.round(gross * pct / 100);
+        const adminTake = gross - commission;
+        const profit = gross - cost * remainingUnits;
+
+        const { error: updErr } = await supabaseAdmin
+          .from(TABLES.ORDERS)
+          .update({
+            profit,
+            admin_take: Math.max(0, adminTake),
+            commission_amount: Math.max(0, commission),
+            refund_quantity: null,
+            refund_amount: null,
+            refund_reason: null,
+            refund_size_quantities: null,
+            refund_color_quantities: null,
+            refund_variant_quantities: null,
+            refunded_at: null,
+          })
+          .eq('id', id);
+
+        if (updErr) {
+          console.error('Undo refund update error:', updErr);
+          return res.status(500).json({ error: 'Failed to undo refund' });
+        }
+
+        return res.json({ success: true });
+      }
+
       const { id, commissionPercent } = req.body
       if (!id || commissionPercent === undefined) {
         return res.status(400).json({ error: 'id and commissionPercent are required' })

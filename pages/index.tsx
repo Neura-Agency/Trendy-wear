@@ -774,7 +774,7 @@ function StoresOverviewSection({ stores, orders, storeInventory, filter, getFilt
 }
 
 // ─── ORDERS SECTION ──────────────────────────────────────────────────
-function OrdersSection({ orders, overallOrders = [], inventory = [], storeInventory = {}, isAdmin, canDelete, onCommissionEdit, onTogglePayout, onEdit, onDelete, onReturn, onRefund, onUndoReturn, confirmDialog }: any) {
+function OrdersSection({ orders, overallOrders = [], inventory = [], storeInventory = {}, isAdmin, canDelete, onCommissionEdit, onTogglePayout, onEdit, onDelete, onReturn, onRefund, onUndoReturn, onUndoRefund, confirmDialog }: any) {
   const [editing, setEditing] = useState<any>(null);
   const [editingCurrency, setEditingCurrency] = useState<'PKR' | 'GBP'>('PKR');
   const [editingSizeQuantities, setEditingSizeQuantities] = useState<Record<string, number>>({});
@@ -1240,6 +1240,16 @@ function OrdersSection({ orders, overallOrders = [], inventory = [], storeInvent
                       ↻ Undo
                     </button>
                   )}
+                  {refundedQty > 0 && !fullyReturned && (
+                    <button
+                      className="btn btn-sm"
+                      style={{ padding: '4px 8px', fontSize: '10px', background: '#6b7280', color: '#fff', border: 'none', whiteSpace: 'nowrap' }}
+                      onClick={async (e) => { e.stopPropagation(); if (await confirmDialog('Undo this refund? The sale financials will be restored to their pre-refund state.')) { onUndoRefund(o.id); } }}
+                      title="Undo refund"
+                    >
+                      ↻ Undo
+                    </button>
+                  )}
                   <div style={{ display: 'flex', gap: 3, flexWrap: 'wrap' }}>
                     {!fullyReturned && !fullyRefunded && remainingQty > 0 && (
                       <button 
@@ -1314,6 +1324,9 @@ function OrdersSection({ orders, overallOrders = [], inventory = [], storeInvent
             colorQuantities: refundingOrder.colorQuantities ?? null,
             variantQuantities: refundingOrder.variantQuantities ?? null,
             returnQuantity: refundingOrder.returnQuantity ?? null,
+            returnSizeQuantities: refundingOrder.returnSizeQuantities ?? null,
+            returnColorQuantities: refundingOrder.returnColorQuantities ?? null,
+            returnVariantQuantities: refundingOrder.returnVariantQuantities ?? null,
             refundQuantity: refundingOrder.refundQuantity ?? null,
             refundSizeQuantities: refundingOrder.refundSizeQuantities ?? null,
             refundColorQuantities: refundingOrder.refundColorQuantities ?? null,
@@ -1905,6 +1918,22 @@ const [loading, setLoading] = useState<boolean>(true);
     }
   };
 
+  const handleUndoRefund = async (id: string) => {
+    try {
+      const res = await fetch('/api/orders', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ isUndoRefund: true, id }),
+      });
+      const result = await res.json();
+      if (!res.ok) toast.error(result.error || 'Failed to undo refund');
+      else toast.success('↩ Refund undone — sale restored');
+    } catch (e: any) {
+      toast.error(e?.message || 'Failed to undo refund');
+    }
+    refresh();
+  };
+
   const handleUndoReturn = async (id: string) => {
     try {
       const res = await fetch('/api/orders', {
@@ -2163,6 +2192,7 @@ const [loading, setLoading] = useState<boolean>(true);
               onReturn={handleReturnOrder}
               onRefund={handleRefundOrder}
               onUndoReturn={handleUndoReturn}
+              onUndoRefund={handleUndoRefund}
               confirmDialog={confirmDialog}
             />
           </SectionCard>

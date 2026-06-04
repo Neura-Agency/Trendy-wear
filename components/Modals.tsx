@@ -3994,6 +3994,9 @@ export interface SaleRefundModalProps {
         colorQuantities?: Record<string, number> | null;
         variantQuantities?: VariantQuantities | null;
         returnQuantity?: number | null;
+        returnSizeQuantities?: Record<string, number> | null;
+        returnColorQuantities?: Record<string, number> | null;
+        returnVariantQuantities?: VariantQuantities | null;
         refundQuantity?: number | null;
         refundSizeQuantities?: Record<string, number> | null;
         refundColorQuantities?: Record<string, number> | null;
@@ -4027,7 +4030,7 @@ export function SaleRefundModal({ order, onConfirm, onClose }: SaleRefundModalPr
     );
     const remainingVariantQuantities = order.variantQuantities && Object.keys(order.variantQuantities).length > 0
         ? adjustVariantQuantities(
-            adjustVariantQuantities(order.variantQuantities, order.returnVariantQuantities, -1),
+            adjustVariantQuantities(order.variantQuantities, order.returnVariantQuantities, -1) ?? order.variantQuantities,
             order.refundVariantQuantities, -1
           )
         : null;
@@ -4040,7 +4043,7 @@ export function SaleRefundModal({ order, onConfirm, onClose }: SaleRefundModalPr
     const [variantInputs, setVariantInputs] = useState<VariantQuantities>(
         buildVariantGrid(variantColors, variantSizes, variantMax)
     );
-    const [refundQty, setRefundQty] = useState(remainingQty || order.quantity);
+    const [refundQty, setRefundQty] = useState(Math.max(1, remainingQty));
     const [reason, setReason] = useState(REFUND_REASONS[0]);
     const [sizeInputs, setSizeInputs] = useState<Record<string, number>>(
         remainingSizeQuantities ? Object.fromEntries(Object.entries(remainingSizeQuantities).map(([k, v]) => [k, v])) : {}
@@ -4095,13 +4098,13 @@ export function SaleRefundModal({ order, onConfirm, onClose }: SaleRefundModalPr
                     {/* Refund Qty */}
                     <div className="input-group">
                         <label style={{ fontSize: 12, fontWeight: 700, color: 'var(--text-muted)', display: 'block', marginBottom: 6 }}>
-                            Refund Quantity <span style={{ color: 'var(--text-muted)', fontWeight: 400 }}>(max {remainingQty || order.quantity})</span>
+                            Refund Quantity <span style={{ color: 'var(--text-muted)', fontWeight: 400 }}>(max {remainingQty})</span>
                         </label>
                         <input
-                            type="number" min={1} max={remainingQty || order.quantity}
+                            type="number" min={1} max={remainingQty}
                             value={effectiveRefundQty}
                             readOnly={hasVariantGrid}
-                            onChange={e => setRefundQty(Math.min(remainingQty || order.quantity, Math.max(1, Number(e.target.value))))}
+                            onChange={e => setRefundQty(Math.min(remainingQty, Math.max(1, Number(e.target.value))))}
                             style={hasVariantGrid ? { width: '100%', background: 'var(--surface-2)', cursor: 'default' } : { width: '100%' }}
                         />
                     </div>
