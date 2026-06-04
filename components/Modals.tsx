@@ -90,6 +90,7 @@ export function VariantQuantityGrid({
     values,
     onChange,
     maxValues,
+    remainingValues,
     title = 'Quantity by Color & Size',
     showRemainingLabel = false,
 }: {
@@ -98,6 +99,8 @@ export function VariantQuantityGrid({
     values: VariantQuantities;
     onChange: (next: VariantQuantities) => void;
     maxValues?: VariantQuantities | null;
+    /** When provided, these values are shown in the "X left" label instead of computing max − current. */
+    remainingValues?: VariantQuantities | null;
     title?: string;
     showRemainingLabel?: boolean;
 }) {
@@ -139,8 +142,12 @@ export function VariantQuantityGrid({
                                 const max = maxValues?.[color]?.[size];
                                 const currentVal = normalizeQty(values[color]?.[size]);
                                 const remaining = max !== undefined ? normalizeQty(max) - currentVal : undefined;
-                                const isAtLimit = showRemainingLabel && remaining !== undefined && remaining === 0 && currentVal > 0;
-                                const isNearLimit = showRemainingLabel && remaining !== undefined && remaining > 0 && remaining <= 2;
+                                // Use remainingValues override if provided (e.g. Edit modal where max includes existing assignment)
+                                const displayRemaining = remainingValues
+                                    ? normalizeQty((remainingValues[color] as any)?.[size] ?? 0)
+                                    : remaining;
+                                const isAtLimit = showRemainingLabel && displayRemaining !== undefined && displayRemaining === 0 && currentVal > 0;
+                                const isNearLimit = showRemainingLabel && displayRemaining !== undefined && displayRemaining > 0 && displayRemaining <= 2;
                                 return (
                                     <td key={`${color}-${size}`} style={{ padding: 6 }}>
                                         <input
@@ -162,7 +169,7 @@ export function VariantQuantityGrid({
                                                     fontSize: 9, textAlign: 'center', marginTop: 2, fontWeight: 700,
                                                     color: isAtLimit ? 'var(--danger)' : isNearLimit ? '#f59e0b' : 'var(--text-muted)',
                                                 }}>
-                                                    {remaining === 0 ? 'sold out' : `${remaining} left`}
+                                                    {displayRemaining === 0 ? 'sold out' : `${displayRemaining} left`}
                                                 </div>
                                             ) : (
                                                 <div style={{ fontSize: 9, color: 'var(--text-muted)', textAlign: 'center', marginTop: 2 }}>max {max}</div>
@@ -1369,7 +1376,8 @@ export function EditStoreInventoryModal({ item, storeNames, onSave, onClose }: {
             ]));
             caps[color] = {};
             sizeKeysForColor.forEach((size) => {
-                // warehouseRemaining already excludes other stores' allotments, so cap = remaining + this store's current
+                // cap = warehouseRemaining + thisStore's current assignment.
+                // This lets the user keep existing values while "remaining" label = cap - currentVal = warehouseRemaining.
                 const remaining = Number((warehouseRemaining?.[color] as any)?.[size] ?? 0) || 0;
                 const assigned = Number((current?.[color] as any)?.[size] ?? 0) || 0;
                 caps[color][size] = Math.max(0, remaining + assigned);
@@ -1377,6 +1385,30 @@ export function EditStoreInventoryModal({ item, storeNames, onSave, onClose }: {
         });
 
         return caps;
+    };
+
+    /** Computes per-cell "addable remaining" for the display label:
+     *  warehouseRemaining[color][size] - thisStore's currentAssigned[color][size]
+     *  This is what the user can still add, used for the "X left" label in the grid.
+     */
+    const buildVariantRemainingForDisplay = (): VariantQuantities => {
+        const warehouseRemaining = (item?.warehouseVariantQuantitiesRemaining || item?.variantQuantitiesRemaining || item?.variantQuantities || {}) as VariantQuantities;
+        const current = (item?.variantQuantitiesAssigned || {}) as VariantQuantities;
+        const result: VariantQuantities = {};
+        const colors = Array.from(new Set([...Object.keys(warehouseRemaining), ...Object.keys(current)]));
+        colors.forEach(color => {
+            const sizeKeys = Array.from(new Set([
+                ...Object.keys((warehouseRemaining[color] || {}) as Record<string, number>),
+                ...Object.keys((current[color] || {}) as Record<string, number>),
+            ]));
+            result[color] = {};
+            sizeKeys.forEach(size => {
+                const wareRemaining = Number((warehouseRemaining[color] as any)?.[size] ?? 0) || 0;
+                const assigned = Number((current[color] as any)?.[size] ?? 0) || 0;
+                result[color][size] = Math.max(0, wareRemaining - assigned);
+            });
+        });
+        return result;
     };
 
     const updateSizeQuantity = (size: string, qty: number) => {
@@ -1539,6 +1571,7 @@ export function EditStoreInventoryModal({ item, storeNames, onSave, onClose }: {
                                 sizes={variantSizeKeys}
                                 values={form.variantQuantitiesAssigned}
                                 maxValues={buildEditableVariantCaps()}
+                                remainingValues={buildVariantRemainingForDisplay()}
                                 title="Allotment by Color & Size"
                                 showRemainingLabel={true}
                                 onChange={next => {
@@ -1650,11 +1683,35 @@ export function EditInventoryModal({ item, minQuantity, onSave, onClose, product
     const itemTypes = catalogTypes;
     const availableSizes = ['XS', 'S', 'M', 'L', 'XL', 'XXL'];
 
-    const initialColors = Array.isArray(item.color) ? item.color : item.color ? [item.color] : [];
-    const initialSizes = Array.isArray(item.size) ? item.size : item.size ? [item.size] : [];
-    const initialSizeQuantities = (item.sizeQuantities && typeof item.sizeQuantities === 'object') ? item.sizeQuantities : {};
-    const initialColorQuantities = (item.colorQuantities && typeof item.colorQuantities === 'object') ? item.colorQuantities : {};
-    const initialVariantQuantities = (item.variantQuantities && typeof item.variantQuantities === 'object') ? item.variantQuantities : {};
+    // Safely parse quantity fields that may arrive as JSON strings from the API
+    const safeParseQty = (v: any) => {
+        if (!v) return null;
+        if (typeof v === 'string') { try { return JSON.parse(v); } catch { return null; } }
+        return typeof v === 'object' && !Array.isArray(v) ? v : null;
+    };
+    const parsedSizeQuantities = safeParseQty(item.sizeQuantities);
+    const parsedColorQuantities = safeParseQty(item.colorQuantities);
+    const parsedVariantQuantities = safeParseQty(item.variantQuantities);
+
+    // Derive colors/sizes — when variant data exists, its keys are authoritative over product arrays
+    const colorsFromProduct = Array.isArray(item.color) ? item.color : item.color ? [item.color] : [];
+    const sizesFromProduct = Array.isArray(item.size) ? item.size : item.size ? [item.size] : [];
+    const colorsFromVariants = parsedVariantQuantities ? Object.keys(parsedVariantQuantities) : [];
+    const colorsFromColorQty = parsedColorQuantities ? Object.keys(parsedColorQuantities) : [];
+    const sizesFromSizeQty = parsedSizeQuantities ? Object.keys(parsedSizeQuantities) : [];
+    const sizesFromVariants = parsedVariantQuantities
+        ? Array.from(new Set(Object.values(parsedVariantQuantities).flatMap((s: any) => Object.keys(s || {}))))
+        : [];
+    // Variant/quantity keys are authoritative when present (they hold the actual stored data)
+    const initialColors = colorsFromVariants.length > 0 ? colorsFromVariants
+        : colorsFromColorQty.length > 0 ? colorsFromColorQty
+        : colorsFromProduct;
+    const initialSizes = sizesFromVariants.length > 0 ? sizesFromVariants
+        : sizesFromSizeQty.length > 0 ? sizesFromSizeQty
+        : sizesFromProduct;
+    const initialSizeQuantities = parsedSizeQuantities || {};
+    const initialColorQuantities = parsedColorQuantities || {};
+    const initialVariantQuantities = parsedVariantQuantities || {};
     const hasCustomType = item.category && !catalogTypes.some(t => normalizeCatalogValue(t) === normalizeCatalogValue(item.category));
 
     const [form, setForm] = useState({
@@ -1677,10 +1734,17 @@ export function EditInventoryModal({ item, minQuantity, onSave, onClose, product
     const [sizeQuantities, setSizeQuantities] = useState<Record<string, number>>(initialSizeQuantities);
     const [variantQuantities, setVariantQuantities] = useState<VariantQuantities>(buildVariantGrid(initialColors, initialSizes, initialVariantQuantities));
     const [newPicture, setNewPicture] = useState<string | null>(null);
+    // Track whether we've completed the initial mount so effects don't wipe loaded data
+    const isMounted = React.useRef(false);
 
     const previewImage = newPicture || item.productImage || (item.otherVariants?.picture as string | undefined) || '';
 
     React.useEffect(() => {
+        // Skip on initial mount — quantities are already set from initialVariantQuantities
+        if (!isMounted.current) {
+            isMounted.current = true;
+            return;
+        }
         if (colors.length && sizes.length) {
             setVariantQuantities(curr => {
                 const next = buildVariantGrid(colors, sizes, curr);
@@ -1704,6 +1768,8 @@ export function EditInventoryModal({ item, minQuantity, onSave, onClose, product
     }, [sizes, colors]);
 
     React.useEffect(() => {
+        // Skip on initial mount
+        if (!isMounted.current) return;
         setColorQuantities((curr) => {
             const next = { ...curr };
             colors.forEach((c) => {
@@ -1968,12 +2034,19 @@ export function EditInventoryModal({ item, minQuantity, onSave, onClose, product
                                 <input
                                     type="text"
                                     inputMode="numeric"
-                                    value={form.quantityAvailable}
+                                    value={hasVariantGrid ? totalQuantity : form.quantityAvailable}
+                                    readOnly={hasVariantGrid}
                                     onChange={e => setForm({ ...form, quantityAvailable: parseInt(e.target.value) || 0 })}
+                                    style={hasVariantGrid ? { background: 'var(--surface-2)', cursor: 'default' } : undefined}
                                 />
                                 {minQuantity ? (
                                     <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 4 }}>Assigned to stores: {minQuantity}</div>
                                 ) : null}
+                                {hasVariantGrid && (
+                                    <div style={{ fontSize: 11, marginTop: 4, color: 'var(--text-muted)' }}>
+                                        Auto-calculated from variant grid totals.
+                                    </div>
+                                )}
                             </div>
                         </div>
 
@@ -3148,9 +3221,11 @@ export function AllotToStoreModal({ onSave, onClose, stores, inventory, allotedQ
 
     const selectedInv = (inventory || []).find(i => i.batchNumber === form.batchNumber);
     const productName = selectedInv?.productName || '';
-    const sizeQuantities = selectedInv?.sizeQuantities;
-    const colorQuantities = selectedInv?.colorQuantities;
-    const variantQuantities = selectedInv?.variantQuantities;
+    // Use remaining quantities (warehouse total minus already allotted) as the cap for inputs.
+    // Fall back to total quantities if remaining is not available.
+    const sizeQuantities = selectedInv?.sizeQuantitiesRemaining ?? selectedInv?.sizeQuantities;
+    const colorQuantities = selectedInv?.colorQuantitiesRemaining ?? selectedInv?.colorQuantities;
+    const variantQuantities = selectedInv?.variantQuantitiesRemaining ?? selectedInv?.variantQuantities;
     const variantColors = Object.keys(variantQuantities || {});
     const variantSizes = Array.from(new Set(Object.values(variantQuantities || {}).flatMap(sizes => Object.keys(sizes || {}))));
     const hasVariantGrid = variantColors.length > 0 && variantSizes.length > 0;
@@ -3351,6 +3426,7 @@ export function AllotToStoreModal({ onSave, onClose, stores, inventory, allotedQ
                                 sizes={variantSizes}
                                 values={form.variantQuantitiesAssigned}
                                 maxValues={variantQuantities}
+                                remainingValues={variantQuantities}
                                 title="Allot by Color & Size"
                                 showRemainingLabel={true}
                                 onChange={next => {

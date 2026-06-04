@@ -244,12 +244,39 @@ export default function InventoryPage({ user, onLogin }: PageProps) {
 
     // Keyed by inventory.id (batch-level), NOT productName, to avoid cross-batch confusion
     const allotedQtyByProduct: Record<string, number> = {};
+    // Per-variant allotted quantities summed across all stores, keyed by inventoryId
+    const allotedVariantsByProduct: Record<string, Record<string, Record<string, number>>> = {};
     Object.values(data.storeInventory || {}).forEach((items: any) => {
         Object.values(items || {}).forEach((it: any) => {
             const key = it?.inventoryId;   // inventory.id FK — unique per batch
             if (!key) return;
             allotedQtyByProduct[key] = (allotedQtyByProduct[key] || 0) + (Number(it.quantityAssigned) || 0);
+            // Accumulate per-variant allotments for the Add Allotment modal
+            if (it.variantQuantitiesAssigned && typeof it.variantQuantitiesAssigned === 'object') {
+                if (!allotedVariantsByProduct[key]) allotedVariantsByProduct[key] = {};
+                Object.entries(it.variantQuantitiesAssigned as Record<string, Record<string, number>>).forEach(([color, sizes]) => {
+                    if (!allotedVariantsByProduct[key][color]) allotedVariantsByProduct[key][color] = {};
+                    Object.entries(sizes || {}).forEach(([size, qty]) => {
+                        allotedVariantsByProduct[key][color][size] = (allotedVariantsByProduct[key][color][size] || 0) + (Number(qty) || 0);
+                    });
+                });
+            }
         });
+    });
+
+    // Enrich warehouse inventory items with per-variant remaining quantities for the Add Allotment modal
+    const inventoryWithRemaining = data.inventory.map((item: any) => {
+        const allotedVariants = allotedVariantsByProduct[item.id];
+        if (!allotedVariants || !item.variantQuantities) return item;
+        const variantQuantitiesRemaining: Record<string, Record<string, number>> = {};
+        Object.entries(item.variantQuantities as Record<string, Record<string, number>>).forEach(([color, sizes]) => {
+            variantQuantitiesRemaining[color] = {};
+            Object.entries(sizes || {}).forEach(([size, total]) => {
+                const alloted = allotedVariants[color]?.[size] || 0;
+                variantQuantitiesRemaining[color][size] = Math.max(0, (Number(total) || 0) - alloted);
+            });
+        });
+        return { ...item, variantQuantitiesRemaining };
     });
 
     const storeCommissionByName: Record<string, number> = {};
@@ -484,7 +511,7 @@ export default function InventoryPage({ user, onLogin }: PageProps) {
                                                 <td><Badge type="gray">{item.category}</Badge></td>
                                                 <td className="text-muted font-mono" style={{ fontWeight: 700 }}>{item.batchNumber}</td>
                                                 <td>{Rs(item.costPrice)}</td>
-                                                <td className="font-bold" style={{ fontSize: '1.05rem' }}>{item.quantityAvailable}</td>
+                                                <td className="font-bold" style={{ fontSize: '1.05rem' }}>{availableQty}</td>
                                                 <td className="font-bold">{allotedQty}</td>
                                                 <td>
                                                     {Array.isArray(allotedStores) && allotedStores.length > 0 ? (
@@ -775,7 +802,7 @@ export default function InventoryPage({ user, onLogin }: PageProps) {
                 {showAllotModal && (
                     <AllotToStoreModal
                         stores={Object.keys(data.stores)}
-                        inventory={data.inventory}
+                        inventory={inventoryWithRemaining}
                         allotedQtyByProduct={allotedQtyByProduct}
                         storeCommissionByName={storeCommissionByName}
                         onSave={async ({ storeName, batchNumber, quantity, ownerSupplyPrice, commissionPercent, extraQty, sizeQuantitiesAssigned, colorQuantitiesAssigned, variantQuantitiesAssigned }) => {

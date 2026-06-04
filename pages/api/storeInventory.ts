@@ -7,11 +7,21 @@ import {
   normalizeVariantQuantities,
   rollupVariantQuantities,
   validateVariantRequest,
+  VariantQuantities,
 } from '../../lib/variantQuantities'
 
 function num(v: any): number {
   const n = Number(v)
   return Number.isFinite(n) ? n : 0
+}
+
+/** Safely parse a value that Supabase may return as a JSON string, plain object, or null */
+function parseJsonField(value: any): any {
+  if (value === null || value === undefined) return null
+  if (typeof value === 'string') {
+    try { return JSON.parse(value) } catch { return null }
+  }
+  return value
 }
 
 export default async function handler(req: NextApiRequest, res: NextApiResponse) {
@@ -102,17 +112,17 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
           storeSellingPrice: num(row.store_selling_price),
           quantityAssigned: qtyAssigned,
           quantityRemaining: qtyRemaining,
-          sizeQuantitiesAssigned: row.size_quantities_assigned ?? null,
-          sizeQuantitiesRemaining: row.size_quantities_remaining ?? null,
-          colorQuantitiesAssigned: row.color_quantities_assigned ?? null,
-          colorQuantitiesRemaining: row.color_quantities_remaining ?? null,
-          variantQuantitiesAssigned: row.variant_quantities_assigned ?? null,
-          variantQuantitiesRemaining: row.variant_quantities_remaining ?? null,
+          sizeQuantitiesAssigned: parseJsonField(row.size_quantities_assigned),
+          sizeQuantitiesRemaining: parseJsonField(row.size_quantities_remaining),
+          colorQuantitiesAssigned: parseJsonField(row.color_quantities_assigned),
+          colorQuantitiesRemaining: parseJsonField(row.color_quantities_remaining),
+          variantQuantitiesAssigned: parseJsonField(row.variant_quantities_assigned),
+          variantQuantitiesRemaining: parseJsonField(row.variant_quantities_remaining),
           extraQty: num(row['extra_Qty'] ?? 0),
           pendingReturnQty: num(row.pending_return_qty ?? 0),
-          pendingReturnSizeQuantities: row.pending_return_size_quantities ?? null,
-          pendingReturnColorQuantities: row.pending_return_color_quantities ?? null,
-          pendingReturnVariantQuantities: row.pending_return_variant_quantities ?? null,
+          pendingReturnSizeQuantities: parseJsonField(row.pending_return_size_quantities),
+          pendingReturnColorQuantities: parseJsonField(row.pending_return_color_quantities),
+          pendingReturnVariantQuantities: parseJsonField(row.pending_return_variant_quantities),
           created_at: row.created_at,
           updated_at: row.updated_at
         }
@@ -481,6 +491,15 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
           return res.status(400).json({ error: `Quantity increase (${increaseDelta}) exceeds remaining stock (${strictRemaining}) for this batch` })
         }
 
+        // When quantity is decreased, return excess stock to warehouse
+        const decreaseDelta = Math.max(0, currentAssigned - num(fields.quantity_assigned))
+        if (decreaseDelta > 0 && existingRow.inventory_id) {
+          await supabaseAdmin
+            .from(TABLES.INVENTORY)
+            .update({ quantity_available: total + decreaseDelta })
+            .eq('id', existingRow.inventory_id)
+        }
+
         allowed.quantity_assigned = fields.quantity_assigned
       }
       // Support updating size/color breakdowns
@@ -490,7 +509,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 
         const { data: existingRowForVariants, error: existingErrForVariants } = await supabaseAdmin
           .from(TABLES.STORE_INVENTORY)
-          .select('id, inventory_id, quantity_assigned, variant_quantities_assigned')
+          .select('id, inventory_id, quantity_assigned, quantity_remaining, variant_quantities_assigned, variant_quantities_remaining')
           .eq('id', id)
           .maybeSingle()
 
@@ -551,6 +570,8 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
         const alreadyAssignedOtherTotal = (assignedRowsOtherVariants || []).reduce((acc: number, row: any) => acc + num(row.quantity_assigned), 0)
         const totalBatch = num((invRowForVariants as any).quantity_available)
         const currentAssigned = num(existingRowForVariants.quantity_assigned)
+        const currentRemaining = num(existingRowForVariants.quantity_remaining)
+        const soldCount = Math.max(0, currentAssigned - currentRemaining)
         const strictRemaining = Math.max(0, totalBatch - alreadyAssignedOtherTotal - currentAssigned)
 
         const rollups = rollupVariantQuantities(normalizedVariants)
@@ -559,14 +580,36 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
           return res.status(400).json({ error: `Quantity increase (${increaseDelta}) exceeds remaining stock (${strictRemaining}) for this batch` })
         }
 
+        // Compute sold per variant to preserve it when updating remaining
+        const oldVariantsAssigned = normalizeVariantQuantities(existingRowForVariants.variant_quantities_assigned) || {}
+        const oldVariantsRemaining = normalizeVariantQuantities(existingRowForVariants.variant_quantities_remaining) || {}
+        const soldPerVariant: VariantQuantities = {}
+        Object.entries(oldVariantsAssigned).forEach(([color, sizes]) => {
+          soldPerVariant[color] = {}
+          Object.entries(sizes).forEach(([size, assigned]) => {
+            const remaining = num(oldVariantsRemaining?.[color]?.[size])
+            soldPerVariant[color][size] = Math.max(0, assigned - remaining)
+          })
+        })
+
+        // New remaining = new assigned - sold per variant
+        const newVariantsRemaining: VariantQuantities = {}
+        Object.entries(normalizedVariants).forEach(([color, sizes]) => {
+          newVariantsRemaining[color] = {}
+          Object.entries(sizes).forEach(([size, assigned]) => {
+            const oldSold = num(soldPerVariant?.[color]?.[size])
+            newVariantsRemaining[color][size] = Math.max(0, assigned - oldSold)
+          })
+        })
+
         allowed.variant_quantities_assigned = normalizedVariants
-        allowed.variant_quantities_remaining = normalizedVariants
+        allowed.variant_quantities_remaining = newVariantsRemaining
         allowed.size_quantities_assigned = rollups.sizeQuantities
         allowed.size_quantities_remaining = rollups.sizeQuantities
         allowed.color_quantities_assigned = rollups.colorQuantities
         allowed.color_quantities_remaining = rollups.colorQuantities
         allowed.quantity_assigned = rollups.total
-        allowed.quantity_remaining = rollups.total
+        allowed.quantity_remaining = Math.max(0, rollups.total - soldCount)
       }
 
       if (fields.size_quantities_assigned !== undefined) {
@@ -576,7 +619,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
         // Fetch existing row to know inventory_id and current assigned breakdown
         const { data: existingRowForSizes, error: existingErrForSizes } = await supabaseAdmin
           .from(TABLES.STORE_INVENTORY)
-          .select('id, inventory_id, size_quantities_assigned')
+          .select('id, inventory_id, size_quantities_assigned, size_quantities_remaining, quantity_assigned, quantity_remaining')
           .eq('id', id)
           .maybeSingle()
 
@@ -620,23 +663,36 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
           Object.entries(sj).forEach(([k, v]) => { alreadyAssignedPerSize[k] = (alreadyAssignedPerSize[k] || 0) + (Number(v) || 0) })
         })
 
-        // Now validate requested sizes
-        for (const [size, requested] of Object.entries(fields.size_quantities_assigned)) {
+        // Compute sold per size to preserve it when updating remaining
+        const oldSizeAssigned = (existingRowForSizes.size_quantities_assigned || {}) as Record<string, number>
+        const oldSizeRemaining = (existingRowForSizes.size_quantities_remaining || {}) as Record<string, number>
+        const soldPerSize: Record<string, number> = {}
+        Object.keys(oldSizeAssigned).forEach(size => {
+          soldPerSize[size] = Math.max(0, (Number(oldSizeAssigned[size]) || 0) - (Number(oldSizeRemaining[size]) || 0))
+        })
+
+        // Build new remaining = new assigned - sold (preserving sold count per size)
+        const newSizeRemaining: Record<string, number> = {}
+        Object.entries(fields.size_quantities_assigned).forEach(([size, requested]) => {
+          const requestedNum = Number(requested) || 0
           const avail = Number(batchSizeAvail[size] || 0)
           const already = Number(alreadyAssignedPerSize[size] || 0)
-          if (Number(requested) + already > avail) {
+          if (requestedNum + already > avail) {
             return res.status(400).json({ error: `Size ${size}: requested ${requested} exceeds available ${avail}` })
           }
-        }
+          const oldSold = soldPerSize[size] || 0
+          newSizeRemaining[size] = Math.max(0, requestedNum - oldSold)
+        })
 
         allowed.size_quantities_assigned = fields.size_quantities_assigned
+        allowed.size_quantities_remaining = newSizeRemaining
       }
       if (fields.color_quantities_assigned !== undefined) {
         if (typeof fields.color_quantities_assigned !== 'object') return res.status(400).json({ error: 'color_quantities_assigned must be an object' })
 
         const { data: existingRowForColors, error: existingErrForColors } = await supabaseAdmin
           .from(TABLES.STORE_INVENTORY)
-          .select('id, inventory_id, color_quantities_assigned')
+          .select('id, inventory_id, color_quantities_assigned, color_quantities_remaining')
           .eq('id', id)
           .maybeSingle()
 
@@ -676,15 +732,29 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
           Object.entries(cj).forEach(([k, v]) => { alreadyAssignedPerColor[k] = (alreadyAssignedPerColor[k] || 0) + (Number(v) || 0) })
         })
 
-        for (const [color, requested] of Object.entries(fields.color_quantities_assigned)) {
+        // Compute sold per color to preserve it when updating remaining
+        const oldColorAssigned = (existingRowForColors.color_quantities_assigned || {}) as Record<string, number>
+        const oldColorRemaining = (existingRowForColors.color_quantities_remaining || {}) as Record<string, number>
+        const soldPerColor: Record<string, number> = {}
+        Object.keys(oldColorAssigned).forEach(color => {
+          soldPerColor[color] = Math.max(0, (Number(oldColorAssigned[color]) || 0) - (Number(oldColorRemaining[color]) || 0))
+        })
+
+        // Build new remaining = new assigned - sold (preserving sold count per color)
+        const newColorRemaining: Record<string, number> = {}
+        Object.entries(fields.color_quantities_assigned).forEach(([color, requested]) => {
+          const requestedNum = Number(requested) || 0
           const avail = Number(batchColorAvail[color] || 0)
           const already = Number(alreadyAssignedPerColor[color] || 0)
-          if (Number(requested) + already > avail) {
+          if (requestedNum + already > avail) {
             return res.status(400).json({ error: `Color ${color}: requested ${requested} exceeds available ${avail}` })
           }
-        }
+          const oldSold = soldPerColor[color] || 0
+          newColorRemaining[color] = Math.max(0, requestedNum - oldSold)
+        })
 
         allowed.color_quantities_assigned = fields.color_quantities_assigned
+        allowed.color_quantities_remaining = newColorRemaining
       }
       if (fields.quantity_remaining !== undefined) {
         if (Number(fields.quantity_remaining) < 0) return res.status(400).json({ error: 'Quantity remaining cannot be negative' })

@@ -19,6 +19,15 @@ export const config = {
 
 const PRODUCT_IMAGES_BUCKET = process.env.SUPABASE_PRODUCT_IMAGES_BUCKET || 'Trendy Wear'
 
+/** Safely parse a value that Supabase may return as a JSON string, plain object, or null */
+function parseJsonField(value: any): any {
+  if (value === null || value === undefined) return null
+  if (typeof value === 'string') {
+    try { return JSON.parse(value) } catch { return null }
+  }
+  return value // already an object
+}
+
 const mergeQuantities = (existingValue: any, incomingValue: any) => {
   const current = existingValue && typeof existingValue === 'object' && !Array.isArray(existingValue) ? existingValue : {}
   const incoming = incomingValue && typeof incomingValue === 'object' && !Array.isArray(incomingValue) ? incomingValue : {}
@@ -307,6 +316,16 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
         const derivedItemId = productUuid
           ? `ITEM-${productUuid.replace(/-/g, '').slice(0, 8).toUpperCase()}`
           : row.batch_number // fallback for orphaned rows with no product_id
+        
+        // Compute correct quantityAvailable from variant rollup if variant quantities exist
+        let correctQty: number
+        const rawVariants = normalizeVariantQuantities(row.variant_quantities)
+        if (rawVariants) {
+          correctQty = rollupVariantQuantities(rawVariants).total
+        } else {
+          correctQty = Number(row.quantity_available) || 0
+        }
+        
         return {
           id: row.id,
           productId: row.product_id ?? null,
@@ -315,16 +334,16 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
           brand: p.brand_name ?? '',
           size: p.sizes ?? [],
           color: p.colors ?? [],
-          sizeQuantities: row.size_quantities ?? null,
-          colorQuantities: row.color_quantities ?? null,
-          variantQuantities: row.variant_quantities ?? null,
-          variantQuantitiesRemaining: row.variant_quantities_remaining ?? null,
+          sizeQuantities: parseJsonField(row.size_quantities),
+          colorQuantities: parseJsonField(row.color_quantities),
+          variantQuantities: parseJsonField(row.variant_quantities),
+          variantQuantitiesRemaining: parseJsonField(row.variant_quantities_remaining),
           otherVariants: { picture: p.product_image ?? null },
           productImage: p.product_image ?? null,
           batchNumber: derivedItemId,
           costPrice: Number(row.cost_price) || 0,
           sellingPrice: Number(row.selling_price) || 0,
-          quantityAvailable: Number(row.quantity_available) || 0,
+          quantityAvailable: correctQty,
           lowStockWarning: Number(row.low_stock_warning) || 5,
           owner: row.owner ?? undefined
         }
@@ -383,6 +402,8 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
           inventoryUpdate.variant_quantities = normalized
           inventoryUpdate.size_quantities = rollups.sizeQuantities
           inventoryUpdate.color_quantities = rollups.colorQuantities
+          // Always use the rollup total for quantity_available when updating variant quantities;
+          // any separately-provided quantityAvailable will be ignored to prevent inconsistency.
           inventoryUpdate.quantity_available = rollups.total
         }
       }
@@ -417,7 +438,9 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
         }
       }
 
-      if (inventoryFields.quantityAvailable !== undefined) {
+      // Only apply quantityAvailable if variant quantities are NOT being updated
+      // (otherwise the variant rollup total already set quantity_available above)
+      if (inventoryFields.quantityAvailable !== undefined && rawVariantQuantities === undefined) {
         inventoryUpdate.quantity_available = Math.max(0, num(inventoryFields.quantityAvailable))
       }
 

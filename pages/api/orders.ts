@@ -679,7 +679,8 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
         if (refQty < 1) return res.status(400).json({ error: 'refundQuantity must be at least 1' });
 
         if (normalizedRefundVariants) {
-          const remainingVariantQuantities = adjustVariantQuantities(order.variant_quantities, order.refund_variant_quantities, -1);
+          const tempQuantities = adjustVariantQuantities(order.variant_quantities, order.return_variant_quantities, -1);
+          const remainingVariantQuantities = adjustVariantQuantities(tempQuantities, order.refund_variant_quantities, -1);
           const variantValidationError = validateVariantRequest(normalizedRefundVariants, remainingVariantQuantities);
           if (variantValidationError) {
             return res.status(400).json({ error: `refundVariantQuantities exceed remaining quantity: ${variantValidationError}` });
