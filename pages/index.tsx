@@ -1294,82 +1294,77 @@ function OrdersSection({ orders, overallOrders = [], inventory = [], storeInvent
                     <span className="order-card-value font-bold" style={{ color: 'var(--success)' }}>{Rs(o.profit)}</span>
                   </div>
                 )}
-                <td onClick={e => e.stopPropagation()}>
-                  <div style={{
-                    display: 'grid',
-                    gridTemplateColumns: '1fr 1fr',
-                    gap: 5,
-                    minWidth: 160,
-                  }}>
-                    {/* Row 1: Edit + Delete */}
+                <div onClick={e => e.stopPropagation()} style={{
+                  display: 'grid',
+                  gridTemplateColumns: '1fr 1fr',
+                  gap: 5,
+                  minWidth: 160,
+                }}>
+                  {/* Row 1: Edit + Delete */}
+                  <button
+                    className="btn btn-sm"
+                    style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 5, padding: '6px 10px', fontSize: 11, fontWeight: 700, background: 'rgba(99,102,241,0.1)', color: '#4f46e5', border: '1.5px solid rgba(99,102,241,0.25)', borderRadius: 8 }}
+                    onClick={(e) => { e.stopPropagation(); openEdit(o); }}
+                  >
+                    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4Z"/></svg>
+                    Edit
+                  </button>
+                  {canDelete ? (
                     <button
                       className="btn btn-sm"
-                      style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 5, padding: '6px 10px', fontSize: 11, fontWeight: 700, background: 'rgba(99,102,241,0.1)', color: '#4f46e5', border: '1.5px solid rgba(99,102,241,0.25)', borderRadius: 8 }}
-                      onClick={(e) => { e.stopPropagation(); openEdit(o); }}
+                      style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 5, padding: '6px 10px', fontSize: 11, fontWeight: 700, background: 'rgba(239,68,68,0.09)', color: '#dc2626', border: '1.5px solid rgba(239,68,68,0.22)', borderRadius: 8 }}
+                      onClick={async (e) => { e.stopPropagation(); if (await confirmDialog('Delete this sale? This action cannot be undone.')) { onDelete(o.id); } }}
                     >
-                      <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4Z"/></svg>
-                      Edit
+                      <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="M3 6h18"/><path d="M8 6V4a1 1 0 0 1 1-1h6a1 1 0 0 1 1 1v2"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/></svg>
+                      Delete
                     </button>
-                    {canDelete ? (
-                      <button
-                        className="btn btn-sm"
-                        style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 5, padding: '6px 10px', fontSize: 11, fontWeight: 700, background: 'rgba(239,68,68,0.09)', color: '#dc2626', border: '1.5px solid rgba(239,68,68,0.22)', borderRadius: 8 }}
-                        onClick={async (e) => { e.stopPropagation(); if (await confirmDialog('Delete this sale? This action cannot be undone.')) { onDelete(o.id); } }}
-                      >
-                        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="M3 6h18"/><path d="M8 6V4a1 1 0 0 1 1-1h6a1 1 0 0 1 1 1v2"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/></svg>
-                        Delete
-                      </button>
-                    ) : <div />}
+                  ) : <div />}
 
-                    {/* Row 2: Return/Undo + Refund/Undo */}
-                    {fullyReturned ? (
+                  {/* Row 2: Return/Undo + Refund/Undo */}
+                  {fullyReturned ? (
+                    <button
+                      className="btn btn-sm"
+                      style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 5, padding: '6px 10px', fontSize: 11, fontWeight: 700, background: 'rgba(107,114,128,0.1)', color: '#4b5563', border: '1.5px solid rgba(107,114,128,0.22)', borderRadius: 8, gridColumn: '1 / -1' }}
+                      onClick={async (e) => { e.stopPropagation(); if (await confirmDialog('Undo this return? The sale will be restored and stock will be deducted again.')) { onUndoReturn(o.id); } }}
+                    >
+                      <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="M9 14l-4-4 4-4"/><path d="M5 10h9a6 6 0 0 1 0 12H8"/></svg>
+                      Undo Return
+                    </button>
+                  ) : refundedQty > 0 && !fullyReturned ? (
+                    <button
+                      className="btn btn-sm"
+                      style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 5, padding: '6px 10px', fontSize: 11, fontWeight: 700, background: 'rgba(107,114,128,0.1)', color: '#4b5563', border: '1.5px solid rgba(107,114,128,0.22)', borderRadius: 8, gridColumn: '1 / -1' }}
+                      onClick={async (e) => { e.stopPropagation(); if (await confirmDialog('Undo this refund? The sale financials will be restored to their pre-refund state.')) { onUndoRefund(o.id); } }}
+                    >
+                      <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="M9 14l-4-4 4-4"/><path d="M5 10h9a6 6 0 0 1 0 12H8"/></svg>
+                      Undo Refund
+                    </button>
+                  ) : !fullyReturned && !fullyRefunded && remainingQty > 0 ? (
+                    <>
                       <button
                         className="btn btn-sm"
-                        style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 5, padding: '6px 10px', fontSize: 11, fontWeight: 700, background: 'rgba(107,114,128,0.1)', color: '#4b5563', border: '1.5px solid rgba(107,114,128,0.22)', borderRadius: 8, gridColumn: '1 / -1' }}
-                        onClick={async (e) => { e.stopPropagation(); if (await confirmDialog('Undo this return? The sale will be restored and stock will be deducted again.')) { onUndoReturn(o.id); } }}
+                        style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 5, padding: '6px 10px', fontSize: 11, fontWeight: 700, background: 'rgba(245,158,11,0.1)', color: '#b45309', border: '1.5px solid rgba(245,158,11,0.28)', borderRadius: 8 }}
+                        onClick={(e) => { e.stopPropagation(); setReturningOrder(o); }}
                       >
-                        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="M9 14l-4-4 4-4"/><path d="M5 10h9a6 6 0 0 1 0 12H8"/></svg>
-                        Undo Return
+                        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><polyline points="9 14 4 9 9 4"/><path d="M20 20v-7a4 4 0 0 0-4-4H4"/></svg>
+                        Return
                       </button>
-                    ) : refundedQty > 0 && !fullyReturned ? (
                       <button
                         className="btn btn-sm"
-                        style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 5, padding: '6px 10px', fontSize: 11, fontWeight: 700, background: 'rgba(107,114,128,0.1)', color: '#4b5563', border: '1.5px solid rgba(107,114,128,0.22)', borderRadius: 8, gridColumn: '1 / -1' }}
-                        onClick={async (e) => { e.stopPropagation(); if (await confirmDialog('Undo this refund? The sale financials will be restored to their pre-refund state.')) { onUndoRefund(o.id); } }}
+                        style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 5, padding: '6px 10px', fontSize: 11, fontWeight: 700, background: 'rgba(220,38,38,0.09)', color: '#b91c1c', border: '1.5px solid rgba(220,38,38,0.22)', borderRadius: 8 }}
+                        onClick={(e) => { e.stopPropagation(); setRefundingOrder(o); }}
                       >
-                        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="M9 14l-4-4 4-4"/><path d="M5 10h9a6 6 0 0 1 0 12H8"/></svg>
-                        Undo Refund
+                        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><line x1="12" y1="1" x2="12" y2="23"/><path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/></svg>
+                        Refund
                       </button>
-                    ) : !fullyReturned && !fullyRefunded && remainingQty > 0 ? (
-                      <>
-                        <button
-                          className="btn btn-sm"
-                          style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 5, padding: '6px 10px', fontSize: 11, fontWeight: 700, background: 'rgba(245,158,11,0.1)', color: '#b45309', border: '1.5px solid rgba(245,158,11,0.28)', borderRadius: 8 }}
-                          onClick={(e) => { e.stopPropagation(); setReturningOrder(o); }}
-                        >
-                          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><polyline points="9 14 4 9 9 4"/><path d="M20 20v-7a4 4 0 0 0-4-4H4"/></svg>
-                          Return
-                        </button>
-                        <button
-                          className="btn btn-sm"
-                          style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 5, padding: '6px 10px', fontSize: 11, fontWeight: 700, background: 'rgba(220,38,38,0.09)', color: '#b91c1c', border: '1.5px solid rgba(220,38,38,0.22)', borderRadius: 8 }}
-                          onClick={(e) => { e.stopPropagation(); setRefundingOrder(o); }}
-                        >
-                          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><line x1="12" y1="1" x2="12" y2="23"/><path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/></svg>
-                          Refund
-                        </button>
-                      </>
-                    ) : null}
-                  </div>
-                </td>
-              </tr>
-            );
-          })}
-          {orders.length === 0 && <tr><td colSpan={isAdmin ? 11 : 8} style={{ textAlign: 'center', padding: 30 }}>No partner sales match this period.</td></tr>}
-        </tbody>
-      </table>
+                    </>
+                  ) : null}
+                </div>
+              </div>
+            </div>
+          );
+        })}
       </div>
-
       {/* ── Summary bar ── */}
       <div className="orders-summary-bar">
         <div className="orders-summary-showing">
