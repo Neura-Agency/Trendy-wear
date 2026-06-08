@@ -415,7 +415,8 @@ export default function OwnersPage({ user, onLogin }: PageProps) {
   const activeOwners = owners.filter(o => o.isActive);
   const totalSharePercent = activeOwners.reduce((s, o) => s + o.profitSharePercent, 0);
   const totalPaidOut = owners.reduce((s, o) => s + (o.totalPaidOut ?? 0), 0);
-  const totalBalance = totalNetProfit - totalPaidOut;
+  const totalAdvances = owners.reduce((s, o) => s + (o.totalAdvances ?? 0), 0);
+  const totalBalance = totalNetProfit - totalPaidOut + totalAdvances;
 
   const ownerPayoutsMap: Record<string, OwnerPayout[]> = {};
   payouts.forEach(p => {
@@ -605,12 +606,20 @@ export default function OwnersPage({ user, onLogin }: PageProps) {
               <div className="kpi-trend" style={{ color: 'var(--text-muted)' }}>{payouts.length} payout{payouts.length !== 1 ? 's' : ''} recorded</div>
             </div>
           </div>
+          <div className="kpi-card blue">
+            <div className="kpi-icon">{iconPayout}</div>
+            <div className="kpi-content">
+              <div className="kpi-value">{Rs(totalAdvances)}</div>
+              <div className="kpi-label">Personal Advances</div>
+              <div className="kpi-trend" style={{ color: 'var(--text-muted)' }}>Owner personal expenses to reimburse</div>
+            </div>
+          </div>
           <div className="kpi-card orange">
             <div className="kpi-icon">{iconProfit}</div>
             <div className="kpi-content">
               <div className="kpi-value" style={{ color: totalBalance > 0 ? 'var(--orange-600)' : 'var(--green-600)' }}>{Rs(Math.abs(totalBalance))}</div>
               <div className="kpi-label">{totalBalance > 0 ? 'Remaining to Distribute' : 'Over-paid'}</div>
-              <div className="kpi-trend" style={{ color: 'var(--text-muted)' }}>{Rs(totalNetProfit)} − {Rs(totalPaidOut)}</div>
+              <div className="kpi-trend" style={{ color: 'var(--text-muted)' }}>{Rs(totalNetProfit)} − {Rs(totalPaidOut)} + {Rs(totalAdvances)}</div>
             </div>
           </div>
           <div className="kpi-card purple">
@@ -634,7 +643,8 @@ export default function OwnersPage({ user, onLogin }: PageProps) {
                 const bgs    = ['#f5f3ff', '#eff6ff', '#f0fdf4', '#fff7ed'];
                 const share  = (o.profitSharePercent / 100) * totalNetProfit;
                 const paid   = o.totalPaidOut ?? 0;
-                const bal    = share - paid;
+                const advances = o.totalAdvances ?? 0;
+                const bal    = share - paid + advances;
                 const color  = clrs[idx % clrs.length];
                 const bg     = bgs[idx % bgs.length];
                 return (
@@ -652,10 +662,11 @@ export default function OwnersPage({ user, onLogin }: PageProps) {
                         </div>
                         <span style={{ fontWeight: 800, fontSize: 18, color }}>{o.profitSharePercent}%</span>
                       </div>
-                      {/* Three rows */}
+                      {/* Four rows */}
                       {[
                         { label: 'Earned Share', value: Rs(share), valueColor: '#16a34a' },
                         { label: 'Paid Out',     value: Rs(paid),  valueColor: '#2563eb' },
+                        { label: 'Personal Advances', value: Rs(advances), valueColor: advances > 0 ? '#ea580c' : '#999' },
                         { label: bal > 0 ? 'Balance Due' : 'Fully Settled', value: Rs(Math.abs(bal)), valueColor: bal > 0 ? '#ea580c' : '#16a34a' },
                       ].map(row => (
                         <div key={row.label} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '5px 0', borderBottom: '1px solid #0000000a' }}>
@@ -680,7 +691,10 @@ export default function OwnersPage({ user, onLogin }: PageProps) {
                 const bgs = ['#f5f3ff', '#eff6ff', '#f0fdf4', '#fff7ed'];
                 const rev = ownerRevenue[o.id] || 0;
                 const exp = ownerExpensesPaid[o.id] || 0;
-                const net = rev - exp;
+                const transferIn = ownerTransferIn[o.id] || 0;
+                const transferOut = ownerTransferOut[o.id] || 0;
+                const transferNet = transferIn - transferOut;
+                const accountTotal = rev + transferNet - exp;
                 const orderCount = ownerOrderCount[o.id] || 0;
                 const ownedStores = Object.entries(storeToOwner)
                   .filter(([, oid]) => oid === o.id)
@@ -707,7 +721,8 @@ export default function OwnersPage({ user, onLogin }: PageProps) {
                       {[
                         { label: 'Revenue', value: Rs(rev), valueColor: '#16a34a' },
                         { label: 'Expenses Paid', value: Rs(exp), valueColor: '#dc2626' },
-                        { label: 'Net Contribution', value: Rs(net), valueColor: net >= 0 ? '#16a34a' : '#dc2626' },
+                        { label: 'Transfers (In - Out)', value: Rs(transferNet), valueColor: transferNet >= 0 ? '#16a34a' : '#dc2626' },
+                        { label: 'Account Total', value: Rs(accountTotal), valueColor: accountTotal >= 0 ? '#16a34a' : '#dc2626' },
                       ].map(row => (
                         <div key={row.label} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '5px 0', borderBottom: '1px solid #0000000a' }}>
                           <span style={{ fontSize: 12, color: 'var(--text-muted)' }}>{row.label}</span>

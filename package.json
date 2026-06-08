@@ -6,12 +6,16 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
+    "test": "jest --passWithNoTests",
+    "test:watch": "jest --watch --passWithNoTests",
+    "test:coverage": "jest --coverage --passWithNoTests",
     "migrate": "npx ts-node scripts/migrate-to-supabase.ts",
     "create-account": "npx ts-node scripts/create-account.ts",
     "reset-password": "npx ts-node scripts/reset-password.ts",
     "migrate:dev": "npm run migrate && npm run dev"
   },
   "dependencies": {
+    "@next/swc-win32-x64-msvc": "^16.2.6",
     "@supabase/supabase-js": "^2.97.0",
     "bcryptjs": "^3.0.3",
     "cors": "2.8.5",
@@ -19,14 +23,24 @@
     "pdfkit": "0.16.0",
     "react": "18.2.0",
     "react-dom": "18.2.0",
+    "react-is": "^19.2.6",
     "recharts": "^3.7.0"
   },
   "devDependencies": {
+    "@testing-library/dom": "^10.4.1",
+    "@testing-library/jest-dom": "^6.9.1",
+    "@testing-library/react": "^16.3.2",
+    "@testing-library/user-event": "^14.6.1",
     "@types/bcryptjs": "^2.4.6",
+    "@types/jest": "^30.0.0",
     "@types/node": "^25.3.0",
     "@types/react": "^19.2.14",
     "@types/react-dom": "^19.2.3",
     "dotenv": "^17.3.1",
+    "identity-obj-proxy": "^3.0.0",
+    "jest": "^30.4.2",
+    "jest-environment-jsdom": "^30.4.1",
+    "ts-jest": "^29.4.11",
     "typescript": "^5.9.3"
   }
 }

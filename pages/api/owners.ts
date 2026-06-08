@@ -117,7 +117,27 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
         return res.json({ owners: (r2 || []).map(mapOwner) })
       }
 
-      return res.json({ owners: (data || []).map(mapOwner) })
+      // Fetch owner advances (personal expenses paid by owners)
+      const { data: advances } = await supabaseAdmin
+        .from(TABLES.OWNER_TRANSACTIONS)
+        .select('owner_id, amount')
+        .eq('transaction_type', 'owner_advance')
+
+      // Aggregate advances by owner_id
+      const advancesByOwner: Record<string, number> = {}
+      if (advances) {
+        advances.forEach((a: any) => {
+          advancesByOwner[a.owner_id] = (advancesByOwner[a.owner_id] || 0) + num(a.amount)
+        })
+      }
+
+      // Map owners and add totalAdvances
+      const owners = (data || []).map((row: any) => ({
+        ...mapOwner(row),
+        totalAdvances: advancesByOwner[row.id] || 0,
+      }))
+
+      return res.json({ owners })
     }
 
     // ══════════════════════

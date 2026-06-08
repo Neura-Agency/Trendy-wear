@@ -55,7 +55,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 
       const { data: accounts, error: accountsError } = await supabaseAdmin
         .from(TABLES.ACCOUNTS)
-        .select('id, username, plain_password, role, scope, managed_stores')
+        .select('id, username, plain_password, role, scope, managed_stores, is_active')
         .in('id', accountIds.length > 0 ? accountIds : ['00000000-0000-0000-0000-000000000000']) // Dummy UUID if no accounts
         .order('created_at', { ascending: true })
 
@@ -88,12 +88,39 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
           role: account.role,
           scope: account.scope,
           storeName: store.name,
-          managedStores: account.managed_stores || []
+          managedStores: account.managed_stores || [],
+          isActive: account.is_active ?? true
         }
       })
 
+      // Also include all super-admin accounts under "Trendy Wear Main"
+      const { data: adminAccounts } = await supabaseAdmin
+        .from(TABLES.ACCOUNTS)
+        .select('id, username, plain_password, role, scope, managed_stores, is_active')
+        .eq('role', 'admin')
+        .eq('scope', 'all')
+        .order('created_at', { ascending: true })
+
+      ;(adminAccounts || []).forEach((admin: any) => {
+        if (accountsMap[admin.username]) return // already included via store_owners
+        accountsMap[admin.username] = {
+          password: admin.plain_password || '••••••••',
+          role: admin.role,
+          scope: admin.scope,
+          storeName: 'Trendy Wear Main',
+          managedStores: admin.managed_stores || [],
+          isActive: admin.is_active ?? true
+        }
+      })
+
+      // Sort: Trendy Wear Main accounts first, then store accounts by store name
+      const sortedAccountsMap: Record<string, any> = {}
+      const adminEntries = Object.entries(accountsMap).filter(([, v]: [string, any]) => v.storeName === 'Trendy Wear Main')
+      const storeEntries = Object.entries(accountsMap).filter(([, v]: [string, any]) => v.storeName !== 'Trendy Wear Main')
+      ;[...adminEntries, ...storeEntries].forEach(([k, v]) => { sortedAccountsMap[k] = v })
+
       return res.json({
-        accounts: accountsMap,
+        accounts: sortedAccountsMap,
         stores: storesMap,
         settings: { storeCommissionPercent: 10 }
       })

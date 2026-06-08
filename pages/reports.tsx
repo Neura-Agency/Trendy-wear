@@ -246,14 +246,17 @@ function PeriodPicker({ type, value, onTypeChange, onValueChange }: PeriodPicker
 // ═══════════════════════════════════════════════════════════════════════════
 // Main Page
 // ═══════════════════════════════════════════════════════════════════════════
-const TABS = ['P&L Summary', 'Revenue & Sales', 'Expenses', 'Product Performance', 'Store Performance'];
 
 type TabKey = 0 | 1 | 2 | 3 | 4;
 
 export default function ReportsPage({ user, onLogin }: PageProps) {
   const { toast } = usePopup();
   const printRef = useRef<HTMLDivElement>(null);
+
+  // Determine role & scope
   const isSuperAdmin = user?.role === 'admin' && user?.scope === 'all';
+  const isStoreOwner = user?.role === 'store' && !!user?.storeName;
+  const myStoreName = isStoreOwner ? user!.storeName! : null;
 
   const [orders, setOrders] = useState<(Order & { orderCode?: string })[]>([]);
   const [expenses, setExpenses] = useState<Expense[]>([]);
@@ -268,8 +271,16 @@ export default function ReportsPage({ user, onLogin }: PageProps) {
   const [productFilter, setProductFilter] = useState('all');
 
   // UI state
-  const [activeTab, setActiveTab] = useState<TabKey>(0);
+  const [activeTab, setActiveTab] = useState<number>(0);
   const [showChart, setShowChart] = useState(true);
+
+  // Check if store owner — force their store filter
+  const effectiveStoreFilter = isStoreOwner ? myStoreName! : storeFilter;
+
+  // Tabs based on role
+  const tabs = isStoreOwner
+    ? ['Summary', 'My Sales', 'My Products']
+    : ['P&L Summary', 'Revenue & Sales', 'Expenses', 'Product Performance', 'Store Performance'];
 
   // ── fetch data ─────────────────────────────────────────────────────────
   const load = useCallback(async () => {
@@ -298,16 +309,24 @@ export default function ReportsPage({ user, onLogin }: PageProps) {
   // ── filtered sets ──────────────────────────────────────────────────────
   const filtOrders = orders.filter(o =>
     isInPeriod(o.date, periodType, periodValue) &&
-    (storeFilter === 'all' || o.storeName === storeFilter) &&
+    (effectiveStoreFilter === 'all' || o.storeName === effectiveStoreFilter) &&
     (productFilter === 'all' || o.productName === productFilter)
   );
-  const filtExpenses = expenses.filter(e =>
+  const filtExpenses = isStoreOwner ? [] : expenses.filter(e =>
     isInPeriod(e.expense_date, periodType, periodValue)
   );
 
+  // Effective chargeable units after subtracting returned & refunded quantities
+  const effectiveQty = (o: any) => {
+    const soldQty = Math.max(0, Number(o.quantity) || 0);
+    const returnedQty = Math.min(Math.max(0, Number(o.returnQuantity) || 0), soldQty);
+    const refundedQty = Math.min(Math.max(0, Number(o.refundQuantity) || 0), soldQty - returnedQty);
+    return soldQty - returnedQty - refundedQty;
+  };
+
   // ── aggregate KPIs ─────────────────────────────────────────────────────
-  const totRevenue     = filtOrders.reduce((s, o) => s + o.sellingPrice * o.quantity, 0);
-  const totCOGS        = filtOrders.reduce((s, o) => s + o.costPrice * o.quantity, 0);
+  const totRevenue     = filtOrders.reduce((s, o) => s + o.sellingPrice * effectiveQty(o), 0);
+  const totCOGS        = filtOrders.reduce((s, o) => s + o.costPrice * effectiveQty(o), 0);
   const totCommission  = filtOrders.reduce((s, o) => s + (o.commissionAmount || 0), 0);
   const totShipment    = filtOrders.reduce((s, o) => s + (o.shipmentCost || 0), 0);
   const grossProfit    = totRevenue - totCOGS;
@@ -316,52 +335,66 @@ export default function ReportsPage({ user, onLogin }: PageProps) {
   const avgOrderValue  = filtOrders.length ? totRevenue / filtOrders.length : 0;
   const grossMargin    = totRevenue > 0 ? (grossProfit / totRevenue) * 100 : 0;
 
+  // For store owners: profit = revenue minus commission & shipment (the store's net)
+  const storeProfit = filtOrders.reduce((s, o) => {
+    // Profit from the order as stored (commission already deducted in profit field)
+    return s + (o.profit || 0);
+  }, 0);
+
   // ── trend data (by label) ──────────────────────────────────────────────
   const trendMap: Record<string, { label: string; revenue: number; cogs: number; expenses: number; profit: number }> = {};
   filtOrders.forEach(o => {
     const l = groupLabel(o.date, periodType);
+    const eQty = effectiveQty(o);
     if (!trendMap[l]) trendMap[l] = { label: l, revenue: 0, cogs: 0, expenses: 0, profit: 0 };
-    trendMap[l].revenue += o.sellingPrice * o.quantity;
-    trendMap[l].cogs    += o.costPrice * o.quantity;
+    trendMap[l].revenue += o.sellingPrice * eQty;
+    trendMap[l].cogs    += o.costPrice * eQty;
   });
-  filtExpenses.forEach(e => {
-    const l = groupLabel(e.expense_date, periodType);
-    if (!trendMap[l]) trendMap[l] = { label: l, revenue: 0, cogs: 0, expenses: 0, profit: 0 };
-    trendMap[l].expenses += e.amount;
-  });
-  Object.values(trendMap).forEach(d => { d.profit = d.revenue - d.cogs - d.expenses; });
+  if (!isStoreOwner) {
+    filtExpenses.forEach(e => {
+      const l = groupLabel(e.expense_date, periodType);
+      if (!trendMap[l]) trendMap[l] = { label: l, revenue: 0, cogs: 0, expenses: 0, profit: 0 };
+      trendMap[l].expenses += e.amount;
+    });
+  }
+  Object.values(trendMap).forEach(d => { d.profit = isStoreOwner ? (d.revenue - d.cogs) : (d.revenue - d.cogs - d.expenses); });
   const trendData = Object.values(trendMap).slice(-60);
 
   // ── product performance ────────────────────────────────────────────────
-  const prodMap: Record<string, { product: string; orders: number; qty: number; revenue: number; cogs: number; grossProfit: number }> = {};
+  const prodMap: Record<string, { product: string; orders: number; qty: number; revenue: number; profit: number }> = {};
   filtOrders.forEach(o => {
-    if (!prodMap[o.productName]) prodMap[o.productName] = { product: o.productName, orders: 0, qty: 0, revenue: 0, cogs: 0, grossProfit: 0 };
+    const eQty = effectiveQty(o);
+    if (!prodMap[o.productName]) prodMap[o.productName] = { product: o.productName, orders: 0, qty: 0, revenue: 0, profit: 0 };
     prodMap[o.productName].orders++;
     prodMap[o.productName].qty      += o.quantity;
-    prodMap[o.productName].revenue  += o.sellingPrice * o.quantity;
-    prodMap[o.productName].cogs     += o.costPrice * o.quantity;
-    prodMap[o.productName].grossProfit = prodMap[o.productName].revenue - prodMap[o.productName].cogs;
+    prodMap[o.productName].revenue  += o.sellingPrice * eQty;
+    prodMap[o.productName].profit   += o.profit || 0;
   });
   const prodRows = Object.values(prodMap).sort((a, b) => b.revenue - a.revenue);
 
-  // ── store performance ──────────────────────────────────────────────────
+  // ── store performance (admin only) ─────────────────────────────────────
   const storeMap: Record<string, { store: string; orders: number; qty: number; revenue: number; cogs: number; commission: number; shipment: number; netProfit: number }> = {};
-  filtOrders.forEach(o => {
-    const s = o.storeName || 'Unknown';
-    if (!storeMap[s]) storeMap[s] = { store: s, orders: 0, qty: 0, revenue: 0, cogs: 0, commission: 0, shipment: 0, netProfit: 0 };
-    storeMap[s].orders++;
-    storeMap[s].qty        += o.quantity;
-    storeMap[s].revenue    += o.sellingPrice * o.quantity;
-    storeMap[s].cogs       += o.costPrice * o.quantity;
-    storeMap[s].commission += o.commissionAmount || 0;
-    storeMap[s].shipment   += o.shipmentCost || 0;
-    storeMap[s].netProfit  += o.profit;
-  });
+  if (!isStoreOwner) {
+    filtOrders.forEach(o => {
+      const s = o.storeName || 'Unknown';
+      const eQty = effectiveQty(o);
+      if (!storeMap[s]) storeMap[s] = { store: s, orders: 0, qty: 0, revenue: 0, cogs: 0, commission: 0, shipment: 0, netProfit: 0 };
+      storeMap[s].orders++;
+      storeMap[s].qty        += o.quantity;
+      storeMap[s].revenue    += o.sellingPrice * eQty;
+      storeMap[s].cogs       += o.costPrice * eQty;
+      storeMap[s].commission += o.commissionAmount || 0;
+      storeMap[s].shipment   += o.shipmentCost || 0;
+      storeMap[s].netProfit  += o.profit;
+    });
+  }
   const storeRows = Object.values(storeMap).sort((a, b) => b.revenue - a.revenue);
 
-  // ── expense breakdown ──────────────────────────────────────────────────
+  // ── expense breakdown (admin only) ─────────────────────────────────────
   const expCatMap: Record<string, number> = {};
-  filtExpenses.forEach(e => { expCatMap[e.category] = (expCatMap[e.category] || 0) + e.amount; });
+  if (!isStoreOwner) {
+    filtExpenses.forEach(e => { expCatMap[e.category] = (expCatMap[e.category] || 0) + e.amount; });
+  }
   const expCatData = Object.entries(expCatMap).map(([cat, amt]) => ({ cat, amt })).sort((a, b) => b.amt - a.amt);
 
   // ── PDF print ──────────────────────────────────────────────────────────
@@ -371,10 +404,10 @@ export default function ReportsPage({ user, onLogin }: PageProps) {
 
   // ── login guard ────────────────────────────────────────────────────────
   if (!user) return <Login onLogin={onLogin!} />;
-  if (!isSuperAdmin) return (
+  if (!isSuperAdmin && !isStoreOwner) return (
     <div style={{ padding: 40, textAlign: 'center', color: 'var(--text-muted)' }}>
       <div style={{ fontSize: 48, marginBottom: 12 }}>🔒</div>
-      <p style={{ fontSize: 16, fontWeight: 600 }}>Super-admin access required to view reports.</p>
+      <p style={{ fontSize: 16, fontWeight: 600 }}>Access restricted. Only store owners and admins can view reports.</p>
     </div>
   );
 
@@ -402,17 +435,19 @@ export default function ReportsPage({ user, onLogin }: PageProps) {
       <div ref={printRef} style={{ maxWidth: 1400, margin: '0 auto', padding: '0 0 48px 0' }}>
         {/* ── Print title ── */}
         <div className="report-print-title">
-          Trendy Wear — Business Report · {periodLabel}
-          {storeFilter !== 'all' ? ` · Store: ${storeFilter}` : ''}
+          Trendy Wear — {isStoreOwner ? 'My Store Report' : 'Business Report'} · {periodLabel}
+          {isStoreOwner ? ` · Store: ${myStoreName}` : storeFilter !== 'all' ? ` · Store: ${storeFilter}` : ''}
           {productFilter !== 'all' ? ` · Product: ${productFilter}` : ''}
         </div>
 
         {/* ── Page header ── */}
         <div className="no-print" style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', flexWrap: 'wrap', gap: 16, marginBottom: 24 }}>
           <div>
-            <h1 style={{ fontSize: 26, fontWeight: 800, margin: 0, letterSpacing: '-0.5px' }}>Business Reports</h1>
+            <h1 style={{ fontSize: 26, fontWeight: 800, margin: 0, letterSpacing: '-0.5px' }}>
+              {isStoreOwner ? `${myStoreName} — Reports` : 'Business Reports'}
+            </h1>
             <p style={{ color: 'var(--text-muted)', fontSize: 13, marginTop: 4 }}>
-              Filterable analytics · Google Sheets style · Export to PDF
+              {isStoreOwner ? 'Your store revenue, products sold, and profit' : 'Filterable analytics · Google Sheets style · Export to PDF'}
             </p>
           </div>
           <button className="btn btn-primary no-print" onClick={handlePrint} style={{ display: 'flex', alignItems: 'center', gap: 8, height: 42, padding: '0 20px' }}>
@@ -420,7 +455,7 @@ export default function ReportsPage({ user, onLogin }: PageProps) {
           </button>
         </div>
 
-        {/* ── Filter bar ── */}
+        {/* ── Filter bar (simplified for store owners) ── */}
         <div className="no-print" style={{ background: 'var(--surface-2)', border: '1px solid var(--border)', borderRadius: 12, padding: 16, marginBottom: 20, display: 'flex', flexWrap: 'wrap', gap: 16, alignItems: 'center' }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
             <span style={{ fontSize: 12, fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase', display: 'flex', alignItems: 'center', gap: 4, whiteSpace: 'nowrap' }}>
@@ -429,25 +464,33 @@ export default function ReportsPage({ user, onLogin }: PageProps) {
             <PeriodPicker type={periodType} value={periodValue} onTypeChange={setPeriodType} onValueChange={setPeriodValue} />
           </div>
 
-          <div style={{ width: 1, height: 32, background: 'var(--border)', flexShrink: 0 }} />
-
-          <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
-            <span style={{ fontSize: 12, fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase', whiteSpace: 'nowrap' }}>Store</span>
-            <div style={{ width: 160 }}>
-              <CustomSelect value={storeFilter} onChange={setStoreFilter}
-                options={[{ id: 'all', label: 'All Stores' }, ...storeList.map(s => ({ id: s, label: s }))]}
-                height="34px" />
-            </div>
-            <span style={{ fontSize: 12, fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase', whiteSpace: 'nowrap' }}>Product</span>
-            <div style={{ width: 160 }}>
-              <CustomSelect value={productFilter} onChange={setProductFilter}
-                options={[{ id: 'all', label: 'All Products' }, ...productList.map(p => ({ id: p, label: p }))]}
-                height="34px" />
-            </div>
+          {!isStoreOwner && (
+            <>
+              <div style={{ width: 1, height: 32, background: 'var(--border)', flexShrink: 0 }} />
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+                <span style={{ fontSize: 12, fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase', whiteSpace: 'nowrap' }}>Store</span>
+                <div style={{ width: 160 }}>
+                  <CustomSelect value={storeFilter} onChange={setStoreFilter}
+                    options={[{ id: 'all', label: 'All Stores' }, ...storeList.map(s => ({ id: s, label: s }))]}
+                    height="34px" />
+                </div>
+              </div>
+            </>
+          )}
+          <span style={{ fontSize: 12, fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase', whiteSpace: 'nowrap' }}>Product</span>
+          <div style={{ width: 160 }}>
+            <CustomSelect value={productFilter} onChange={setProductFilter}
+              options={[{ id: 'all', label: 'All Products' }, ...productList.map(p => ({ id: p, label: p }))]}
+              height="34px" />
           </div>
 
-          {(storeFilter !== 'all' || productFilter !== 'all' || periodType !== 'all') && (
+          {(storeFilter !== 'all' || productFilter !== 'all' || periodType !== 'all') && !isStoreOwner && (
             <button className="btn btn-sm btn-glass" onClick={() => { setPeriodType('all'); setPeriodValue(''); setStoreFilter('all'); setProductFilter('all'); }} style={{ marginLeft: 'auto' }}>
+              ✕ Clear Filters
+            </button>
+          )}
+          {(productFilter !== 'all' || periodType !== 'all') && isStoreOwner && (
+            <button className="btn btn-sm btn-glass" onClick={() => { setPeriodType('all'); setPeriodValue(''); setProductFilter('all'); }} style={{ marginLeft: 'auto' }}>
               ✕ Clear Filters
             </button>
           )}
@@ -455,18 +498,29 @@ export default function ReportsPage({ user, onLogin }: PageProps) {
 
         {/* ── Top-level KPI strip ── */}
         <div className="sheet-section" style={{ display: 'flex', gap: 12, flexWrap: 'wrap', marginBottom: 24 }}>
-          <KpiCard label="Total Revenue"    value={Rs(totRevenue)}   color={C.purple} sub={`${filtOrders.length} orders`} />
-          <KpiCard label="Gross Profit"     value={Rs(grossProfit)}  color={C.green}  sub={`Margin: ${pct(grossMargin)}`} />
-          <KpiCard label="Total Expenses"   value={Rs(totExpenses)}  color={C.red}    sub={`${filtExpenses.length} entries`} />
-          <KpiCard label="Net Profit"       value={Rs(netProfit)}    color={netProfit >= 0 ? C.teal : C.red} sub="After all expenses" />
-          <KpiCard label="Avg Order Value"  value={Rs(avgOrderValue)} color={C.blue}  sub="Per transaction" />
-          <KpiCard label="Total COGS"       value={Rs(totCOGS)}      color={C.orange} sub="Cost of goods sold" />
+          {isStoreOwner ? (
+            <>
+              <KpiCard label="Total Revenue"    value={Rs(totRevenue)}   color={C.purple} sub={`${filtOrders.length} orders`} />
+              <KpiCard label="Total Profit"     value={Rs(storeProfit)}  color={C.green}  sub="After commissions & shipping" />
+              <KpiCard label="Avg Order Value"  value={Rs(avgOrderValue)} color={C.blue}  sub="Per transaction" />
+              <KpiCard label="Products Sold"    value={String(filtOrders.reduce((s, o) => s + o.quantity, 0))} color={C.teal} sub={`${prodRows.length} unique products`} />
+            </>
+          ) : (
+            <>
+              <KpiCard label="Total Revenue"    value={Rs(totRevenue)}   color={C.purple} sub={`${filtOrders.length} orders`} />
+              <KpiCard label="Gross Profit"     value={Rs(grossProfit)}  color={C.green}  sub={`Margin: ${pct(grossMargin)}`} />
+              <KpiCard label="Total Expenses"   value={Rs(totExpenses)}  color={C.red}    sub={`${filtExpenses.length} entries`} />
+              <KpiCard label="Net Profit"       value={Rs(netProfit)}    color={netProfit >= 0 ? C.teal : C.red} sub="After all expenses" />
+              <KpiCard label="Avg Order Value"  value={Rs(avgOrderValue)} color={C.blue}  sub="Per transaction" />
+              <KpiCard label="Total COGS"       value={Rs(totCOGS)}      color={C.orange} sub="Cost of goods sold" />
+            </>
+          )}
         </div>
 
         {/* ── Tabs ── */}
         <div className="no-print" style={{ display: 'flex', gap: 4, marginBottom: 20, borderBottom: '2px solid var(--border)', paddingBottom: 0, flexWrap: 'wrap' }}>
-          {TABS.map((t, i) => (
-            <button key={i} onClick={() => setActiveTab(i as TabKey)}
+          {tabs.map((t, i) => (
+            <button key={i} onClick={() => setActiveTab(i)}
               style={{ padding: '8px 16px', border: 'none', background: 'none', cursor: 'pointer', fontWeight: activeTab === i ? 800 : 500, fontSize: 13, color: activeTab === i ? C.purple : 'var(--text-muted)', borderBottom: activeTab === i ? `3px solid ${C.purple}` : '3px solid transparent', marginBottom: -2, transition: 'all 0.15s', whiteSpace: 'nowrap' }}>
               {t}
             </button>
@@ -482,13 +536,16 @@ export default function ReportsPage({ user, onLogin }: PageProps) {
         {loading && <div style={{ textAlign: 'center', padding: 60, color: 'var(--text-muted)' }}>Loading report data…</div>}
 
         {/* ══════════════════════════════════════════════════════════════
-            TAB 0: P&L SUMMARY
+            STORE OWNER TAB 0: SUMMARY
+            ADMIN TAB 0: P&L SUMMARY
         ══════════════════════════════════════════════════════════════ */}
         {!loading && activeTab === 0 && (
           <div className="sheet-section">
             {showChart && (
               <div style={{ marginBottom: 24, background: 'var(--surface-1)', border: '1px solid var(--border)', borderRadius: 10, padding: 16 }}>
-                <div style={{ fontWeight: 700, fontSize: 14, marginBottom: 12 }}>Revenue vs Expenses vs Net Profit Trend</div>
+                <div style={{ fontWeight: 700, fontSize: 14, marginBottom: 12 }}>
+                  {isStoreOwner ? 'Revenue & Profit Trend' : 'Revenue vs Expenses vs Net Profit Trend'}
+                </div>
                 <ResponsiveContainer width="100%" height={280}>
                   <LineChart data={trendData} margin={{ top: 5, right: 20, left: 0, bottom: 5 }}>
                     <CartesianGrid strokeDasharray="3 3" stroke="#e5e7eb" />
@@ -497,36 +554,58 @@ export default function ReportsPage({ user, onLogin }: PageProps) {
                     <Tooltip formatter={(v: number) => Rs(v)} />
                     <Legend />
                     <Line type="monotone" dataKey="revenue"  stroke={C.purple} strokeWidth={2} dot={false} name="Revenue" />
-                    <Line type="monotone" dataKey="cogs"     stroke={C.orange} strokeWidth={2} dot={false} name="COGS" />
-                    <Line type="monotone" dataKey="expenses" stroke={C.red}    strokeWidth={2} dot={false} name="Expenses" />
-                    <Line type="monotone" dataKey="profit"   stroke={C.green}  strokeWidth={2.5} dot={false} name="Net Profit" strokeDasharray="5 2" />
+                    {!isStoreOwner && <Line type="monotone" dataKey="cogs"     stroke={C.orange} strokeWidth={2} dot={false} name="COGS" />}
+                    {!isStoreOwner && <Line type="monotone" dataKey="expenses" stroke={C.red}    strokeWidth={2} dot={false} name="Expenses" />}
+                    <Line type="monotone" dataKey="profit"   stroke={C.green}  strokeWidth={2.5} dot={false} name={isStoreOwner ? 'Profit' : 'Net Profit'} strokeDasharray="5 2" />
                   </LineChart>
                 </ResponsiveContainer>
               </div>
             )}
 
-            <div style={{ fontWeight: 700, fontSize: 14, marginBottom: 10 }}>P&L Statement — {periodLabel}</div>
-            <SheetTable
-              cols={[
-                { key: 'item', label: 'Line Item' },
-                { key: 'amount', label: 'Amount', align: 'right', render: (r: any) => <span style={{ color: r.type === 'debit' ? C.red : r.type === 'total' ? (r.raw >= 0 ? C.green : C.red) : '#111' }}>{Rs(r.raw)}</span> },
-                { key: 'notes', label: 'Notes' },
-              ]}
-              rows={[
-                { item: '(+) Gross Revenue',      amount: Rs(totRevenue),   raw: totRevenue,    type: 'credit', notes: `${filtOrders.length} orders` },
-                { item: '(-) Cost of Goods Sold', amount: Rs(totCOGS),      raw: totCOGS,       type: 'debit',  notes: 'Warehouse cost × qty' },
-                { item: '(=) Gross Profit',        amount: Rs(grossProfit),  raw: grossProfit,   type: 'total',  notes: `Margin ${pct(grossMargin)}` },
-                { item: '(-) Store Commissions',   amount: Rs(totCommission),raw: totCommission, type: 'debit',  notes: 'Partner store cut' },
-                { item: '(-) Shipment Costs',      amount: Rs(totShipment),  raw: totShipment,   type: 'debit',  notes: 'Delivery charges' },
-                { item: '(-) Operating Expenses',  amount: Rs(totExpenses),  raw: totExpenses,   type: 'debit',  notes: `${filtExpenses.length} expense entries` },
-                { item: '(=) NET PROFIT',           amount: Rs(netProfit),   raw: netProfit,     type: 'total',  notes: 'Bottom line' },
-              ]}
-            />
+            {isStoreOwner ? (
+              <div style={{ fontWeight: 700, fontSize: 14, marginBottom: 10 }}>My Store Summary — {periodLabel}</div>
+            ) : (
+              <div style={{ fontWeight: 700, fontSize: 14, marginBottom: 10 }}>P&L Statement — {periodLabel}</div>
+            )}
+
+            {isStoreOwner ? (
+              <SheetTable
+                cols={[
+                  { key: 'item', label: 'Line Item' },
+                  { key: 'amount', label: 'Amount', align: 'right', render: (r: any) => <span style={{ color: r.type === 'debit' ? C.red : r.type === 'total' ? (r.raw >= 0 ? C.green : C.red) : '#111' }}>{Rs(r.raw)}</span> },
+                  { key: 'notes', label: 'Notes' },
+                ]}
+                rows={[
+                  { item: '(+) Total Revenue',       amount: Rs(totRevenue), raw: totRevenue,   type: 'credit', notes: `${filtOrders.length} orders` },
+                  { item: '(-) Commission Paid',     amount: Rs(totCommission), raw: totCommission, type: 'debit', notes: 'Store commission' },
+                  { item: '(-) Shipment Costs',      amount: Rs(totShipment), raw: totShipment,   type: 'debit', notes: 'Delivery charges' },
+                  { item: '(=) NET PROFIT',           amount: Rs(storeProfit), raw: storeProfit,   type: 'total', notes: 'Your earnings' },
+                ]}
+              />
+            ) : (
+              <SheetTable
+                cols={[
+                  { key: 'item', label: 'Line Item' },
+                  { key: 'amount', label: 'Amount', align: 'right', render: (r: any) => <span style={{ color: r.type === 'debit' ? C.red : r.type === 'total' ? (r.raw >= 0 ? C.green : C.red) : '#111' }}>{Rs(r.raw)}</span> },
+                  { key: 'notes', label: 'Notes' },
+                ]}
+                rows={[
+                  { item: '(+) Gross Revenue',      amount: Rs(totRevenue),   raw: totRevenue,    type: 'credit', notes: `${filtOrders.length} orders` },
+                  { item: '(-) Cost of Goods Sold', amount: Rs(totCOGS),      raw: totCOGS,       type: 'debit',  notes: 'Warehouse cost × qty' },
+                  { item: '(=) Gross Profit',        amount: Rs(grossProfit),  raw: grossProfit,   type: 'total',  notes: `Margin ${pct(grossMargin)}` },
+                  { item: '(-) Store Commissions',   amount: Rs(totCommission),raw: totCommission, type: 'debit',  notes: 'Partner store cut' },
+                  { item: '(-) Shipment Costs',      amount: Rs(totShipment),  raw: totShipment,   type: 'debit',  notes: 'Delivery charges' },
+                  { item: '(-) Operating Expenses',  amount: Rs(totExpenses),  raw: totExpenses,   type: 'debit',  notes: `${filtExpenses.length} expense entries` },
+                  { item: '(=) NET PROFIT',           amount: Rs(netProfit),   raw: netProfit,     type: 'total',  notes: 'Bottom line' },
+                ]}
+              />
+            )}
           </div>
         )}
 
         {/* ══════════════════════════════════════════════════════════════
-            TAB 1: REVENUE & SALES
+            STORE OWNER TAB 1: MY SALES
+            ADMIN TAB 1: REVENUE & SALES
         ══════════════════════════════════════════════════════════════ */}
         {!loading && activeTab === 1 && (
           <div className="sheet-section">
@@ -541,45 +620,70 @@ export default function ReportsPage({ user, onLogin }: PageProps) {
                     <Tooltip formatter={(v: number) => Rs(v)} />
                     <Legend />
                     <Bar dataKey="revenue" fill={C.purple} name="Revenue" radius={[2,2,0,0]} />
-                    <Bar dataKey="cogs"    fill={C.orange} name="COGS"    radius={[2,2,0,0]} />
+                    {!isStoreOwner && <Bar dataKey="cogs" fill={C.orange} name="COGS" radius={[2,2,0,0]} />}
                     <Bar dataKey="profit"  fill={C.green}  name="Profit"  radius={[2,2,0,0]} />
                   </BarChart>
                 </ResponsiveContainer>
               </div>
             )}
 
-            <div style={{ fontWeight: 700, fontSize: 14, marginBottom: 10 }}>All Orders — {periodLabel}</div>
+            <div style={{ fontWeight: 700, fontSize: 14, marginBottom: 10 }}>
+              {isStoreOwner ? `My Sales — ${periodLabel}` : `All Orders — ${periodLabel}`}
+            </div>
             <SheetTable
-              cols={[
-                { key: 'date',     label: 'Date',    render: (o: Order) => new Date(o.date).toLocaleDateString('en-PK') },
-                { key: 'productName', label: 'Product' },
-                { key: 'storeName',   label: 'Store' },
-                { key: 'clientName',  label: 'Client' },
-                { key: 'type',     label: 'Type',   render: (o: Order) => <span style={{ fontSize: 11, padding: '2px 7px', borderRadius: 20, background: o.type === 'Sale' ? '#ede9fe' : '#fef3c7', color: o.type === 'Sale' ? '#6d28d9' : '#92400e', fontWeight: 600 }}>{o.type}</span> },
-                { key: 'quantity', label: 'Qty',    align: 'right' },
-                { key: 'sellingPrice', label: 'Unit Price', align: 'right', render: (o: Order) => Rs(o.sellingPrice) },
-                { key: 'revenue',  label: 'Revenue', align: 'right', value: (o: Order) => o.sellingPrice * o.quantity, render: (o: Order) => <b>{Rs(o.sellingPrice * o.quantity)}</b> },
-                { key: 'costPrice', label: 'Unit Cost', align: 'right', render: (o: Order) => Rs(o.costPrice) },
-                { key: 'cogs',     label: 'COGS',   align: 'right', value: (o: Order) => o.costPrice * o.quantity, render: (o: Order) => Rs(o.costPrice * o.quantity) },
-                { key: 'profit',   label: 'Profit',  align: 'right', render: (o: Order) => <span style={{ color: o.profit >= 0 ? C.green : C.red, fontWeight: 600 }}>{Rs(o.profit)}</span> },
-                { key: 'paymentStatus', label: 'Paid', align: 'center', render: (o: Order) => o.paymentStatus ? '✅' : '⏳' },
-              ]}
+              cols={
+                isStoreOwner
+                  ? [
+                      { key: 'date',     label: 'Date',    render: (o: Order) => new Date(o.date).toLocaleDateString('en-PK') },
+                      { key: 'productName', label: 'Product' },
+                      { key: 'clientName',  label: 'Client' },
+                      { key: 'type',     label: 'Type',   render: (o: Order) => <span style={{ fontSize: 11, padding: '2px 7px', borderRadius: 20, background: o.type === 'Sale' ? '#ede9fe' : '#fef3c7', color: o.type === 'Sale' ? '#6d28d9' : '#92400e', fontWeight: 600 }}>{o.type}</span> },
+                      { key: 'quantity', label: 'Qty',    align: 'right' },
+                      { key: 'sellingPrice', label: 'Unit Price', align: 'right', render: (o: Order) => Rs(o.sellingPrice) },
+                      { key: 'revenue',  label: 'Revenue', align: 'right', value: (o: Order) => o.sellingPrice * o.quantity, render: (o: Order) => <b>{Rs(o.sellingPrice * o.quantity)}</b> },
+                      { key: 'profit',   label: 'Profit',  align: 'right', render: (o: Order) => <span style={{ color: o.profit >= 0 ? C.green : C.red, fontWeight: 600 }}>{Rs(o.profit)}</span> },
+                      { key: 'paymentStatus', label: 'Paid', align: 'center', render: (o: Order) => o.paymentStatus ? '✅' : '⏳' },
+                    ]
+                  : [
+                      { key: 'date',     label: 'Date',    render: (o: Order) => new Date(o.date).toLocaleDateString('en-PK') },
+                      { key: 'productName', label: 'Product' },
+                      { key: 'storeName',   label: 'Store' },
+                      { key: 'clientName',  label: 'Client' },
+                      { key: 'type',     label: 'Type',   render: (o: Order) => <span style={{ fontSize: 11, padding: '2px 7px', borderRadius: 20, background: o.type === 'Sale' ? '#ede9fe' : '#fef3c7', color: o.type === 'Sale' ? '#6d28d9' : '#92400e', fontWeight: 600 }}>{o.type}</span> },
+                      { key: 'quantity', label: 'Qty',    align: 'right' },
+                      { key: 'sellingPrice', label: 'Unit Price', align: 'right', render: (o: Order) => Rs(o.sellingPrice) },
+                      { key: 'revenue',  label: 'Revenue', align: 'right', value: (o: Order) => o.sellingPrice * o.quantity, render: (o: Order) => <b>{Rs(o.sellingPrice * o.quantity)}</b> },
+                      { key: 'costPrice', label: 'Unit Cost', align: 'right', render: (o: Order) => Rs(o.costPrice) },
+                      { key: 'cogs',     label: 'COGS',   align: 'right', value: (o: Order) => o.costPrice * o.quantity, render: (o: Order) => Rs(o.costPrice * o.quantity) },
+                      { key: 'profit',   label: 'Profit',  align: 'right', render: (o: Order) => <span style={{ color: o.profit >= 0 ? C.green : C.red, fontWeight: 600 }}>{Rs(o.profit)}</span> },
+                      { key: 'paymentStatus', label: 'Paid', align: 'center', render: (o: Order) => o.paymentStatus ? '✅' : '⏳' },
+                    ]
+              }
               rows={filtOrders}
-              totalsRow={{
-                date: `${filtOrders.length} orders`,
-                quantity: String(filtOrders.reduce((s, o) => s + o.quantity, 0)),
-                revenue: <b>{Rs(totRevenue)}</b>,
-                cogs: Rs(totCOGS),
-                profit: <b style={{ color: grossProfit >= 0 ? C.green : C.red }}>{Rs(grossProfit)}</b>,
-              }}
+              totalsRow={
+                isStoreOwner
+                  ? {
+                      date: `${filtOrders.length} orders`,
+                      quantity: String(filtOrders.reduce((s, o) => s + o.quantity, 0)),
+                      revenue: <b>{Rs(totRevenue)}</b>,
+                      profit: <b style={{ color: storeProfit >= 0 ? C.green : C.red }}>{Rs(storeProfit)}</b>,
+                    }
+                  : {
+                      date: `${filtOrders.length} orders`,
+                      quantity: String(filtOrders.reduce((s, o) => s + o.quantity, 0)),
+                      revenue: <b>{Rs(totRevenue)}</b>,
+                      cogs: Rs(totCOGS),
+                      profit: <b style={{ color: grossProfit >= 0 ? C.green : C.red }}>{Rs(grossProfit)}</b>,
+                    }
+              }
             />
           </div>
         )}
 
         {/* ══════════════════════════════════════════════════════════════
-            TAB 2: EXPENSES
+            ADMIN TAB 2: EXPENSES (admin only)
         ══════════════════════════════════════════════════════════════ */}
-        {!loading && activeTab === 2 && (
+        {!loading && !isStoreOwner && activeTab === 2 && (
           <div className="sheet-section">
             {showChart && expCatData.length > 0 && (
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16, marginBottom: 24 }}>
@@ -647,9 +751,9 @@ export default function ReportsPage({ user, onLogin }: PageProps) {
         )}
 
         {/* ══════════════════════════════════════════════════════════════
-            TAB 3: PRODUCT PERFORMANCE
+            STORE OWNER TAB 2 / ADMIN TAB 3: PRODUCT PERFORMANCE
         ══════════════════════════════════════════════════════════════ */}
-        {!loading && activeTab === 3 && (
+        {!loading && ((isStoreOwner && activeTab === 2) || (!isStoreOwner && activeTab === 3)) && (
           <div className="sheet-section">
             {showChart && prodRows.length > 0 && (
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16, marginBottom: 24 }}>
@@ -662,7 +766,7 @@ export default function ReportsPage({ user, onLogin }: PageProps) {
                       <YAxis type="category" dataKey="product" tick={{ fontSize: 10 }} width={100} />
                       <Tooltip formatter={(v: number) => Rs(v)} />
                       <Bar dataKey="revenue" fill={C.purple} name="Revenue" />
-                      <Bar dataKey="grossProfit" fill={C.green} name="Gross Profit" />
+                      <Bar dataKey="profit" fill={C.green} name="Profit" />
                     </BarChart>
                   </ResponsiveContainer>
                 </div>
@@ -685,38 +789,59 @@ export default function ReportsPage({ user, onLogin }: PageProps) {
               <KpiCard label="Products Sold"   value={String(prodRows.length)} color={C.purple} />
               <KpiCard label="Best Seller"     value={prodRows[0]?.product || '—'} color={C.blue} sub={prodRows[0] ? Rs(prodRows[0].revenue) : ''} />
               <KpiCard label="Total Qty Sold"  value={String(filtOrders.reduce((s, o) => s + o.quantity, 0))} color={C.teal} />
-              <KpiCard label="Avg Gross Margin" value={pct(prodRows.length ? prodRows.reduce((s, r) => s + (r.revenue > 0 ? r.grossProfit / r.revenue * 100 : 0), 0) / prodRows.length : 0)} color={C.green} />
             </div>
 
             <div style={{ fontWeight: 700, fontSize: 14, marginBottom: 10 }}>Product Performance — {periodLabel}</div>
-            <SheetTable
-              cols={[
-                { key: 'rank',       label: '#',          align: 'center', render: (_: any, i: number) => i + 1 },
-                { key: 'product',    label: 'Product Name' },
-                { key: 'orders',     label: 'Orders',     align: 'right' },
-                { key: 'qty',        label: 'Qty Sold',   align: 'right' },
-                { key: 'revenue',    label: 'Revenue',    align: 'right', value: (r: any) => r.revenue,    render: (r: any) => <b>{Rs(r.revenue)}</b> },
-                { key: 'cogs',       label: 'COGS',       align: 'right', render: (r: any) => Rs(r.cogs) },
-                { key: 'grossProfit',label: 'Gross Profit',align: 'right', render: (r: any) => <span style={{ color: r.grossProfit >= 0 ? C.green : C.red, fontWeight: 600 }}>{Rs(r.grossProfit)}</span> },
-                { key: 'margin',     label: 'Margin %',   align: 'right', value: (r: any) => r.revenue > 0 ? r.grossProfit / r.revenue * 100 : 0, render: (r: any) => <span style={{ color: r.revenue > 0 && r.grossProfit / r.revenue > 0.3 ? C.green : C.orange }}>{r.revenue > 0 ? pct(r.grossProfit / r.revenue * 100) : '—'}</span> },
-              ]}
-              rows={prodRows}
-              totalsRow={{
-                product: `${prodRows.length} products`,
-                orders: String(filtOrders.length),
-                qty: String(filtOrders.reduce((s, o) => s + o.quantity, 0)),
-                revenue: <b>{Rs(totRevenue)}</b>,
-                cogs: Rs(totCOGS),
-                grossProfit: <b style={{ color: grossProfit >= 0 ? C.green : C.red }}>{Rs(grossProfit)}</b>,
-              }}
-            />
+
+            {isStoreOwner ? (
+              <SheetTable
+                cols={[
+                  { key: 'rank',       label: '#',          align: 'center', render: (_: any, i: number) => i + 1 },
+                  { key: 'product',    label: 'Product Name' },
+                  { key: 'orders',     label: 'Orders',     align: 'right' },
+                  { key: 'qty',        label: 'Qty Sold',   align: 'right' },
+                  { key: 'revenue',    label: 'Revenue',    align: 'right', value: (r: any) => r.revenue,    render: (r: any) => <b>{Rs(r.revenue)}</b> },
+                  { key: 'profit',     label: 'Profit',     align: 'right', render: (r: any) => <span style={{ color: r.profit >= 0 ? C.green : C.red, fontWeight: 600 }}>{Rs(r.profit)}</span> },
+                ]}
+                rows={prodRows}
+                totalsRow={{
+                  product: `${prodRows.length} products`,
+                  orders: String(filtOrders.length),
+                  qty: String(filtOrders.reduce((s, o) => s + o.quantity, 0)),
+                  revenue: <b>{Rs(totRevenue)}</b>,
+                  profit: <b style={{ color: storeProfit >= 0 ? C.green : C.red }}>{Rs(storeProfit)}</b>,
+                }}
+              />
+            ) : (
+              <SheetTable
+                cols={[
+                  { key: 'rank',       label: '#',          align: 'center', render: (_: any, i: number) => i + 1 },
+                  { key: 'product',    label: 'Product Name' },
+                  { key: 'orders',     label: 'Orders',     align: 'right' },
+                  { key: 'qty',        label: 'Qty Sold',   align: 'right' },
+                  { key: 'revenue',    label: 'Revenue',    align: 'right', value: (r: any) => r.revenue,    render: (r: any) => <b>{Rs(r.revenue)}</b> },
+                  { key: 'cogs',       label: 'COGS',       align: 'right', render: (r: any) => Rs(r.cogs) },
+                  { key: 'grossProfit',label: 'Gross Profit',align: 'right', render: (r: any) => <span style={{ color: r.grossProfit >= 0 ? C.green : C.red, fontWeight: 600 }}>{Rs(r.grossProfit)}</span> },
+                  { key: 'margin',     label: 'Margin %',   align: 'right', value: (r: any) => r.revenue > 0 ? r.grossProfit / r.revenue * 100 : 0, render: (r: any) => <span style={{ color: r.revenue > 0 && r.grossProfit / r.revenue > 0.3 ? C.green : C.orange }}>{r.revenue > 0 ? pct(r.grossProfit / r.revenue * 100) : '—'}</span> },
+                ]}
+                rows={prodRows.map(r => ({ ...r, cogs: r.revenue - r.profit, grossProfit: r.profit }))}
+                totalsRow={{
+                  product: `${prodRows.length} products`,
+                  orders: String(filtOrders.length),
+                  qty: String(filtOrders.reduce((s, o) => s + o.quantity, 0)),
+                  revenue: <b>{Rs(totRevenue)}</b>,
+                  cogs: Rs(totCOGS),
+                  grossProfit: <b style={{ color: grossProfit >= 0 ? C.green : C.red }}>{Rs(grossProfit)}</b>,
+                }}
+              />
+            )}
           </div>
         )}
 
         {/* ══════════════════════════════════════════════════════════════
-            TAB 4: STORE PERFORMANCE
+            ADMIN TAB 4: STORE PERFORMANCE (admin only)
         ══════════════════════════════════════════════════════════════ */}
-        {!loading && activeTab === 4 && (
+        {!loading && !isStoreOwner && activeTab === 4 && (
           <div className="sheet-section">
             {showChart && storeRows.length > 0 && (
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16, marginBottom: 24 }}>

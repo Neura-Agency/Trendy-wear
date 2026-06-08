@@ -142,8 +142,16 @@ create table if not exists public.products (
   sizes text[] not null default '{}'::text[],
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now(),
-  constraint uq_products_name_brand unique (product_name, brand_name)
+  constraint uq_products_name_brand_type unique (product_name, brand_name, product_type)
 );
+
+alter table if exists public.products drop constraint if exists uq_products_name_brand;
+
+do $$ begin
+  alter table public.products
+    add constraint uq_products_name_brand_type unique (product_name, brand_name, product_type);
+exception when duplicate_object then null;
+end $$;
 
 drop trigger if exists trg_products_updated_at on public.products;
 create trigger trg_products_updated_at
@@ -169,6 +177,9 @@ create table if not exists public.inventory (
   cost_price numeric(12,2) not null default 0.00,
   selling_price numeric(12,2) not null default 0.00,
   quantity_available int not null default 0,
+  size_quantities jsonb,
+  color_quantities jsonb,
+  variant_quantities jsonb,
   low_stock_warning int not null default 5,
 
   owner text,
@@ -199,6 +210,12 @@ create table if not exists public.store_inventory (
   store_selling_price numeric(12,2) not null default 0.00,
   quantity_assigned int not null default 0,
   quantity_remaining int not null default 0,
+  size_quantities_assigned jsonb,
+  size_quantities_remaining jsonb,
+  color_quantities_assigned jsonb,
+  color_quantities_remaining jsonb,
+  variant_quantities_assigned jsonb,
+  variant_quantities_remaining jsonb,
 
   owner text,
 
@@ -231,11 +248,18 @@ create table if not exists public.orders (
 
   product_name text not null,
   quantity int not null,
+  size text,
+  color text,
+  size_quantities jsonb,
+  color_quantities jsonb,
+  variant_quantities jsonb,
   selling_price numeric(12,2) not null,
   shipment_cost numeric(12,2) not null default 0.00,
   client_name text,
   order_type text,
   occurred_at timestamptz not null default now(),
+  payment_status boolean,
+  order_returned boolean,
 
   included_in_payout boolean not null default false,
   commission_percent numeric(5,2) not null default 0.00,
@@ -320,6 +344,10 @@ create table if not exists public.expenses (
   title text not null,
   amount numeric(12,2) not null,
   category text,
+  expense_date date,
+  paid_by_owner_id uuid references public.owners(id) on delete set null,
+  from_acc text,
+  expense_type text,
   occurred_at timestamptz not null default now(),
   created_by uuid references public.accounts(id) on delete set null,
   created_at timestamptz not null default now(),
@@ -328,6 +356,7 @@ create table if not exists public.expenses (
 
 create index if not exists idx_expenses_occurred_at on public.expenses(occurred_at);
 create index if not exists idx_expenses_category on public.expenses(category);
+create index if not exists idx_expenses_paid_by_owner_id on public.expenses(paid_by_owner_id);
 
 drop trigger if exists trg_expenses_updated_at on public.expenses;
 create trigger trg_expenses_updated_at
@@ -375,3 +404,22 @@ alter table public.settings enable row level security;
 alter table public.audit_logs enable row level security;
 
 -- No policies added: access via server using SUPABASE_SERVICE_ROLE_KEY.
+
+-- =========================================================
+-- RETURN SYSTEM MIGRATION
+-- Run these ALTER statements in Supabase SQL editor
+-- =========================================================
+
+-- Orders table: return tracking columns
+alter table public.orders
+  add column if not exists return_quantity integer default null,
+  add column if not exists return_reason text default null,
+  add column if not exists return_size_quantities jsonb default null,
+  add column if not exists return_color_quantities jsonb default null,
+  add column if not exists returned_at timestamptz default null;
+
+-- Store inventory table: pending return columns (Scenario B)
+alter table public.store_inventory
+  add column if not exists pending_return_qty integer default 0,
+  add column if not exists pending_return_size_quantities jsonb default null,
+  add column if not exists pending_return_color_quantities jsonb default null;

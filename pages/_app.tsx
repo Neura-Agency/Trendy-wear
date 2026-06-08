@@ -36,7 +36,7 @@ export default function App({ Component, pageProps }: ExtendedAppProps) {
       const stored = localStorage.getItem("user");
       if (stored) setUser(JSON.parse(stored));
     } catch {
-      // ignore bad localStorage
+      try { localStorage.removeItem("user") } catch {}
     }
 
     // Source of truth: server session cookie.

@@ -10,6 +10,7 @@ interface NavItem {
   path: string;
   adminOnly?: boolean;
   superAdminOnly?: boolean;
+  storeOnly?: boolean;
 }
 
 export default function Layout({ children, user, onLogout }: LayoutProps) {
@@ -129,6 +130,26 @@ export default function Layout({ children, user, onLogout }: LayoutProps) {
       <line x1="9" y1="16" x2="15" y2="16" />
     </svg>
   );
+  const iconExpenses = (
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M2 16.1A5 5 0 0 1 5.9 20M2 12.05A9 9 0 0 1 9.95 20M2 8V6a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2h-6"/>
+      <line x1="2" x2="2.01" y1="20" y2="20"/>
+    </svg>
+  );
+  const iconReturns = (
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M9 14 4 9l5-5"/>
+      <path d="M4 9h10.5a5.5 5.5 0 0 1 5.5 5.5v0a5.5 5.5 0 0 1-5.5 5.5H11"/>
+    </svg>
+  );
+  const iconRefunds = (
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M12 22V12"/>
+      <path d="m9 5 3-3 3 3"/>
+      <path d="M3 7h18"/>
+      <path d="M5 7c0 7.73 6 11 7 11s7-3.27 7-11"/>
+    </svg>
+  );
 
   const navItems: NavItem[] = [
     {
@@ -142,6 +163,13 @@ export default function Layout({ children, user, onLogout }: LayoutProps) {
       icon: iconInventory as any,
       label: "Stock & Inventory",
       path: "/inventory",
+    },
+    {
+      id: "all-inventory",
+      icon: iconInventory as any,
+      label: "All inventory",
+      path: "/all-inventory",
+      storeOnly: true,
     },
     {
       id: "credentials",
@@ -171,11 +199,33 @@ export default function Layout({ children, user, onLogout }: LayoutProps) {
       path: "/reports",
       superAdminOnly: true,
     },
+    {
+      id: "expenses",
+      icon: iconExpenses as any,
+      label: "Expenses",
+      path: "/expenses",
+      superAdminOnly: true,
+    },
+    {
+      id: "returns",
+      icon: iconReturns as any,
+      label: "Returns",
+      path: "/returns",
+      superAdminOnly: true,
+    },
+    {
+      id: "refunds",
+      icon: iconRefunds as any,
+      label: "Refunds",
+      path: "/refunds",
+      superAdminOnly: true,
+    },
   ];
 
   const filteredNavItems = navItems.filter((item) => {
     if (item.superAdminOnly)
       return user?.role === "admin" && user?.scope === "all";
+    if (item.storeOnly) return user?.role === "store";
     if (item.adminOnly) return user?.role === "admin";
     return true;
   });

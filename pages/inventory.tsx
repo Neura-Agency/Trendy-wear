@@ -12,7 +12,7 @@ import {
     Product,
   User 
 } from "../types";
-import { AddInventoryModal, AllotToStoreModal, EditStoreInventoryModal } from "../components/Modals";
+import { AddInventoryModal, AllotToStoreModal, EditInventoryModal, EditStoreInventoryModal, ReturnToWarehouseModal } from "../components/Modals";
 
 // ── SVG Icon Components (mono-color, inherits currentColor) ──
 const IC = {
@@ -21,53 +21,10 @@ const IC = {
   alert: <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3Z"/><path d="M12 9v4"/><path d="M12 17h.01"/></svg>,
   stock: <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d="M21 8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16Z"/><path d="m3.3 7 8.7 5 8.7-5"/><path d="M12 22V12"/></svg>,
   dress: <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d="M6 3h12l-4 9h4l-8 9 2-6H6l4-9H6Z"/></svg>,
+    trash: <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d="M3 6h18"/><path d="M8 6V4a1 1 0 0 1 1-1h6a1 1 0 0 1 1 1v2"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/><path d="M10 11v6"/><path d="M14 11v6"/></svg>,
 };
 
 const Rs = (n: number) => "Rs " + (Number(n) || 0).toLocaleString();
-
-// Premium Quantity Editor for Warehouse
-interface QuantityEditorProps {
-  current: number;
-    onSave: (quantityDelta: number) => void;
-}
-
-function QuantityEditor({ current, onSave }: QuantityEditorProps) {
-    const [editing, setEditing] = useState<boolean>(false);
-    const [val, setVal] = useState<number>(0);
-
-    if (!editing) return (
-        <button className="btn btn-sm btn-glass" onClick={() => { setVal(0); setEditing(true); }} style={{ fontWeight: 700 }}>
-            Edit Stock
-        </button>
-    );
-
-    return (
-        <div style={{ display: 'flex', gap: 6, alignItems: 'center', background: 'var(--surface-2)', padding: '4px 8px', borderRadius: 8, border: '1px solid var(--border)' }}>
-            <input
-                type="text"
-                inputMode="numeric"
-                placeholder="+/-"
-                autoFocus
-                style={{ width: 64, height: 32, padding: '0 8px', fontSize: '12px', fontWeight: 800 }}
-                onChange={(e: React.ChangeEvent<HTMLInputElement>) => setVal(parseInt(e.target.value) || 0)}
-            />
-            <button
-                className="btn btn-primary"
-                style={{ width: 28, height: 28, padding: 0, background: 'var(--success)', borderColor: 'var(--success)' }}
-                onClick={() => { if (val !== 0) onSave(val); setEditing(false); }}
-            >
-                ✓
-            </button>
-            <button
-                className="btn btn-glass"
-                style={{ width: 28, height: 28, padding: 0 }}
-                onClick={() => setEditing(false)}
-            >
-                ✕
-            </button>
-        </div>
-    );
-}
 
 export default function InventoryPage({ user, onLogin }: PageProps) {
     const { toast } = usePopup();
@@ -87,12 +44,28 @@ export default function InventoryPage({ user, onLogin }: PageProps) {
     // Track inventory ownership: each admin can only see/manage their own
     // Assume each inventory item has an 'owner' field (username)
     const [loading, setLoading] = useState<boolean>(true);
-    const [editModal, setEditModal] = useState<{ item: any; field: string } | null>(null); // { item, field } or null
     const [showAddInventoryModal, setShowAddInventoryModal] = useState(false);
     const [showAllotModal, setShowAllotModal] = useState(false);
     const [showEditModalUI, setShowEditModalUI] = useState(false);
     const [editingRow, setEditingRow] = useState<any | null>(null);
+    const [showEditInventoryModal, setShowEditInventoryModal] = useState(false);
+    const [editingInventoryItem, setEditingInventoryItem] = useState<InventoryItem | null>(null);
+    const [showDeleteInventoryModal, setShowDeleteInventoryModal] = useState(false);
+    const [deletingInventoryItem, setDeletingInventoryItem] = useState<InventoryItem | null>(null);
+    const [deletingAllotmentRow, setDeletingAllotmentRow] = useState<any | null>(null);
+    const [deletingAllotment, setDeletingAllotment] = useState(false);
+    const [returnToWarehouseRow, setReturnToWarehouseRow] = useState<any | null>(null);
     const [showAlerts, setShowAlerts] = useState(false);
+    const [inventorySearch, setInventorySearch] = useState('');
+    // Persisted across modal open/close — tracks product types hidden/replaced by the user
+    const [hiddenProductTypes, setHiddenProductTypes] = useState<string[]>([]);
+    const handleHideProductType = (typeName: string) => {
+        setHiddenProductTypes(prev => {
+            const norm = typeName.trim().toLowerCase();
+            if (prev.some(t => t.trim().toLowerCase() === norm)) return prev;
+            return [...prev, typeName];
+        });
+    };
 
     const refresh = useCallback(async () => {
         setLoading(true);
@@ -139,6 +112,8 @@ export default function InventoryPage({ user, onLogin }: PageProps) {
     const isSuperAdmin = isAdmin && user.scope === 'all';
     // Bilal: admin with managedStores, but not superadmin
     const isStoreAdmin = isAdmin && user.managedStores && user.managedStores.length > 0 && !isSuperAdmin;
+    const visibleStoreNames = Array.from(new Set([...(user.managedStores || []), ...(user.storeName ? [user.storeName] : [])].filter(Boolean)));
+    const storeNameMatches = (storeName: string) => visibleStoreNames.some((name) => name.trim().toLowerCase() === storeName.trim().toLowerCase());
 
 
     const handleSaveInventory = async (payload: any) => {
@@ -146,7 +121,10 @@ export default function InventoryPage({ user, onLogin }: PageProps) {
             const response = await fetch('/api/inventory', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify(payload)
+                body: JSON.stringify({
+                    ...payload,
+                    forceNewBatch: payload.forceNewBatch ?? false,
+                })
             });
 
             const result = await response.json();
@@ -162,43 +140,157 @@ export default function InventoryPage({ user, onLogin }: PageProps) {
         }
     };
 
-    const handleUpdateItem = async (productName: string, batchNumber: string, fields: any) => {
-        // No-op: database removed
-        refresh();
-    };
+    const handleUpdateInventory = async (item: InventoryItem, fields: any) => {
+        if (!item?.id) return toast.error('Missing inventory id')
+        try {
+            const response = await fetch('/api/inventory', {
+                method: 'PATCH',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ id: item.id, productId: item.productId, fields })
+            })
 
-    const handleAdjustQuantity = async (productName: string, batchNumber: string, quantityDelta: number) => {
-        // No-op: database removed
-        refresh();
-    };
+            const result = await response.json()
+            if (!response.ok) throw new Error(result.error || 'Failed to update inventory')
+
+            toast.success('✅ Inventory updated')
+            refresh()
+        } catch (e: any) {
+            toast.error(e?.message || 'Update failed')
+        }
+    }
+
+    const handleDeleteInventory = async (item: InventoryItem) => {
+        if (!item?.id) return toast.error('Missing inventory id')
+        setDeletingInventoryItem(item)
+        setShowDeleteInventoryModal(true)
+    }
+
+    const confirmDeleteInventory = async () => {
+        if (!deletingInventoryItem?.id) return toast.error('Missing inventory id')
+
+        try {
+            const response = await fetch('/api/inventory', {
+                method: 'DELETE',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ id: deletingInventoryItem.id })
+            })
+
+            const result = await response.json()
+            if (!response.ok) throw new Error(result.error || 'Failed to delete inventory item')
+
+            toast.success('✅ Inventory item deleted')
+            setShowDeleteInventoryModal(false)
+            setDeletingInventoryItem(null)
+            refresh()
+        } catch (e: any) {
+            toast.error(e?.message || 'Delete failed')
+        }
+    }
+
+    const handleDeleteAllotment = (item: any) => {
+        if (!item?.id) return toast.error('Missing allotment id')
+        setDeletingAllotmentRow(item)
+        setDeletingAllotment(false)
+    }
+
+    const confirmDeleteAllotment = async () => {
+        if (!deletingAllotmentRow?.id) return toast.error('Missing allotment id')
+
+        setDeletingAllotment(true)
+        try {
+            const response = await fetch('/api/storeInventory', {
+                method: 'DELETE',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ id: deletingAllotmentRow.id })
+            })
+
+            const result = await response.json()
+            if (!response.ok) throw new Error(result.error || 'Failed to delete allotment')
+
+            const returned = Number(result?.returned) || 0
+            toast.success(`✅ Returned ${returned} piece${returned === 1 ? '' : 's'} to warehouse`)
+            setDeletingAllotment(false)
+            setDeletingAllotmentRow(null)
+            refresh()
+        } catch (e: any) {
+            toast.error(e?.message || 'Delete failed')
+        } finally {
+            setDeletingAllotment(false)
+        }
+    }
+
+    const handleReturnToWarehouse = async (payload: { id: string; returnQty: number; returnSizeQuantities?: any; returnColorQuantities?: any; returnVariantQuantities?: any }) => {
+        try {
+            const response = await fetch('/api/storeInventory', {
+                method: 'PATCH',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ action: 'returnToWarehouse', ...payload }),
+            })
+            const result = await response.json()
+            if (!response.ok) throw new Error(result.error || 'Failed to return to warehouse')
+            toast.success(`✅ ${payload.returnQty} piece${payload.returnQty !== 1 ? 's' : ''} returned to warehouse`)
+            setReturnToWarehouseRow(null)
+            refresh()
+        } catch (e: any) {
+            toast.error(e?.message || 'Return to warehouse failed')
+        }
+    }
 
     // Flatten store inventory for the table
     const stockProvided = [];
     Object.entries(data.storeInventory).forEach(([storeName, items]) => {
-        const canSee = isSuperAdmin || (isStoreAdmin && user.managedStores.includes(storeName)) || (!isAdmin && user.storeName === storeName);
+        const canSee = isSuperAdmin || (isStoreAdmin && storeNameMatches(storeName)) || (!isAdmin && storeNameMatches(storeName));
         if (!canSee) return;
         Object.values(items).forEach((item) => {
-            // Admins only see items they own; store users see all items assigned to their store
-            if (!isAdmin || isSuperAdmin || item.owner === user.username) {
-                stockProvided.push({ ...item, storeName });
-            }
+            stockProvided.push({ ...item, storeName });
         });
     });
 
     // Keyed by inventory.id (batch-level), NOT productName, to avoid cross-batch confusion
     const allotedQtyByProduct: Record<string, number> = {};
+    // Per-variant allotted quantities summed across all stores, keyed by inventoryId
+    const allotedVariantsByProduct: Record<string, Record<string, Record<string, number>>> = {};
     Object.values(data.storeInventory || {}).forEach((items: any) => {
         Object.values(items || {}).forEach((it: any) => {
             const key = it?.inventoryId;   // inventory.id FK — unique per batch
             if (!key) return;
             allotedQtyByProduct[key] = (allotedQtyByProduct[key] || 0) + (Number(it.quantityAssigned) || 0);
+            // Accumulate per-variant allotments for the Add Allotment modal
+            if (it.variantQuantitiesAssigned && typeof it.variantQuantitiesAssigned === 'object') {
+                if (!allotedVariantsByProduct[key]) allotedVariantsByProduct[key] = {};
+                Object.entries(it.variantQuantitiesAssigned as Record<string, Record<string, number>>).forEach(([color, sizes]) => {
+                    if (!allotedVariantsByProduct[key][color]) allotedVariantsByProduct[key][color] = {};
+                    Object.entries(sizes || {}).forEach(([size, qty]) => {
+                        allotedVariantsByProduct[key][color][size] = (allotedVariantsByProduct[key][color][size] || 0) + (Number(qty) || 0);
+                    });
+                });
+            }
         });
+    });
+
+    // Enrich warehouse inventory items with per-variant remaining quantities for the Add Allotment modal
+    const inventoryWithRemaining = data.inventory.map((item: any) => {
+        const allotedVariants = allotedVariantsByProduct[item.id];
+        if (!allotedVariants || !item.variantQuantities) return item;
+        const variantQuantitiesRemaining: Record<string, Record<string, number>> = {};
+        Object.entries(item.variantQuantities as Record<string, Record<string, number>>).forEach(([color, sizes]) => {
+            variantQuantitiesRemaining[color] = {};
+            Object.entries(sizes || {}).forEach(([size, total]) => {
+                const alloted = allotedVariants[color]?.[size] || 0;
+                variantQuantitiesRemaining[color][size] = Math.max(0, (Number(total) || 0) - alloted);
+            });
+        });
+        return { ...item, variantQuantitiesRemaining };
     });
 
     const storeCommissionByName: Record<string, number> = {};
     Object.entries(data.stores || {}).forEach(([name, s]) => {
         storeCommissionByName[name] = Number((s as any)?.commission) || 0;
     });
+
+    const deletingStoreAllotments = deletingInventoryItem
+        ? stockProvided.filter((item) => item.inventoryId === deletingInventoryItem.id)
+        : [];
 
     // Build alerts list
     const alerts: Array<{ type: 'out' | 'low' | 'store-out'; product: string; detail: string; rowId: string; section: 'warehouse' | 'store' }> = [];
@@ -257,18 +349,16 @@ export default function InventoryPage({ user, onLogin }: PageProps) {
         totalItemsInWarehouse = data.inventory.reduce((acc, it) => acc + Math.max(0, (Number(it.quantityAvailable) || 0) - (allotedQtyByProduct[it.id] || 0)), 0);
         totalItemsInStores = stockProvided.reduce((acc, it) => acc + it.quantityRemaining, 0);
     } else if (isStoreAdmin) {
-        // Only managed stores
-        const managedStoreNames = user.managedStores || [];
         const ownedItems = data.inventory.filter(it => it.owner === user.username);
         totalInventoryValue = calcInventoryValue(ownedItems);
         totalItemsInWarehouse = ownedItems.reduce((acc, it) => acc + Math.max(0, (Number(it.quantityAvailable) || 0) - (allotedQtyByProduct[it.id] || 0)), 0);
-        totalItemsInStores = stockProvided.filter(it => managedStoreNames.includes(it.storeName)).reduce((acc, it) => acc + it.quantityRemaining, 0);
+        totalItemsInStores = stockProvided.filter(it => visibleStoreNames.some((name) => name.trim().toLowerCase() === it.storeName.trim().toLowerCase())).reduce((acc, it) => acc + it.quantityRemaining, 0);
     } else {
         // Store user: only their own
         const ownedItems = data.inventory.filter(it => it.owner === user.username);
         totalInventoryValue = calcInventoryValue(ownedItems);
         totalItemsInWarehouse = ownedItems.reduce((acc, it) => acc + Math.max(0, (Number(it.quantityAvailable) || 0) - (allotedQtyByProduct[it.id] || 0)), 0);
-        totalItemsInStores = stockProvided.filter(it => it.storeName === user.storeName).reduce((acc, it) => acc + it.quantityRemaining, 0);
+        totalItemsInStores = stockProvided.filter(it => storeNameMatches(it.storeName)).reduce((acc, it) => acc + it.quantityRemaining, 0);
     }
 
     return (
@@ -334,7 +424,7 @@ export default function InventoryPage({ user, onLogin }: PageProps) {
                         <div className="kpi-icon">{IC.dress}</div>
                         <div className="kpi-label">Available Types</div>
                         <div className="kpi-value">
-                            {isAdmin ? data.inventory.length : stockProvided.filter(s => s.storeName === user.storeName).length}
+                                    {isAdmin ? data.inventory.length : stockProvided.filter(s => storeNameMatches(s.storeName)).length}
                         </div>
                         <div className="kpi-trend">Product Catalog</div>
                     </div>
@@ -353,6 +443,34 @@ export default function InventoryPage({ user, onLogin }: PageProps) {
                         icon={IC.warehouse}
                         action={<button className="btn btn-primary" onClick={() => setShowAddInventoryModal(true)}>+ Add Inventory</button>}
                     >
+                        {/* Search Bar */}
+                        <div style={{ padding: '0 0 16px', display: 'flex', alignItems: 'center', gap: 10 }}>
+                            <div style={{ position: 'relative', flex: 1, maxWidth: 380 }}>
+                                <svg xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ position: 'absolute', left: 12, top: '50%', transform: 'translateY(-50%)', color: 'var(--text-muted)', pointerEvents: 'none' }}><circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/></svg>
+                                <input
+                                    type="text"
+                                    placeholder="Search by name, brand, type, or item ID…"
+                                    value={inventorySearch}
+                                    onChange={e => setInventorySearch(e.target.value)}
+                                    style={{ paddingLeft: 36, paddingRight: inventorySearch ? 36 : 12, height: 40, fontSize: 13, borderRadius: 10, border: '1.5px solid var(--border)', background: 'var(--surface-2)', width: '100%', outline: 'none' }}
+                                />
+                                {inventorySearch && (
+                                    <button onClick={() => setInventorySearch('')} style={{ position: 'absolute', right: 10, top: '50%', transform: 'translateY(-50%)', background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-muted)', fontSize: 16, lineHeight: 1, padding: 0 }}>✕</button>
+                                )}
+                            </div>
+                            {inventorySearch && (() => {
+                                const count = data.inventory.filter(item => {
+                                    const q = inventorySearch.toLowerCase();
+                                    return (
+                                        item.productName?.toLowerCase().includes(q) ||
+                                        (item as any).brand?.toLowerCase().includes(q) ||
+                                        item.category?.toLowerCase().includes(q) ||
+                                        item.batchNumber?.toLowerCase().includes(q)
+                                    );
+                                }).length;
+                                return <span style={{ fontSize: 12, color: 'var(--text-muted)', whiteSpace: 'nowrap' }}>{count} result{count !== 1 ? 's' : ''}</span>;
+                            })()}
+                        </div>
                         <div className="table-wrap">
                             <table>
                                 <thead>
@@ -365,12 +483,23 @@ export default function InventoryPage({ user, onLogin }: PageProps) {
                                         <th>Aloted Qty</th>
                                         <th>Alloted Stores</th>
                                         <th>Status</th>
-                                        <th>Change</th>
+                                        <th style={{ textAlign: 'center' }}>Actions</th>
                                     </tr>
                                 </thead>
                                 <tbody>
-                                    {data.inventory.map((item, idx) => {
-                                        const picture = (item as any)?.otherVariants?.picture as string | undefined;
+                                    {(inventorySearch.trim()
+                                        ? data.inventory.filter(item => {
+                                            const q = inventorySearch.toLowerCase();
+                                            return (
+                                                item.productName?.toLowerCase().includes(q) ||
+                                                (item as any).brand?.toLowerCase().includes(q) ||
+                                                item.category?.toLowerCase().includes(q) ||
+                                                item.batchNumber?.toLowerCase().includes(q)
+                                            );
+                                          })
+                                        : data.inventory
+                                    ).map((item, idx) => {
+                                        const picture = item.productImage || (item as any)?.otherVariants?.picture as string | undefined;
                                         const pictureSrc = (typeof picture === 'string' && picture.trim().length > 0) ? picture : '/images/size_L.webp';
                                         const allotedStores = Object.entries(data.storeInventory || {})
                                             .filter(([, items]) => Object.values(items as any).some((si: any) => si.inventoryId === item.id))
@@ -425,7 +554,7 @@ export default function InventoryPage({ user, onLogin }: PageProps) {
                                                 <td><Badge type="gray">{item.category}</Badge></td>
                                                 <td className="text-muted font-mono" style={{ fontWeight: 700 }}>{item.batchNumber}</td>
                                                 <td>{Rs(item.costPrice)}</td>
-                                                <td className="font-bold" style={{ fontSize: '1.05rem' }}>{item.quantityAvailable}</td>
+                                                <td className="font-bold" style={{ fontSize: '1.05rem' }}>{availableQty}</td>
                                                 <td className="font-bold">{allotedQty}</td>
                                                 <td>
                                                     {Array.isArray(allotedStores) && allotedStores.length > 0 ? (
@@ -447,11 +576,42 @@ export default function InventoryPage({ user, onLogin }: PageProps) {
                                                         <Badge type="green">✓ Good</Badge>
                                                     )}
                                                 </td>
-                                                <td>
-                                                    <QuantityEditor
-                                                        current={item.quantityAvailable}
-                                                        onSave={(delta) => handleAdjustQuantity(item.productName, item.batchNumber, delta)}
-                                                    />
+                                                <td style={{ textAlign: 'center' }}>
+                                                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8 }}>
+                                                        <button
+                                                            type="button"
+                                                            className="btn btn-sm btn-glass"
+                                                            style={{
+                                                                fontWeight: 800,
+                                                                color: 'var(--pri-700)',
+                                                                borderColor: 'rgba(99, 102, 241, 0.22)',
+                                                                background: 'rgba(99, 102, 241, 0.07)',
+                                                                boxShadow: '0 8px 18px rgba(99, 102, 241, 0.08)',
+                                                            }}
+                                                            onClick={() => { setEditingInventoryItem(item); setShowEditInventoryModal(true); }}
+                                                        >
+                                                            Edit
+                                                        </button>
+                                                        <button
+                                                            type="button"
+                                                            className="btn btn-sm btn-glass"
+                                                            onClick={() => handleDeleteInventory(item)}
+                                                            title="Delete inventory item"
+                                                            aria-label={`Delete ${item.productName}`}
+                                                            style={{
+                                                                color: 'var(--danger)',
+                                                                borderColor: 'rgba(239, 68, 68, 0.25)',
+                                                                background: 'rgba(239, 68, 68, 0.08)',
+                                                                display: 'inline-flex',
+                                                                alignItems: 'center',
+                                                                justifyContent: 'center',
+                                                                width: 40,
+                                                                padding: 0,
+                                                            }}
+                                                        >
+                                                            {IC.trash}
+                                                        </button>
+                                                    </div>
                                                 </td>
                                             </tr>
                                         );
@@ -481,14 +641,14 @@ export default function InventoryPage({ user, onLogin }: PageProps) {
                                     {isAdmin && <th>Shop Cut %</th>}
                                     <th style={{ textAlign: 'right' }}>Items Sold</th>
                                     <th>Alloted By</th>
-                                    {isAdmin && <th>Actions</th>}
+                                    <th style={{ textAlign: 'center' }}>Actions</th>
                                 </tr>
                             </thead>
                             <tbody>
-                                    {stockProvided.filter(s => isAdmin || s.storeName === user.storeName).length === 0 ? (
-                                    <tr><td colSpan={isAdmin ? 9 : 6} style={{ textAlign: 'center', padding: 40 }} className="text-muted">No stock available currently.</td></tr>
+                                    {stockProvided.filter(s => isAdmin || storeNameMatches(s.storeName)).length === 0 ? (
+                                    <tr><td colSpan={isAdmin ? 7 : 5} style={{ textAlign: 'center', padding: 40 }} className="text-muted">No stock available currently.</td></tr>
                                 ) : (
-                                    stockProvided.filter(s => isAdmin || s.storeName === user.storeName).map((item, idx) => (
+                                    stockProvided.filter(s => isAdmin || storeNameMatches(s.storeName)).map((item, idx) => (
                                         <tr key={item.id || idx} id={`store-inv-row-${item.id || idx}`}>
                                             {isAdmin && <td className="font-bold" style={{ color: 'var(--pri-900)' }}>{item.storeName}</td>}
                                             <td className="font-bold">{item.productName}</td>
@@ -506,22 +666,105 @@ export default function InventoryPage({ user, onLogin }: PageProps) {
                                                 </Badge>
                                             </td>
                                             <td>
-                                                {item.alotedBy ? (
-                                                    <Badge type="purple">{item.alotedBy}</Badge>
-                                                ) : (
-                                                    <span className="text-muted" style={{ fontSize: '0.75rem' }}>—</span>
-                                                )}
+                                                <Badge type="purple">{item.owner || '—'}</Badge>
                                             </td>
-                                            {isAdmin && (
-                                                <td style={{ textAlign: 'right' }}>
-                                                    <button
-                                                        className="btn btn-sm"
-                                                        onClick={() => { setEditingRow(item); setShowEditModalUI(true); }}
-                                                    >
-                                                        Edit
-                                                    </button>
+                                            <td style={{ textAlign: 'center' }}>
+                                                    <div style={{ display: 'flex', gap: 8, justifyContent: 'center', alignItems: 'center', flexWrap: 'wrap' }}>
+                                                        {isAdmin && (
+                                                            <button
+                                                                type="button"
+                                                                className="btn btn-sm"
+                                                                onClick={() => {
+                                                                const warehouseItem = data.inventory.find((i: any) => i.id === item.inventoryId);
+                                                                // Compute per-variant warehouse remaining = warehouse total - OTHER stores' allotments.
+                                                                // This is used as the cap in Edit Allotment so "X left" shows the correct number.
+                                                                const warehouseVariants = warehouseItem?.variantQuantities || {};
+                                                                const warehouseVariantRemaining: Record<string, Record<string, number>> = {};
+                                                                if (warehouseItem && Object.keys(warehouseVariants).length > 0) {
+                                                                    Object.entries(warehouseVariants).forEach(([color, sizes]: [string, any]) => {
+                                                                        warehouseVariantRemaining[color] = {};
+                                                                        Object.entries(sizes || {}).forEach(([size, total]: [string, any]) => {
+                                                                            let otherStoresAllotted = 0;
+                                                                            Object.values(data.storeInventory || {}).forEach((storeItems: any) => {
+                                                                                Object.values(storeItems || {}).forEach((si: any) => {
+                                                                                    if (si.inventoryId === item.inventoryId && si.id !== item.id) {
+                                                                                        otherStoresAllotted += Number((si.variantQuantitiesAssigned?.[color])?.[size] || 0);
+                                                                                    }
+                                                                                });
+                                                                            });
+                                                                            warehouseVariantRemaining[color][size] = Math.max(0, Number(total) - otherStoresAllotted);
+                                                                        });
+                                                                    });
+                                                                }
+                                                                setEditingRow({
+                                                                    ...item,
+                                                                    // warehouse totals (fallbacks)
+                                                                    sizeQuantities: warehouseItem?.sizeQuantities || {},
+                                                                    colorQuantities: warehouseItem?.colorQuantities || {},
+                                                                    variantQuantities: warehouseItem?.variantQuantities || {},
+                                                                    totalQty: warehouseItem?.quantityAvailable || 0,
+                                                                    allotedQty: allotedQtyByProduct[item.inventoryId] || 0,
+                                                                    // authoritative remaining sources (prefer store row's remaining fields)
+                                                                    sizeQuantitiesRemaining: item.sizeQuantitiesRemaining ?? warehouseItem?.sizeQuantitiesRemaining ?? {},
+                                                                    colorQuantitiesRemaining: item.colorQuantitiesRemaining ?? warehouseItem?.colorQuantitiesRemaining ?? {},
+                                                                    variantQuantitiesRemaining: item.variantQuantitiesRemaining ?? warehouseItem?.variantQuantitiesRemaining ?? {},
+                                                                    // per-variant warehouse remaining for correct Edit Allotment caps
+                                                                    warehouseVariantQuantitiesRemaining: warehouseVariantRemaining,
+                                                                });
+                                                                setShowEditModalUI(true);
+                                                            }}
+                                                                style={{
+                                                                    fontWeight: 800,
+                                                                    color: 'var(--pri-700)',
+                                                                    borderColor: 'rgba(99, 102, 241, 0.22)',
+                                                                    background: 'rgba(99, 102, 241, 0.07)',
+                                                                    boxShadow: '0 8px 18px rgba(99, 102, 241, 0.08)',
+                                                                }}
+                                                            >
+                                                                Edit
+                                                            </button>
+                                                        )}
+                                                        {/* Return to Main Store — always visible to shop managers */}
+                                                        <button
+                                                            type="button"
+                                                            className="btn btn-sm"
+                                                            onClick={() => setReturnToWarehouseRow(item)}
+                                                            title={`Return stock to main store (${item.quantityRemaining} in stock${(item as any).pendingReturnQty > 0 ? `, ${(item as any).pendingReturnQty} pending` : ''})`}
+                                                            style={{
+                                                                fontSize: 11,
+                                                                fontWeight: 800,
+                                                                color: '#1e40af',
+                                                                borderColor: 'rgba(59,130,246,0.3)',
+                                                                background: 'rgba(59,130,246,0.08)',
+                                                                whiteSpace: 'nowrap',
+                                                            }}
+                                                        >
+                                                            &#x21A9; Return to main{(item as any).pendingReturnQty > 0 ? ` (${(item as any).pendingReturnQty} pending)` : ''}
+                                                        </button>
+                                                        {isAdmin && (
+                                                            <button
+                                                                type="button"
+                                                                className="btn btn-sm btn-glass"
+                                                                onClick={() => setDeletingAllotmentRow(item)}
+                                                                title="Remove allotment and return unsold stock to warehouse"
+                                                                aria-label={`Delete allotment for ${item.productName}`}
+                                                                style={{
+                                                                    color: 'var(--danger)',
+                                                                    borderColor: 'rgba(239, 68, 68, 0.25)',
+                                                                    background: 'rgba(239, 68, 68, 0.08)',
+                                                                    display: 'inline-flex',
+                                                                    alignItems: 'center',
+                                                                    justifyContent: 'center',
+                                                                    width: 40,
+                                                                    height: 40,
+                                                                    padding: 0,
+                                                                }}
+                                                            >
+                                                                {IC.trash}
+                                                            </button>
+                                                        )}
+                                                    </div>
                                                 </td>
-                                            )}
                                         </tr>
                                     ))
                                 )}
@@ -592,6 +835,9 @@ export default function InventoryPage({ user, onLogin }: PageProps) {
                     <AddInventoryModal 
                         stores={Object.keys(data.stores)} 
                         products={data.products}
+                        inventory={data.inventory}
+                        hiddenProductTypes={hiddenProductTypes}
+                        onHideProductType={handleHideProductType}
                         onSave={handleSaveInventory} 
                         onClose={() => setShowAddInventoryModal(false)} 
                     />
@@ -600,10 +846,10 @@ export default function InventoryPage({ user, onLogin }: PageProps) {
                 {showAllotModal && (
                     <AllotToStoreModal
                         stores={Object.keys(data.stores)}
-                        inventory={data.inventory}
+                        inventory={inventoryWithRemaining}
                         allotedQtyByProduct={allotedQtyByProduct}
                         storeCommissionByName={storeCommissionByName}
-                        onSave={async ({ storeName, batchNumber, quantity, ownerSupplyPrice, commissionPercent, extraQty }) => {
+                        onSave={async ({ storeName, batchNumber, quantity, ownerSupplyPrice, commissionPercent, extraQty, sizeQuantitiesAssigned, colorQuantitiesAssigned, variantQuantitiesAssigned }) => {
                             try {
                                 const resp = await fetch('/api/storeInventory', {
                                     method: 'POST',
@@ -612,6 +858,9 @@ export default function InventoryPage({ user, onLogin }: PageProps) {
                                         storeName,
                                         batchNumber,
                                         quantity,
+                                        variantQuantitiesAssigned,
+                                        sizeQuantitiesAssigned,
+                                        colorQuantitiesAssigned,
                                         ownerSupplyPrice,
                                         commissionPercent,
                                         extraQty: extraQty || 0,
@@ -653,7 +902,188 @@ export default function InventoryPage({ user, onLogin }: PageProps) {
                         onClose={() => { setShowEditModalUI(false); setEditingRow(null); }}
                     />
                 )}
+
+                {deletingAllotmentRow && (
+                    <div className="modal-overlay" onClick={() => { if (!deletingAllotment) { setDeletingAllotmentRow(null); } }}>
+                        <div className="modal-box delete-modal" onClick={e => e.stopPropagation()}>
+                            <div className="delete-modal__hero">
+                                <div className="delete-modal__head">
+                                    <div className="delete-modal__icon">
+                                        {IC.trash}
+                                    </div>
+                                    <div className="delete-modal__copy">
+                                        <div className="delete-modal__eyebrow">Destructive action</div>
+                                        <h3 className="delete-modal__title">Delete store allotment?</h3>
+                                        <div className="delete-modal__subtitle">
+                                            This will remove the allotment for <strong>{deletingAllotmentRow.productName}</strong> from <strong>{deletingAllotmentRow.storeName}</strong>.
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+
+                            {(() => {
+                                const totalSent = Math.max(0, Number(deletingAllotmentRow.quantityAssigned) || 0)
+                                const remaining = Math.max(0, Number(deletingAllotmentRow.quantityRemaining) || 0)
+                                const sold = Math.max(0, totalSent - remaining)
+
+                                return (
+                                    <div className="delete-modal__body">
+                                        <div className="delete-modal__summary">
+                                            <div className="delete-modal__summary-top">
+                                                <div>
+                                                    <div className="delete-modal__label">Item details</div>
+                                                    <div className="delete-modal__item-name">{deletingAllotmentRow.productName}</div>
+                                                    <div className="delete-modal__batch">{deletingAllotmentRow.storeName}</div>
+                                                </div>
+                                                <div className="delete-modal__count-wrap">
+                                                    <div className="delete-modal__label delete-modal__label--right">Will return</div>
+                                                    <div className="delete-modal__count">{remaining}</div>
+                                                </div>
+                                            </div>
+                                            <div className="delete-modal__chips">
+                                                <span className="badge badge-red">Total sent: {totalSent}</span>
+                                                <span className="badge badge-blue">Items sold: {sold}</span>
+                                                <span className="badge badge-gray">In shop stock: {remaining}</span>
+                                            </div>
+                                        </div>
+
+                                        <div className="delete-modal__warning">
+                                            Deleting this allotment will keep the sold pieces as-is and return only the remaining {remaining} piece{remaining === 1 ? '' : 's'} to warehouse stock.
+                                        </div>
+                                    </div>
+                                )
+                            })()}
+
+                            <div className="delete-modal__footer">
+                                <button
+                                    type="button"
+                                    className="btn btn-sm btn-glass delete-modal__cancel"
+                                    onClick={() => { if (!deletingAllotment) { setDeletingAllotmentRow(null); } }}
+                                    disabled={deletingAllotment}
+                                >
+                                    Cancel
+                                </button>
+                                <button
+                                    type="button"
+                                    className="btn btn-sm delete-modal__confirm"
+                                    onClick={confirmDeleteAllotment}
+                                    disabled={deletingAllotment}
+                                >
+                                    {deletingAllotment ? 'Deleting...' : 'Delete Allotment'}
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                )}
+
+                {showEditInventoryModal && editingInventoryItem && (
+                    <EditInventoryModal
+                        item={editingInventoryItem}
+                        minQuantity={editingInventoryItem.id ? (allotedQtyByProduct[editingInventoryItem.id] || 0) : 0}
+                        products={data.products}
+                        onSave={async (payload: any) => {
+                            await handleUpdateInventory(editingInventoryItem, payload)
+                            setShowEditInventoryModal(false)
+                            setEditingInventoryItem(null)
+                        }}
+                        onClose={() => { setShowEditInventoryModal(false); setEditingInventoryItem(null); }}
+                    />
+                )}
+
+                {showDeleteInventoryModal && deletingInventoryItem && (
+                    <div className="modal-overlay" onClick={() => { setShowDeleteInventoryModal(false); setDeletingInventoryItem(null); }}>
+                        <div className="modal-box delete-modal" onClick={e => e.stopPropagation()}>
+                            <div className="delete-modal__hero">
+                                <div className="delete-modal__head">
+                                    <div className="delete-modal__icon">
+                                        {IC.trash}
+                                    </div>
+                                    <div className="delete-modal__copy">
+                                        <div className="delete-modal__eyebrow">
+                                            Destructive action
+                                        </div>
+                                        <h3 className="delete-modal__title">Delete inventory item?</h3>
+                                        <div className="delete-modal__subtitle">
+                                            You are about to remove <strong>{deletingInventoryItem.productName}</strong> from warehouse stock.
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                            <div className="delete-modal__body">
+                                <div className="delete-modal__summary">
+                                    <div className="delete-modal__summary-top">
+                                        <div>
+                                            <div className="delete-modal__label">Item details</div>
+                                            <div className="delete-modal__item-name">{deletingInventoryItem.productName}</div>
+                                            <div className="delete-modal__batch">{deletingInventoryItem.batchNumber}</div>
+                                        </div>
+                                        <div className="delete-modal__count-wrap">
+                                            <div className="delete-modal__label delete-modal__label--right">Linked allotments</div>
+                                            <div className="delete-modal__count">
+                                                {deletingStoreAllotments.length}
+                                            </div>
+                                        </div>
+                                    </div>
+                                    <div className="delete-modal__chips">
+                                        <span className="badge badge-red">Warehouse item</span>
+                                        {deletingStoreAllotments.length > 0 ? (
+                                            deletingStoreAllotments.slice(0, 3).map((item) => (
+                                                <Badge key={`${item.storeName}-${item.id}`} type="blue">
+                                                    {item.storeName}
+                                                </Badge>
+                                            ))
+                                        ) : (
+                                            <span className="text-muted">No store allotments found</span>
+                                        )}
+                                        {deletingStoreAllotments.length > 3 && <Badge type="gray">+{deletingStoreAllotments.length - 3} more</Badge>}
+                                    </div>
+                                </div>
+
+                                <div className="delete-modal__warning">
+                                    This permanently deletes the item and every linked allotment. The action cannot be undone.
+                                </div>
+                            </div>
+                            <div className="delete-modal__footer">
+                                <button
+                                    type="button"
+                                    className="btn btn-sm btn-glass delete-modal__cancel"
+                                    onClick={() => { setShowDeleteInventoryModal(false); setDeletingInventoryItem(null); }}
+                                >
+                                    Cancel
+                                </button>
+                                <button
+                                    type="button"
+                                    className="btn btn-sm delete-modal__confirm"
+                                    onClick={confirmDeleteInventory}
+                                >
+                                    Delete Item
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                )}
             </div>
+
+            {/* ── Return to Warehouse Modal (Scenario B) ── */}
+            {returnToWarehouseRow && (
+                <ReturnToWarehouseModal
+                    allotment={{
+                        id: returnToWarehouseRow.id,
+                        productName: returnToWarehouseRow.productName,
+                        storeName: returnToWarehouseRow.storeName,
+                        quantityRemaining: Number(returnToWarehouseRow.quantityRemaining) || 0,
+                        pendingReturnQty: Number(returnToWarehouseRow.pendingReturnQty) || 0,
+                        pendingReturnSizeQuantities: returnToWarehouseRow.pendingReturnSizeQuantities ?? null,
+                        pendingReturnColorQuantities: returnToWarehouseRow.pendingReturnColorQuantities ?? null,
+                        pendingReturnVariantQuantities: returnToWarehouseRow.pendingReturnVariantQuantities ?? null,
+                        sizeQuantitiesRemaining: returnToWarehouseRow.sizeQuantitiesRemaining ?? null,
+                        colorQuantitiesRemaining: returnToWarehouseRow.colorQuantitiesRemaining ?? null,
+                        variantQuantitiesRemaining: returnToWarehouseRow.variantQuantitiesRemaining ?? null,
+                    }}
+                    onConfirm={handleReturnToWarehouse}
+                    onClose={() => setReturnToWarehouseRow(null)}
+                />
+            )}
 
             {/* ── Alerts Popup ── */}
             {showAlerts && (
@@ -721,6 +1151,148 @@ export default function InventoryPage({ user, onLogin }: PageProps) {
                     padding: 24px;
                     border-radius: var(--radius);
                     border: 1px solid var(--border);
+                }
+                .delete-modal {
+                    width: min(95vw, 620px);
+                    padding: 0;
+                    overflow: hidden;
+                    border-radius: 22px;
+                    box-shadow: 0 24px 80px rgba(15, 23, 42, 0.24);
+                    border: 1px solid rgba(239, 68, 68, 0.12);
+                    background: linear-gradient(180deg, rgba(255, 255, 255, 0.98) 0%, rgba(255, 248, 248, 0.98) 100%);
+                }
+                .delete-modal__hero {
+                    background: linear-gradient(180deg, rgba(239, 68, 68, 0.12) 0%, rgba(239, 68, 68, 0.04) 100%);
+                    border-bottom: 1px solid rgba(239, 68, 68, 0.12);
+                }
+                .delete-modal__head {
+                    display: flex;
+                    align-items: flex-start;
+                    gap: 16px;
+                    padding: 28px 30px 22px;
+                }
+                .delete-modal__icon {
+                    width: 52px;
+                    height: 52px;
+                    border-radius: 16px;
+                    display: grid;
+                    place-items: center;
+                    background: #fff;
+                    color: var(--danger);
+                    box-shadow: 0 10px 24px rgba(239, 68, 68, 0.14);
+                    flex: 0 0 auto;
+                }
+                .delete-modal__copy {
+                    flex: 1;
+                    min-width: 0;
+                }
+                .delete-modal__eyebrow {
+                    font-size: 11px;
+                    font-weight: 800;
+                    letter-spacing: 0.12em;
+                    text-transform: uppercase;
+                    color: var(--danger);
+                    margin-bottom: 8px;
+                }
+                .delete-modal__title {
+                    margin: 0;
+                    font-size: 20px;
+                    font-weight: 900;
+                    line-height: 1.2;
+                    color: var(--text-main);
+                }
+                .delete-modal__subtitle {
+                    margin-top: 10px;
+                    color: var(--text-muted);
+                    font-size: 13.5px;
+                    line-height: 1.55;
+                }
+                .delete-modal__subtitle strong {
+                    color: var(--text-main);
+                }
+                .delete-modal__body {
+                    padding: 22px 30px 18px;
+                }
+                .delete-modal__summary {
+                    padding: 16px 18px;
+                    border-radius: 16px;
+                    background: var(--surface-2);
+                    border: 1px solid var(--border);
+                    margin-bottom: 14px;
+                }
+                .delete-modal__summary-top {
+                    display: flex;
+                    align-items: flex-start;
+                    justify-content: space-between;
+                    gap: 16px;
+                    margin-bottom: 12px;
+                }
+                .delete-modal__label {
+                    font-size: 11px;
+                    text-transform: uppercase;
+                    letter-spacing: 0.1em;
+                    color: var(--text-muted);
+                    font-weight: 800;
+                    margin-bottom: 6px;
+                }
+                .delete-modal__label--right {
+                    text-align: right;
+                }
+                .delete-modal__item-name {
+                    font-size: 15px;
+                    font-weight: 900;
+                    color: var(--text-main);
+                    line-height: 1.3;
+                }
+                .delete-modal__batch {
+                    margin-top: 6px;
+                    font-size: 12px;
+                    color: var(--text-muted);
+                }
+                .delete-modal__count-wrap {
+                    text-align: right;
+                }
+                .delete-modal__count {
+                    font-size: 22px;
+                    font-weight: 900;
+                    color: var(--danger);
+                    line-height: 1;
+                }
+                .delete-modal__chips {
+                    display: flex;
+                    flex-wrap: wrap;
+                    gap: 8px;
+                    align-items: center;
+                }
+                .delete-modal__warning {
+                    padding: 14px 16px;
+                    border-radius: 14px;
+                    background: rgba(239, 68, 68, 0.06);
+                    border: 1px solid rgba(239, 68, 68, 0.18);
+                    color: var(--danger);
+                    font-weight: 700;
+                    font-size: 13px;
+                    line-height: 1.5;
+                }
+                .delete-modal__footer {
+                    display: flex;
+                    justify-content: flex-end;
+                    gap: 12px;
+                    padding: 0 30px 28px;
+                }
+                .delete-modal__cancel,
+                .delete-modal__confirm {
+                    min-width: 104px;
+                    height: 44px;
+                    border-radius: 12px;
+                }
+                .delete-modal__confirm {
+                    min-width: 132px;
+                    background: linear-gradient(135deg, #ef4444 0%, #dc2626 100%);
+                    border-color: #dc2626;
+                    color: #fff;
+                    font-weight: 900;
+                    box-shadow: 0 10px 20px rgba(239, 68, 68, 0.18);
                 }
             `}</style>
         </>

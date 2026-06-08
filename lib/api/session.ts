@@ -162,7 +162,19 @@ export async function requireAdmin(req: NextApiRequest, res: NextApiResponse): P
 }
 
 export async function getAllowedStoreIds(session: SessionContext): Promise<string[] | null> {
-  if (session.role === 'store') return session.storeId ? [session.storeId] : []
+  if (session.role === 'store') {
+    if (session.storeId) return [session.storeId]
+    if (session.storeName) {
+      const { data, error } = await supabaseAdmin
+        .from(TABLES.STORES)
+        .select('id')
+        .eq('name', session.storeName)
+        .maybeSingle()
+      if (error) throw error
+      return data?.id ? [data.id] : []
+    }
+    return []
+  }
   if (session.role === 'admin' && session.scope === 'all') return null
   if (session.role === 'admin' && session.managedStores && session.managedStores.length > 0) {
     const { data, error } = await supabaseAdmin
