@@ -1244,6 +1244,12 @@ function OrdersSection({ orders, overallOrders = [], inventory = [], storeInvent
           <div className="orders-mobile-empty">No partner sales match this period.</div>
         )}
         {orders.map((o, idx) => {
+          const soldQty = Number(o.quantity) || 0;
+          const returnedQty = Math.min(Number(o.returnQuantity) || 0, soldQty);
+          const refundedQty = Math.min(Number(o.refundQuantity) || 0, soldQty - returnedQty);
+          const fullyReturned = returnedQty > 0 ? returnedQty >= soldQty : Boolean(o.orderReturned);
+          const fullyRefunded = refundedQty > 0 && refundedQty >= (soldQty - returnedQty);
+          const remainingQty = soldQty - returnedQty - refundedQty;
           const gross = o.sellingPrice * o.quantity;
           const shipment = o.shipmentCost || 0;
           const netAmount = gross - shipment;
