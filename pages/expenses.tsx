@@ -1,6 +1,6 @@
 import { useEffect, useState, useCallback } from "react";
 import Login from "../components/Login";
-import { PageProps } from "../types";
+import { PageProps, Expense } from "../types";
 
 const Rs = (n: number) => "Rs " + (Number(n) || 0).toLocaleString();
 const fmtDate = (d: string) => d ? new Date(d).toLocaleDateString("en-PK", { day: "2-digit", month: "short", year: "numeric" }) : "—";
@@ -15,26 +15,28 @@ interface ExpenseRow {
   quantity: number;          // chargeable qty (after subtracting returns)
   rawQuantity: number;       // original sold qty
   returnedQty: number;
-  type: "COGS" | "Commission" | "Shipment";
+  type: "COGS" | "Commission" | "Shipment" | "BusinessExpense";
   unitCost: number;
   total: number;
   detail: string;            // e.g. "2 units × Rs 200" or "10% on 2 units"
 }
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
-type TabKey = "all" | "cogs" | "commission" | "shipment";
+type TabKey = "all" | "cogs" | "commission" | "shipment" | "business";
 
 const TAB_LABELS: Record<TabKey, string> = {
   all: "All",
   cogs: "COGS",
   commission: "Commission",
   shipment: "Shipment",
+  business: "Business",
 };
 
 const TYPE_STYLE: Record<string, { bg: string; color: string }> = {
-  COGS:       { bg: "#eff6ff", color: "#1d4ed8" },
-  Commission: { bg: "#fdf4ff", color: "#7c3aed" },
-  Shipment:   { bg: "#f0fdf4", color: "#15803d" },
+  COGS:            { bg: "#eff6ff", color: "#1d4ed8" },
+  Commission:      { bg: "#fdf4ff", color: "#7c3aed" },
+  Shipment:        { bg: "#f0fdf4", color: "#15803d" },
+  BusinessExpense: { bg: "#fff7ed", color: "#d97706" },
 };
 
 function Badge({ label }: { label: string }) {
@@ -59,9 +61,14 @@ export default function ExpensesPage({ user, onLogin }: PageProps) {
   const fetchData = useCallback(async () => {
     setLoading(true);
     try {
-      const res = await fetch("/api/orders");
-      const json = await res.json();
-      const orders: any[] = json.orders || [];
+      const [ordersRes, expensesRes] = await Promise.all([
+        fetch("/api/orders"),
+        fetch("/api/expenses"),
+      ]);
+      const ordersJson = await ordersRes.json();
+      const expensesJson = await expensesRes.json();
+      const orders: any[] = ordersJson.orders || [];
+      const expenses: Expense[] = expensesJson.expenses || [];
 
       const built: ExpenseRow[] = [];
 
@@ -125,6 +132,24 @@ export default function ExpensesPage({ user, onLogin }: PageProps) {
         }
       }
 
+      // ── Business Expense rows (from the expenses table)
+      for (const e of expenses) {
+        built.push({
+          id: `biz-${e.id}`,
+          orderCode: "—",
+          date: e.expense_date || e.created_at || "",
+          productName: e.title,
+          storeName: e.from_acc || "—",
+          quantity: 0,
+          rawQuantity: 0,
+          returnedQty: 0,
+          type: "BusinessExpense",
+          unitCost: Number(e.amount) || 0,
+          total: Number(e.amount) || 0,
+          detail: e.category ? `Category: ${e.category}` : "Operational expense",
+        });
+      }
+
       setRows(built);
     } catch {
       // silently ignore
@@ -147,7 +172,7 @@ export default function ExpensesPage({ user, onLogin }: PageProps) {
       || r.storeName.toLowerCase().includes(q)
       || r.orderCode.toLowerCase().includes(q)
       || r.detail.toLowerCase().includes(q);
-    const matchTab   = tab === "all" || r.type.toLowerCase() === tab;
+    const matchTab   = tab === "all" || (tab === "business" ? r.type === "BusinessExpense" : r.type.toLowerCase() === tab);
     const matchStore = storeFilter === "All" || r.storeName === storeFilter;
     return matchSearch && matchTab && matchStore;
   });
@@ -167,10 +192,11 @@ export default function ExpensesPage({ user, onLogin }: PageProps) {
   };
 
   // ── Summary totals (from ALL rows, not filtered)
-  const totalCOGS       = rows.filter(r => r.type === "COGS").reduce((s, r) => s + r.total, 0);
-  const totalCommission = rows.filter(r => r.type === "Commission").reduce((s, r) => s + r.total, 0);
-  const totalShipment   = rows.filter(r => r.type === "Shipment").reduce((s, r) => s + r.total, 0);
-  const grandTotal      = totalCOGS + totalCommission + totalShipment;
+  const totalCOGS           = rows.filter(r => r.type === "COGS").reduce((s, r) => s + r.total, 0);
+  const totalCommission     = rows.filter(r => r.type === "Commission").reduce((s, r) => s + r.total, 0);
+  const totalShipment       = rows.filter(r => r.type === "Shipment").reduce((s, r) => s + r.total, 0);
+  const totalBusinessExp    = rows.filter(r => r.type === "BusinessExpense").reduce((s, r) => s + r.total, 0);
+  const grandTotal          = totalCOGS + totalCommission + totalShipment + totalBusinessExp;
 
   // ── Filtered total
   const filteredTotal   = sorted.reduce((s, r) => s + r.total, 0);
@@ -211,12 +237,13 @@ export default function ExpensesPage({ user, onLogin }: PageProps) {
       </div>
 
       {/* ── Summary Cards ── */}
-      <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 16, marginBottom: 24 }}>
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(5, 1fr)", gap: 16, marginBottom: 24 }}>
         {[
-          { label: "Grand Total",  value: Rs(grandTotal),      color: "var(--danger)",  bg: "var(--danger-soft)" },
-          { label: "COGS",         value: Rs(totalCOGS),        color: "#1d4ed8",        bg: "#eff6ff" },
-          { label: "Commissions",  value: Rs(totalCommission),  color: "#7c3aed",        bg: "#fdf4ff" },
-          { label: "Shipment",     value: Rs(totalShipment),    color: "var(--success)", bg: "var(--success-soft)" },
+          { label: "Grand Total",        value: Rs(grandTotal),        color: "var(--danger)",    bg: "var(--danger-soft)" },
+          { label: "COGS",               value: Rs(totalCOGS),         color: "#1d4ed8",          bg: "#eff6ff" },
+          { label: "Commissions",        value: Rs(totalCommission),   color: "#7c3aed",          bg: "#fdf4ff" },
+          { label: "Shipment",           value: Rs(totalShipment),     color: "var(--success)",   bg: "var(--success-soft)" },
+          { label: "Business Expenses",  value: Rs(totalBusinessExp),  color: "#d97706",          bg: "#fff7ed" },
         ].map(c => (
           <div key={c.label} style={{ background: "var(--surface)", borderRadius: "var(--radius-lg)", border: "1px solid var(--border)", padding: "18px 20px", boxShadow: "var(--shadow-xs)" }}>
             <div style={{ fontSize: 11, fontWeight: 700, color: "var(--text-muted)", textTransform: "uppercase", letterSpacing: "0.06em", marginBottom: 6 }}>{c.label}</div>
@@ -230,15 +257,17 @@ export default function ExpensesPage({ user, onLogin }: PageProps) {
         <div style={{ background: "var(--surface)", borderRadius: "var(--radius-lg)", border: "1px solid var(--border)", padding: "14px 18px", marginBottom: 20, boxShadow: "var(--shadow-xs)" }}>
           <div style={{ fontSize: 11, fontWeight: 700, color: "var(--text-muted)", textTransform: "uppercase", letterSpacing: "0.06em", marginBottom: 8 }}>Breakdown</div>
           <div style={{ display: "flex", borderRadius: 8, overflow: "hidden", height: 10, background: "var(--surface-2)" }}>
-            {totalCOGS > 0       && <div style={{ width: `${(totalCOGS / grandTotal * 100).toFixed(1)}%`,       background: "#3b82f6", transition: "width 0.3s" }} title={`COGS: ${Rs(totalCOGS)}`} />}
-            {totalCommission > 0 && <div style={{ width: `${(totalCommission / grandTotal * 100).toFixed(1)}%`, background: "#a855f7", transition: "width 0.3s" }} title={`Commission: ${Rs(totalCommission)}`} />}
-            {totalShipment > 0   && <div style={{ width: `${(totalShipment / grandTotal * 100).toFixed(1)}%`,   background: "#10b981", transition: "width 0.3s" }} title={`Shipment: ${Rs(totalShipment)}`} />}
+            {totalCOGS > 0        && <div style={{ width: `${(totalCOGS / grandTotal * 100).toFixed(1)}%`,        background: "#3b82f6", transition: "width 0.3s" }} title={`COGS: ${Rs(totalCOGS)}`} />}
+            {totalCommission > 0  && <div style={{ width: `${(totalCommission / grandTotal * 100).toFixed(1)}%`,  background: "#a855f7", transition: "width 0.3s" }} title={`Commission: ${Rs(totalCommission)}`} />}
+            {totalShipment > 0    && <div style={{ width: `${(totalShipment / grandTotal * 100).toFixed(1)}%`,    background: "#10b981", transition: "width 0.3s" }} title={`Shipment: ${Rs(totalShipment)}`} />}
+            {totalBusinessExp > 0 && <div style={{ width: `${(totalBusinessExp / grandTotal * 100).toFixed(1)}%`, background: "#d97706", transition: "width 0.3s" }} title={`Business: ${Rs(totalBusinessExp)}`} />}
           </div>
           <div style={{ display: "flex", gap: "6px 18px", marginTop: 8, flexWrap: "wrap" }}>
             {[
               { label: "COGS",       val: totalCOGS,       color: "#3b82f6" },
               { label: "Commission", val: totalCommission, color: "#a855f7" },
               { label: "Shipment",   val: totalShipment,   color: "#10b981" },
+              { label: "Business",   val: totalBusinessExp, color: "#d97706" },
             ].filter(x => x.val > 0).map(x => (
               <div key={x.label} style={{ display: "flex", alignItems: "center", gap: 5, fontSize: 12 }}>
                 <div style={{ width: 8, height: 8, borderRadius: "50%", background: x.color }} />
@@ -299,7 +328,7 @@ export default function ExpensesPage({ user, onLogin }: PageProps) {
                 <tr>
                   {([
                     { label: "Date",        key: "date"        },
-                    { label: "Order Code",  key: "orderCode"   },
+                    { label: "Code",  key: "orderCode"   },
                     { label: "Product",     key: "productName" },
                     { label: "Store",       key: "storeName"   },
                     { label: "Type",        key: "type"        },
