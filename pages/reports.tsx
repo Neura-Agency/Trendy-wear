@@ -305,9 +305,17 @@ export default function ReportsPage({ user, onLogin }: PageProps) {
     isInPeriod(e.expense_date, periodType, periodValue)
   );
 
+  // Effective chargeable units after subtracting returned & refunded quantities
+  const effectiveQty = (o: any) => {
+    const soldQty = Math.max(0, Number(o.quantity) || 0);
+    const returnedQty = Math.min(Math.max(0, Number(o.returnQuantity) || 0), soldQty);
+    const refundedQty = Math.min(Math.max(0, Number(o.refundQuantity) || 0), soldQty - returnedQty);
+    return soldQty - returnedQty - refundedQty;
+  };
+
   // ── aggregate KPIs ─────────────────────────────────────────────────────
-  const totRevenue     = filtOrders.reduce((s, o) => s + o.sellingPrice * o.quantity, 0);
-  const totCOGS        = filtOrders.reduce((s, o) => s + o.costPrice * o.quantity, 0);
+  const totRevenue     = filtOrders.reduce((s, o) => s + o.sellingPrice * effectiveQty(o), 0);
+  const totCOGS        = filtOrders.reduce((s, o) => s + o.costPrice * effectiveQty(o), 0);
   const totCommission  = filtOrders.reduce((s, o) => s + (o.commissionAmount || 0), 0);
   const totShipment    = filtOrders.reduce((s, o) => s + (o.shipmentCost || 0), 0);
   const grossProfit    = totRevenue - totCOGS;
@@ -320,9 +328,10 @@ export default function ReportsPage({ user, onLogin }: PageProps) {
   const trendMap: Record<string, { label: string; revenue: number; cogs: number; expenses: number; profit: number }> = {};
   filtOrders.forEach(o => {
     const l = groupLabel(o.date, periodType);
+    const eQty = effectiveQty(o);
     if (!trendMap[l]) trendMap[l] = { label: l, revenue: 0, cogs: 0, expenses: 0, profit: 0 };
-    trendMap[l].revenue += o.sellingPrice * o.quantity;
-    trendMap[l].cogs    += o.costPrice * o.quantity;
+    trendMap[l].revenue += o.sellingPrice * eQty;
+    trendMap[l].cogs    += o.costPrice * eQty;
   });
   filtExpenses.forEach(e => {
     const l = groupLabel(e.expense_date, periodType);
@@ -335,11 +344,12 @@ export default function ReportsPage({ user, onLogin }: PageProps) {
   // ── product performance ────────────────────────────────────────────────
   const prodMap: Record<string, { product: string; orders: number; qty: number; revenue: number; cogs: number; grossProfit: number }> = {};
   filtOrders.forEach(o => {
+    const eQty = effectiveQty(o);
     if (!prodMap[o.productName]) prodMap[o.productName] = { product: o.productName, orders: 0, qty: 0, revenue: 0, cogs: 0, grossProfit: 0 };
     prodMap[o.productName].orders++;
     prodMap[o.productName].qty      += o.quantity;
-    prodMap[o.productName].revenue  += o.sellingPrice * o.quantity;
-    prodMap[o.productName].cogs     += o.costPrice * o.quantity;
+    prodMap[o.productName].revenue  += o.sellingPrice * eQty;
+    prodMap[o.productName].cogs     += o.costPrice * eQty;
     prodMap[o.productName].grossProfit = prodMap[o.productName].revenue - prodMap[o.productName].cogs;
   });
   const prodRows = Object.values(prodMap).sort((a, b) => b.revenue - a.revenue);
@@ -348,11 +358,12 @@ export default function ReportsPage({ user, onLogin }: PageProps) {
   const storeMap: Record<string, { store: string; orders: number; qty: number; revenue: number; cogs: number; commission: number; shipment: number; netProfit: number }> = {};
   filtOrders.forEach(o => {
     const s = o.storeName || 'Unknown';
+    const eQty = effectiveQty(o);
     if (!storeMap[s]) storeMap[s] = { store: s, orders: 0, qty: 0, revenue: 0, cogs: 0, commission: 0, shipment: 0, netProfit: 0 };
     storeMap[s].orders++;
     storeMap[s].qty        += o.quantity;
-    storeMap[s].revenue    += o.sellingPrice * o.quantity;
-    storeMap[s].cogs       += o.costPrice * o.quantity;
+    storeMap[s].revenue    += o.sellingPrice * eQty;
+    storeMap[s].cogs       += o.costPrice * eQty;
     storeMap[s].commission += o.commissionAmount || 0;
     storeMap[s].shipment   += o.shipmentCost || 0;
     storeMap[s].netProfit  += o.profit;

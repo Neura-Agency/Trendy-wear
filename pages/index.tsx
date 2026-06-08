@@ -27,6 +27,17 @@ const IC = {
 // Helpers
 const Rs = (n: number) => "Rs " + (Number(n) || 0).toLocaleString();
 
+// Effective chargeable units after subtracting returned & refunded quantities
+const effectiveQty = (o: Order) => {
+  const soldQty = Math.max(0, Number(o.quantity) || 0);
+  const returnedQty = Math.min(Math.max(0, Number(o.returnQuantity) || 0), soldQty);
+  const refundedQty = Math.min(Math.max(0, Number(o.refundQuantity) || 0), soldQty - returnedQty);
+  return soldQty - returnedQty - refundedQty;
+};
+
+// Revenue for a single order (sellingPrice × chargeable units only)
+const effectiveRevenue = (o: Order) => ((Number(o.sellingPrice) || 0) * effectiveQty(o));
+
 interface TableFilterProps {
   value: string;
   onChange: (value: string) => void;
@@ -1530,8 +1541,8 @@ const [loading, setLoading] = useState<boolean>(true);
   const partnerAll = getFiltered(dashboardOrders.filter(o => o.storeName !== 'Direct'), partnerFilter);
   const partnerOrders = partnerAll.filter(o => partnerStore === 'All' ? true : o.storeName === partnerStore);
 
-  // Stats calculation
-  const totalGross = kpiOrders.reduce((s, o) => s + (o.sellingPrice * o.quantity || 0), 0);
+  // Stats calculation (effective revenue excludes returned & refunded units)
+  const totalGross = kpiOrders.reduce((s, o) => s + effectiveRevenue(o), 0);
   const totalShipping = kpiOrders.reduce((s, o) => s + (o.shipmentCost || 0), 0);
   const totalNetAmt = totalGross - totalShipping;
   const totalShopCut = kpiOrders.reduce((s, o) => s + (o.commissionAmount || 0), 0);
@@ -1628,10 +1639,11 @@ const [loading, setLoading] = useState<boolean>(true);
     if (d < graphStart || d > graphNow) return;
 
     const monthKey = `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, '0')}`;
+    const effectiveUnits = effectiveQty(o);
     const qty = Number(o.quantity) || 0;
     monthlyQtyByKey[monthKey] = (monthlyQtyByKey[monthKey] || 0) + qty;
 
-    const revenue = (Number(o.sellingPrice) || 0) * qty;
+    const revenue = effectiveRevenue(o);
     const profit = Number(o.profit) || 0;
     monthlyRevenueByKey[monthKey] = (monthlyRevenueByKey[monthKey] || 0) + revenue;
     monthlyProfitByKey[monthKey] = (monthlyProfitByKey[monthKey] || 0) + profit;

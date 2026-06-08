@@ -2713,8 +2713,14 @@ export function ReportModal({ data, onClose }: ReportModalProps) {
     const expenses = (data.expenses || []).filter(e => inPeriod(e.expense_date));
 
     // ── Aggregate KPIs ───────────────────────────────────────────────────
-    const totRevenue    = orders.reduce((s, o) => s + (o.sellingPrice || 0) * (o.quantity || 0), 0);
-    const totCOGS       = orders.reduce((s, o) => s + (o.costPrice    || 0) * (o.quantity || 0), 0);
+    const effectiveQty = (o: any) => {
+      const soldQty = Math.max(0, Number(o.quantity) || 0);
+      const returnedQty = Math.min(Math.max(0, Number(o.returnQuantity) || 0), soldQty);
+      const refundedQty = Math.min(Math.max(0, Number(o.refundQuantity) || 0), soldQty - returnedQty);
+      return soldQty - returnedQty - refundedQty;
+    };
+    const totRevenue    = orders.reduce((s, o) => s + (o.sellingPrice || 0) * effectiveQty(o), 0);
+    const totCOGS       = orders.reduce((s, o) => s + (o.costPrice    || 0) * effectiveQty(o), 0);
     const totCommission = orders.reduce((s, o) => s + (o.commissionAmount || 0), 0);
     const grossProfit   = totRevenue - totCOGS;
     const totExpenses   = expenses.reduce((s, e) => s + (e.amount || 0), 0);
@@ -2724,11 +2730,12 @@ export function ReportModal({ data, onClose }: ReportModalProps) {
     const prodMap: Record<string, { product: string; orders: number; qty: number; revenue: number; cogs: number; commission: number; gp: number }> = {};
     orders.forEach(o => {
         const k = o.productName || 'Unknown';
+        const eQty = effectiveQty(o);
         if (!prodMap[k]) prodMap[k] = { product: k, orders: 0, qty: 0, revenue: 0, cogs: 0, commission: 0, gp: 0 };
         prodMap[k].orders++;
         prodMap[k].qty        += o.quantity || 0;
-        prodMap[k].revenue    += (o.sellingPrice || 0) * (o.quantity || 0);
-        prodMap[k].cogs       += (o.costPrice    || 0) * (o.quantity || 0);
+        prodMap[k].revenue    += (o.sellingPrice || 0) * eQty;
+        prodMap[k].cogs       += (o.costPrice    || 0) * eQty;
         prodMap[k].commission += o.commissionAmount || 0;
         prodMap[k].gp          = prodMap[k].revenue - prodMap[k].cogs;
     });
@@ -2738,11 +2745,12 @@ export function ReportModal({ data, onClose }: ReportModalProps) {
     const storeMap: Record<string, { store: string; orders: number; qty: number; revenue: number; cogs: number; commission: number; netProfit: number }> = {};
     orders.forEach(o => {
         const k = o.storeName || 'Unknown';
+        const eQty = effectiveQty(o);
         if (!storeMap[k]) storeMap[k] = { store: k, orders: 0, qty: 0, revenue: 0, cogs: 0, commission: 0, netProfit: 0 };
         storeMap[k].orders++;
         storeMap[k].qty        += o.quantity || 0;
-        storeMap[k].revenue    += (o.sellingPrice    || 0) * (o.quantity || 0);
-        storeMap[k].cogs       += (o.costPrice       || 0) * (o.quantity || 0);
+        storeMap[k].revenue    += (o.sellingPrice    || 0) * eQty;
+        storeMap[k].cogs       += (o.costPrice       || 0) * eQty;
         storeMap[k].commission += o.commissionAmount || 0;
         storeMap[k].netProfit  += o.profit           || 0;
     });
