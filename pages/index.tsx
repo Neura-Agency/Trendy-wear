@@ -13,15 +13,15 @@ import { usePopup } from "../components/Popup";
 
 // ── SVG Icon Components (mono-color, inherits currentColor) ──
 const IC = {
-  wallet: <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d="M21 12V7H5a2 2 0 0 1 0-4h14v4"/><path d="M3 5v14a2 2 0 0 0 2 2h16v-5"/><path d="M18 12a2 2 0 0 0 0 4h4v-4Z"/></svg>,
-  expense: <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d="M2 16.1A5 5 0 0 1 5.9 20M2 12.05A9 9 0 0 1 9.95 20M2 8V6a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2h-6"/><line x1="2" x2="2.01" y1="20" y2="20"/></svg>,
-  profit: <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><polyline points="22 7 13.5 15.5 8.5 10.5 2 17"/><polyline points="16 7 22 7 22 13"/></svg>,
-  stock: <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d="M21 8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16Z"/><path d="m3.3 7 8.7 5 8.7-5"/><path d="M12 22V12"/></svg>,
-  store: <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d="m2 7 4.41-4.41A2 2 0 0 1 7.83 2h8.34a2 2 0 0 1 1.42.59L22 7"/><path d="M4 12v8a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-8"/><path d="M15 22v-4a2 2 0 0 0-2-2h-2a2 2 0 0 0-2 2v4"/><path d="M2 7h20"/><path d="M22 7v3a2 2 0 0 1-2 2 2.7 2.7 0 0 1-1.59-.63.7.7 0 0 0-.82 0A2.7 2.7 0 0 1 16 12a2.7 2.7 0 0 1-1.59-.63.7.7 0 0 0-.82 0A2.7 2.7 0 0 1 12 12a2.7 2.7 0 0 1-1.59-.63.7.7 0 0 0-.82 0A2.7 2.7 0 0 1 8 12a2.7 2.7 0 0 1-1.59-.63.7.7 0 0 0-.82 0A2.7 2.7 0 0 1 4 12a2 2 0 0 1-2-2V7"/></svg>,
-  chart: <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><line x1="18" x2="18" y1="20" y2="10"/><line x1="12" x2="12" y1="20" y2="4"/><line x1="6" x2="6" y1="20" y2="14"/></svg>,
-  handshake: <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d="m11 17 2 2a1 1 0 1 0 3-3"/><path d="m14 14 2.5 2.5a1 1 0 1 0 3-3l-3.88-3.88a3 3 0 0 0-4.24 0l-.88.88a1 1 0 1 1-3-3l2.81-2.81a5.79 5.79 0 0 1 7.06-.87l.47.28a2 2 0 0 0 1.42.25L21 4"/><path d="m21 3 1 11h-2"/><path d="M3 3 2 14h2"/><path d="m7 4 3.06 2.04a2 2 0 0 0 1.42.25"/><path d="m5 12 2.13 2.13a1 1 0 0 0 3-.87"/></svg>,
-  receipt: <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d="M4 2v20l2-1 2 1 2-1 2 1 2-1 2 1 2-1 2 1V2l-2 1-2-1-2 1-2-1-2 1-2-1-2 1Z"/><path d="M16 8h-6a2 2 0 1 0 0 4h4a2 2 0 1 1 0 4H8"/><path d="M12 17.5v-11"/></svg>,
-  report: <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d="M15 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7Z"/><path d="M14 2v4a2 2 0 0 0 2 2h4"/><path d="M10 12h4"/><path d="M10 16h4"/></svg>,
+  wallet: <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d="M21 12V7H5a2 2 0 0 1 0-4h14v4" /><path d="M3 5v14a2 2 0 0 0 2 2h16v-5" /><path d="M18 12a2 2 0 0 0 0 4h4v-4Z" /></svg>,
+  expense: <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d="M2 16.1A5 5 0 0 1 5.9 20M2 12.05A9 9 0 0 1 9.95 20M2 8V6a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2h-6" /><line x1="2" x2="2.01" y1="20" y2="20" /></svg>,
+  profit: <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><polyline points="22 7 13.5 15.5 8.5 10.5 2 17" /><polyline points="16 7 22 7 22 13" /></svg>,
+  stock: <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d="M21 8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16Z" /><path d="m3.3 7 8.7 5 8.7-5" /><path d="M12 22V12" /></svg>,
+  store: <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d="m2 7 4.41-4.41A2 2 0 0 1 7.83 2h8.34a2 2 0 0 1 1.42.59L22 7" /><path d="M4 12v8a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-8" /><path d="M15 22v-4a2 2 0 0 0-2-2h-2a2 2 0 0 0-2 2v4" /><path d="M2 7h20" /><path d="M22 7v3a2 2 0 0 1-2 2 2.7 2.7 0 0 1-1.59-.63.7.7 0 0 0-.82 0A2.7 2.7 0 0 1 16 12a2.7 2.7 0 0 1-1.59-.63.7.7 0 0 0-.82 0A2.7 2.7 0 0 1 12 12a2.7 2.7 0 0 1-1.59-.63.7.7 0 0 0-.82 0A2.7 2.7 0 0 1 8 12a2.7 2.7 0 0 1-1.59-.63.7.7 0 0 0-.82 0A2.7 2.7 0 0 1 4 12a2 2 0 0 1-2-2V7" /></svg>,
+  chart: <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><line x1="18" x2="18" y1="20" y2="10" /><line x1="12" x2="12" y1="20" y2="4" /><line x1="6" x2="6" y1="20" y2="14" /></svg>,
+  handshake: <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d="m11 17 2 2a1 1 0 1 0 3-3" /><path d="m14 14 2.5 2.5a1 1 0 1 0 3-3l-3.88-3.88a3 3 0 0 0-4.24 0l-.88.88a1 1 0 1 1-3-3l2.81-2.81a5.79 5.79 0 0 1 7.06-.87l.47.28a2 2 0 0 0 1.42.25L21 4" /><path d="m21 3 1 11h-2" /><path d="M3 3 2 14h2" /><path d="m7 4 3.06 2.04a2 2 0 0 0 1.42.25" /><path d="m5 12 2.13 2.13a1 1 0 0 0 3-.87" /></svg>,
+  receipt: <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d="M4 2v20l2-1 2 1 2-1 2 1 2-1 2 1 2-1 2 1V2l-2 1-2-1-2 1-2-1-2 1-2-1-2 1Z" /><path d="M16 8h-6a2 2 0 1 0 0 4h4a2 2 0 1 1 0 4H8" /><path d="M12 17.5v-11" /></svg>,
+  report: <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d="M15 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7Z" /><path d="M14 2v4a2 2 0 0 0 2 2h4" /><path d="M10 12h4" /><path d="M10 16h4" /></svg>,
 };
 
 // Helpers
@@ -84,7 +84,7 @@ function TableFilter({ value, onChange }: TableFilterProps) {
     const d = new Date(Date.UTC(date.getFullYear(), date.getMonth(), date.getDate()));
     const dayNum = d.getUTCDay() || 7;
     d.setUTCDate(d.getUTCDate() + 4 - dayNum);
-    const yearStart = new Date(Date.UTC(d.getUTCFullYear(),0,1));
+    const yearStart = new Date(Date.UTC(d.getUTCFullYear(), 0, 1));
     return Math.ceil((((d.getTime() - yearStart.getTime()) / 86400000) + 1) / 7);
   }
 
@@ -100,10 +100,14 @@ function TableFilter({ value, onChange }: TableFilterProps) {
         />
       </div>
       {mode === 'Weekly' && (
-        <WeekMonthPicker mode="Weekly" value={weekDate} onChange={(v) => handleWeekChange(v ? new Date(v) : null)} />
+        <div className="tf-picker-wrap">
+          <WeekMonthPicker mode="Weekly" value={weekDate} onChange={(v) => handleWeekChange(v ? new Date(v) : null)} />
+        </div>
       )}
       {mode === 'Monthly' && (
-        <WeekMonthPicker mode="Monthly" value={monthDate} onChange={(v) => handleMonthChange(v ? new Date(v) : null)} />
+        <div className="tf-picker-wrap">
+          <WeekMonthPicker mode="Monthly" value={monthDate} onChange={(v) => handleMonthChange(v ? new Date(v) : null)} />
+        </div>
       )}
     </div>
   );
@@ -142,11 +146,11 @@ function GroupedBarChart({ title, groups, series, max, yLabel = '', formatValue 
   const yTicks = [0, 0.25, 0.5, 0.75, 1].map(f => ({ frac: f, val: Math.round(max * f) }));
 
   const tipSeries = hovered ? series[hovered.si] : null;
-  const tipVal    = hovered ? (series[hovered.si]?.values[hovered.gi] ?? 0) : 0;
-  const tipLabel  = hovered ? `${tipSeries?.label}: ${formatValue(tipVal)}` : '';
-  const tipW      = Math.min(tipLabel.length * 6.5 + 28, 210);
-  const tipX      = hovered ? Math.min(Math.max(hovered.bx, PAD.left + tipW / 2 + 4), W - tipW / 2 - 4) : 0;
-  const tipY      = hovered ? Math.max(hovered.by - 52, PAD.top) : 0;
+  const tipVal = hovered ? (series[hovered.si]?.values[hovered.gi] ?? 0) : 0;
+  const tipLabel = hovered ? `${tipSeries?.label}: ${formatValue(tipVal)}` : '';
+  const tipW = Math.min(tipLabel.length * 6.5 + 28, 210);
+  const tipX = hovered ? Math.min(Math.max(hovered.bx, PAD.left + tipW / 2 + 4), W - tipW / 2 - 4) : 0;
+  const tipY = hovered ? Math.max(hovered.by - 52, PAD.top) : 0;
 
   return (
     <div style={{ width: '100%' }}>
@@ -160,8 +164,8 @@ function GroupedBarChart({ title, groups, series, max, yLabel = '', formatValue 
           <defs>
             {series.map((s, i) => (
               <linearGradient key={i} id={`gbcG${i}`} x1="0" y1="0" x2="0" y2="1">
-                <stop offset="0%"   stopColor={s.color} stopOpacity={0.95} />
-                <stop offset="100%" stopColor={s.color} stopOpacity={0.4}  />
+                <stop offset="0%" stopColor={s.color} stopOpacity={0.95} />
+                <stop offset="100%" stopColor={s.color} stopOpacity={0.4} />
               </linearGradient>
             ))}
             <clipPath id="gbcClip">
@@ -188,7 +192,7 @@ function GroupedBarChart({ title, groups, series, max, yLabel = '', formatValue 
                   <text x={PAD.left - 8} y={y + 4} textAnchor="end" fontSize={10} fontWeight={600} fill="#94a3b8">
                     {val >= 1000000 ? (val / 1000000).toFixed(1) + 'M'
                       : val >= 1000 ? (val / 1000).toFixed(0) + 'k'
-                      : val}
+                        : val}
                   </text>
                 )}
               </g>
@@ -198,7 +202,7 @@ function GroupedBarChart({ title, groups, series, max, yLabel = '', formatValue 
           {/* Bars (clipped) */}
           <g clipPath="url(#gbcClip)">
             {groups.map((grp, gi) => {
-              const groupX  = PAD.left + gi * groupW + groupPad;
+              const groupX = PAD.left + gi * groupW + groupPad;
               const groupCX = groupX + (nSeries * barW + (nSeries - 1) * barGap) / 2;
               return (
                 <g key={gi}>
@@ -210,10 +214,10 @@ function GroupedBarChart({ title, groups, series, max, yLabel = '', formatValue 
                     />
                   )}
                   {series.map((s, si) => {
-                    const val  = s.values[gi] || 0;
+                    const val = s.values[gi] || 0;
                     const barH = max > 0 ? (val / max) * chartH : 0;
-                    const bx   = groupX + si * (barW + barGap);
-                    const by   = PAD.top + chartH - barH;
+                    const bx = groupX + si * (barW + barGap);
+                    const by = PAD.top + chartH - barH;
                     const isHov = hovered?.gi === gi && hovered?.si === si;
                     return (
                       <g key={si}>
@@ -247,7 +251,7 @@ function GroupedBarChart({ title, groups, series, max, yLabel = '', formatValue 
 
           {/* X-axis labels */}
           {groups.map((grp, gi) => {
-            const groupX  = PAD.left + gi * groupW + groupPad;
+            const groupX = PAD.left + gi * groupW + groupPad;
             const groupCX = groupX + (nSeries * barW + (nSeries - 1) * barGap) / 2;
             return (
               <text key={gi}
@@ -313,8 +317,8 @@ interface SBCSeries {
   label: string;
   color: string;
   revenues: number[];  // one per group (month)
-  profits:  number[];  // one per group (month)
-  sales:    number[];  // one per group (month)
+  profits: number[];  // one per group (month)
+  sales: number[];  // one per group (month)
 }
 interface StackedBarChartProps {
   groups: string[];       // X-axis labels (months)
@@ -332,8 +336,8 @@ function StackedBarChart({ groups, series, formatValue = String }: StackedBarCha
 
   const nGroups = groups.length;
   const nSeries = series.length;
-  const groupW  = chartW / nGroups;
-  const barGap  = 1.2;
+  const groupW = chartW / nGroups;
+  const barGap = 1.2;
   const groupPad = groupW * 0.13;
   const barW = Math.max(4, (groupW - groupPad * 2 - barGap * (nSeries - 1)) / Math.max(1, nSeries));
 
@@ -341,15 +345,15 @@ function StackedBarChart({ groups, series, formatValue = String }: StackedBarCha
   const yTicks = [0, 0.25, 0.5, 0.75, 1].map(f => ({ frac: f, val: Math.round(maxVal * f) }));
 
   // Tooltip data
-  const tipS     = hovered ? series[hovered.si] : null;
-  const tipRev   = hovered ? (tipS?.revenues[hovered.gi] ?? 0) : 0;
-  const tipProf  = hovered ? (tipS?.profits[hovered.gi]  ?? 0) : 0;
-  const tipSales = hovered ? (tipS?.sales[hovered.gi]    ?? 0) : 0;
-  
-  const tipW    = 170;
-  const tipH    = 90;
-  const tipCX   = hovered ? Math.min(Math.max(hovered.cx, PAD.left + tipW / 2 + 4), W - tipW / 2 - 4) : 0;
-  const tipY    = hovered ? Math.max(hovered.topY - tipH - 12, 10) : 0;
+  const tipS = hovered ? series[hovered.si] : null;
+  const tipRev = hovered ? (tipS?.revenues[hovered.gi] ?? 0) : 0;
+  const tipProf = hovered ? (tipS?.profits[hovered.gi] ?? 0) : 0;
+  const tipSales = hovered ? (tipS?.sales[hovered.gi] ?? 0) : 0;
+
+  const tipW = 170;
+  const tipH = 90;
+  const tipCX = hovered ? Math.min(Math.max(hovered.cx, PAD.left + tipW / 2 + 4), W - tipW / 2 - 4) : 0;
+  const tipY = hovered ? Math.max(hovered.topY - tipH - 12, 10) : 0;
 
   return (
     <div style={{ width: '100%' }}>
@@ -362,11 +366,11 @@ function StackedBarChart({ groups, series, formatValue = String }: StackedBarCha
           <defs>
             {series.map((s, i) => [
               <linearGradient key={`sr${i}`} id={`sbcR${i}`} x1="0" y1="0" x2="0" y2="1">
-                <stop offset="0%"   stopColor={s.color} stopOpacity={0.40} />
+                <stop offset="0%" stopColor={s.color} stopOpacity={0.40} />
                 <stop offset="100%" stopColor={s.color} stopOpacity={0.15} />
               </linearGradient>,
               <linearGradient key={`sp${i}`} id={`sbcP${i}`} x1="0" y1="0" x2="0" y2="1">
-                <stop offset="0%"   stopColor={s.color} stopOpacity={1}    />
+                <stop offset="0%" stopColor={s.color} stopOpacity={1} />
                 <stop offset="100%" stopColor={s.color} stopOpacity={0.68} />
               </linearGradient>,
             ])}
@@ -407,7 +411,7 @@ function StackedBarChart({ groups, series, formatValue = String }: StackedBarCha
           {/* Grouped+Stacked Bars */}
           <g clipPath="url(#sbcClip)">
             {groups.map((grp, gi) => {
-              const gx  = PAD.left + gi * groupW + groupPad;
+              const gx = PAD.left + gi * groupW + groupPad;
               const gcx = gx + (nSeries * barW + (nSeries - 1) * barGap) / 2;
               return (
                 <g key={gi}>
@@ -419,16 +423,16 @@ function StackedBarChart({ groups, series, formatValue = String }: StackedBarCha
                     />
                   )}
                   {series.map((s, si) => {
-                    const rev    = s.revenues[gi] || 0;
+                    const rev = s.revenues[gi] || 0;
                     const profit = Math.max(0, s.profits[gi] || 0);
-                    const revH    = maxVal > 0 ? (rev    / maxVal) * chartH : 0;
+                    const revH = maxVal > 0 ? (rev / maxVal) * chartH : 0;
                     const profitH = maxVal > 0 ? (profit / maxVal) * chartH : 0;
-                    const costH   = revH - profitH;
-                    const bx      = gx + si * (barW + barGap);
-                    const topY    = PAD.top + chartH - revH;
+                    const costH = revH - profitH;
+                    const bx = gx + si * (barW + barGap);
+                    const topY = PAD.top + chartH - revH;
                     const profitY = PAD.top + chartH - profitH;
-                    const cx      = bx + barW / 2;
-                    const isHov   = hovered?.gi === gi && hovered?.si === si;
+                    const cx = bx + barW / 2;
+                    const isHov = hovered?.gi === gi && hovered?.si === si;
 
                     return (
                       <g key={si}
@@ -493,7 +497,7 @@ function StackedBarChart({ groups, series, formatValue = String }: StackedBarCha
 
           {/* X-axis month labels */}
           {groups.map((grp, gi) => {
-            const gx  = PAD.left + gi * groupW + groupPad;
+            const gx = PAD.left + gi * groupW + groupPad;
             const gcx = gx + (nSeries * barW + (nSeries - 1) * barGap) / 2;
             return (
               <text key={gi}
@@ -515,17 +519,17 @@ function StackedBarChart({ groups, series, formatValue = String }: StackedBarCha
                 filter="drop-shadow(0 8px 24px rgba(0,0,0,0.18))"
                 stroke={tipS?.color} strokeWidth={1.5}
               />
-              
+
               {/* Header: Store Name */}
               <text x={tipCX} y={tipY + 20} textAnchor="middle" fontSize={11} fontWeight={900} fill="#1e293b" letterSpacing="0.02em">
                 {tipS?.label.toUpperCase()}
               </text>
               <line x1={tipCX - 65} x2={tipCX + 65} y1={tipY + 28} y2={tipY + 28} stroke="#f1f5f9" strokeWidth={1} />
-              
+
               {/* Row 1: REVENUE */}
               <text x={tipCX - 68} y={tipY + 46} fontSize={9} fontWeight={700} fill="#94a3b8">REVENUE</text>
               <text x={tipCX + 68} y={tipY + 46} textAnchor="end" fontSize={11} fontWeight={800} fill="#1e293b">{formatValue(tipRev)}</text>
-              
+
               {/* Row 2: PROFIT */}
               <text x={tipCX - 68} y={tipY + 62} fontSize={9} fontWeight={700} fill="#94a3b8">NET PROFIT</text>
               <text x={tipCX + 68} y={tipY + 62} textAnchor="end" fontSize={11} fontWeight={800} fill="#10b981">{formatValue(tipProf)}</text>
@@ -700,16 +704,16 @@ function StoresOverviewSection({ stores, orders, storeInventory, filter, getFilt
                 const catInventory = Object.values(storeInventory[name] || {}).filter(si => (si as StoreInventoryItem).productName === productName);
 
                 const unpaidOrders = catOrders.filter(o => o.paymentStatus !== true && (o.commissionAmount || 0) > 0);
-                const paidOrders   = catOrders.filter(o => o.paymentStatus === true);
+                const paidOrders = catOrders.filter(o => o.paymentStatus === true);
                 const unpaidAmount = unpaidOrders.reduce((acc, o) => acc + (o.commissionAmount || 0), 0);
-                const paidAmount   = paidOrders.reduce((acc, o) => acc + (o.commissionAmount || 0), 0);
-                const totalPayout  = catOrders.reduce((acc, o) => acc + (o.commissionAmount || 0), 0);
+                const paidAmount = paidOrders.reduce((acc, o) => acc + (o.commissionAmount || 0), 0);
+                const totalPayout = catOrders.reduce((acc, o) => acc + (o.commissionAmount || 0), 0);
 
                 const itemsSold = catInventory.reduce((acc: number, si) => acc + (((si as StoreInventoryItem).quantityAssigned || 0) - ((si as StoreInventoryItem).quantityRemaining || 0)), 0) as number;
-                const leftover  = catInventory.reduce((acc: number, si) => acc + ((si as StoreInventoryItem).quantityRemaining as number), 0) as number;
-                const expenses   = catOrders.reduce((acc, o) => acc + (o.shipmentCost || 0), 0);
+                const leftover = catInventory.reduce((acc: number, si) => acc + ((si as StoreInventoryItem).quantityRemaining as number), 0) as number;
+                const expenses = catOrders.reduce((acc, o) => acc + (o.shipmentCost || 0), 0);
                 const partnerCut = totalPayout;
-                const profit     = catOrders.reduce((acc, o) => acc + (o.profit || 0), 0);
+                const profit = catOrders.reduce((acc, o) => acc + (o.profit || 0), 0);
 
                 const allPaid = catOrders.length > 0 && unpaidOrders.length === 0;
 
@@ -764,7 +768,7 @@ function StoresOverviewSection({ stores, orders, storeInventory, filter, getFilt
       </div>
 
       {isAdmin && (
-        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 12, marginTop: 24 }}>
+        <div className="store-action-buttons" style={{ display: 'flex', flexWrap: 'wrap', gap: 12, marginTop: 24 }}>
           {totalUnpaid > 0 && (
             <button
               className="btn btn-primary"
@@ -939,7 +943,7 @@ function OrdersSection({ orders, overallOrders = [], inventory = [], storeInvent
   const overallProfit = (overallOrders || []).reduce((s, o) => s + (o.profit || 0), 0);
 
   return (
-    <div>
+    <div className="orders-section">
       {/* ── Edit modal ── */}
       {editing && (
         <div className="modal-overlay">
@@ -1135,7 +1139,9 @@ function OrdersSection({ orders, overallOrders = [], inventory = [], storeInvent
           </div>
         </div>
       )}
-      <div style={{ overflowX: 'auto', overflowY: 'auto', maxHeight: 420, width: '100%', WebkitOverflowScrolling: 'touch' as any }}>
+
+      {/* ── Desktop table view (hidden on mobile) ── */}
+      <div className="table-wrap orders-desktop-table">
         <table>
         <thead>
           <tr>
@@ -1211,16 +1217,65 @@ function OrdersSection({ orders, overallOrders = [], inventory = [], storeInvent
                   ) : (
                     <span className="font-bold">{o.commissionPercent}%</span>
                   )}
-                  <div style={{ fontSize: '11px', color: isAdmin ? 'var(--danger)' : 'var(--success)', fontWeight: 700 }}>
-                    {isAdmin ? "-" : "+"}{Rs(o.commissionAmount)}
-                  </div>
-                </td>
+                </tr>
+              );
+            })}
+            {orders.length === 0 && (
+              <tr><td colSpan={isAdmin ? 11 : 8} style={{ textAlign: 'center', padding: 30, color: 'var(--text-muted)' }}>No partner sales match this period.</td></tr>
+            )}
+          </tbody>
+        </table>
+      </div>
+
+      {/* ── Mobile card view (hidden on desktop) ── */}
+      <div className="orders-mobile-cards">
+        {orders.length === 0 && (
+          <div className="orders-mobile-empty">No partner sales match this period.</div>
+        )}
+        {orders.map((o, idx) => {
+          const gross = o.sellingPrice * o.quantity;
+          const shipment = o.shipmentCost || 0;
+          const netAmount = gross - shipment;
+          const totalCost = (o.costPrice || 0) * o.quantity;
+          return (
+            <div className="order-card" key={idx} onClick={() => setEditing({ ...o })}>
+              <div className="order-card-top">
+                <span className="order-card-store">{o.storeName}</span>
+                <span className="order-card-date">{new Date(o.date).toLocaleDateString()}</span>
+              </div>
+              <div className="order-card-product">{o.productName}</div>
+              <div className="order-card-grid">
+                <div className="order-card-field">
+                  <span className="order-card-label">Qty</span>
+                  <span className="order-card-value">{o.quantity}</span>
+                </div>
+                <div className="order-card-field">
+                  <span className="order-card-label">Total</span>
+                  <span className="order-card-value font-bold">{Rs(gross)}</span>
+                </div>
+                <div className="order-card-field">
+                  <span className="order-card-label">Delivery</span>
+                  <span className="order-card-value" style={{ color: 'var(--danger)' }}>-{Rs(shipment)}</span>
+                </div>
+                <div className="order-card-field">
+                  <span className="order-card-label">Received</span>
+                  <span className="order-card-value font-bold">{Rs(netAmount)}</span>
+                </div>
+                <div className="order-card-field">
+                  <span className="order-card-label">Commission</span>
+                  <span className="order-card-value">
+                    {isAdmin ? (
+                      <InlineCommEdit value={o.commissionPercent} onSave={(v) => onCommissionEdit(o.id, v)} />
+                    ) : (
+                      <span className="font-bold">{o.commissionPercent}%</span>
+                    )}
+                  </span>
+                </div>
                 {isAdmin && (
-                  <>
-                    <td className="font-bold" style={{ color: 'var(--pri-600)' }}>{Rs(o.adminTake)}</td>
-                    <td style={{ color: 'var(--text-muted)' }}>{Rs(totalCost)}</td>
-                    <td className="font-bold" style={{ color: 'var(--success)', fontSize: '1.1rem' }}>{Rs(o.profit)}</td>
-                  </>
+                  <div className="order-card-field">
+                    <span className="order-card-label">Profit</span>
+                    <span className="order-card-value font-bold" style={{ color: 'var(--success)' }}>{Rs(o.profit)}</span>
+                  </div>
                 )}
                 <td onClick={e => e.stopPropagation()}>
                   <div style={{
@@ -1298,12 +1353,13 @@ function OrdersSection({ orders, overallOrders = [], inventory = [], storeInvent
       </table>
       </div>
 
-      <div style={{ marginTop: 12, display: 'flex', flexWrap: 'wrap', justifyContent: 'space-between', gap: 8, padding: '8px 12px', background: 'var(--surface-2)', borderRadius: 8, fontSize: '12px' }}>
-        <div style={{ fontWeight: 700 }}>
-          Showing totals: Items: {filteredQty} — Gross: {Rs(filteredGross)} — Profit: {Rs(filteredProfit)}
+      {/* ── Summary bar ── */}
+      <div className="orders-summary-bar">
+        <div className="orders-summary-showing">
+          Items: {filteredQty} &mdash; Gross: {Rs(filteredGross)} &mdash; Profit: {Rs(filteredProfit)}
         </div>
-        <div style={{ color: 'var(--text-muted)', textAlign: 'right' }}>
-          All partners totals: Items: {overallQty} — Gross: {Rs(overallGross)} — Profit: {Rs(overallProfit)}
+        <div className="orders-summary-all">
+          All partners: Items: {overallQty} &mdash; Gross: {Rs(overallGross)} &mdash; Profit: {Rs(overallProfit)}
         </div>
       </div>
 
@@ -1413,7 +1469,7 @@ export default function Home({ user, onLogin }: PageProps) {
     expenses: [],
     storeInventory: {},
   });
-const [loading, setLoading] = useState<boolean>(true);
+  const [loading, setLoading] = useState<boolean>(true);
 
   // Modal states
   const [showSaleModal, setShowSaleModal] = useState<boolean>(false);
@@ -1439,10 +1495,10 @@ const [loading, setLoading] = useState<boolean>(true);
         fetch('/api/expenses'),
         fetch('/api/owners'),
       ]);
-      const storesData   = await storesRes.json()
+      const storesData = await storesRes.json()
       const storeInvData = await storeInvRes.json()
-      const invData      = await invRes.json()
-      const ordersData   = await ordersRes.json()
+      const invData = await invRes.json()
+      const ordersData = await ordersRes.json()
       const expensesData = await expensesRes.json()
       const ownersData   = await ownersRes.json()
 
@@ -1490,7 +1546,7 @@ const [loading, setLoading] = useState<boolean>(true);
       if (filter === 'Weekly') {
         const day = now.getDay() || 7; // Sunday is 0, set to 7
         const weekStart = new Date(now);
-        weekStart.setHours(0,0,0,0);
+        weekStart.setHours(0, 0, 0, 0);
         weekStart.setDate(now.getDate() - day + 1);
         const weekEnd = new Date(weekStart);
         weekEnd.setDate(weekStart.getDate() + 7);
@@ -1731,18 +1787,18 @@ const [loading, setLoading] = useState<boolean>(true);
   const isStoreEmpty = storeSeriesData.length === 0;
 
   const DEMO_PRODUCTS = ['Kurta', 'Shalwar Kameez', 'Lawn Suit', 'Dupatta', 'Shawl', 'Jacket'];
-  const DEMO_STORES  = ['Al-Noor Store', 'City Boutique', 'Style Hub', 'Fashion Point', 'Elegance', 'Trendy Plus'];
+  const DEMO_STORES = ['Al-Noor Store', 'City Boutique', 'Style Hub', 'Fashion Point', 'Elegance', 'Trendy Plus'];
 
   // Seeded random-ish pattern that looks like real sales (peaks in mid-year)
   const demoSeed = (product: number, month: number) => {
-    const base = [18,22,30,42,55,70,65,58,45,35,28,20][month] ?? 30;
-    const prod  = [1, 0.7, 0.85, 0.5, 0.6, 0.4][product] ?? 0.5;
+    const base = [18, 22, 30, 42, 55, 70, 65, 58, 45, 35, 28, 20][month] ?? 30;
+    const prod = [1, 0.7, 0.85, 0.5, 0.6, 0.4][product] ?? 0.5;
     const jitter = ((product * 7 + month * 13) % 17) - 8;
     return Math.max(0, Math.round((base + jitter) * prod));
   };
   const demoRevSeed = (store: number, month: number) => {
-    const base = [22000,28000,38000,50000,65000,80000,74000,68000,52000,42000,33000,25000][month] ?? 40000;
-    const s    = [1, 0.75, 0.88, 0.55, 0.65, 0.45][store] ?? 0.6;
+    const base = [22000, 28000, 38000, 50000, 65000, 80000, 74000, 68000, 52000, 42000, 33000, 25000][month] ?? 40000;
+    const s = [1, 0.75, 0.88, 0.55, 0.65, 0.45][store] ?? 0.6;
     const jitter = ((store * 11 + month * 19) % 20000) - 10000;
     return Math.max(0, Math.round((base + jitter) * s));
   };
@@ -1762,26 +1818,26 @@ const [loading, setLoading] = useState<boolean>(true);
   const demoStoreMax = Math.max(1, ...demoStoreSeries.flatMap(s => s.values));
 
   const finalProductSeries = isProductEmpty ? demoProductSeries : productSeriesData;
-  const finalProductMax    = isProductEmpty ? demoProductMax    : productChartMax;
-  const finalStoreSeries   = isStoreEmpty   ? demoStoreSeries   : storeSeriesData.map(s => ({ label: s.label, color: s.colorRev, values: s.valuesRev }));
-  const finalStoreMax      = isStoreEmpty   ? demoStoreMax      : storeChartMax;
+  const finalProductMax = isProductEmpty ? demoProductMax : productChartMax;
+  const finalStoreSeries = isStoreEmpty ? demoStoreSeries : storeSeriesData.map(s => ({ label: s.label, color: s.colorRev, values: s.valuesRev }));
+  const finalStoreMax = isStoreEmpty ? demoStoreMax : storeChartMax;
 
   // Stacked+grouped per-store-per-month data (for StackedBarChart)
   const stackedStoreSeries: SBCSeries[] = isStoreEmpty
     ? DEMO_STORES.map((label, i) => ({
-        label,
-        color: CHART_COLORS[i % CHART_COLORS.length],
-        revenues: monthKeys.map((_, mi) => demoRevSeed(i, mi)),
-        profits:  monthKeys.map((_, mi) => { const r = ([0.28, 0.25, 0.30, 0.23, 0.27, 0.22] as number[])[i] ?? 0.25; return Math.round(demoRevSeed(i, mi) * r); }),
-        sales:    monthKeys.map((_, mi) => demoSeed(i, mi)),
-      }))
+      label,
+      color: CHART_COLORS[i % CHART_COLORS.length],
+      revenues: monthKeys.map((_, mi) => demoRevSeed(i, mi)),
+      profits: monthKeys.map((_, mi) => { const r = ([0.28, 0.25, 0.30, 0.23, 0.27, 0.22] as number[])[i] ?? 0.25; return Math.round(demoRevSeed(i, mi) * r); }),
+      sales: monthKeys.map((_, mi) => demoSeed(i, mi)),
+    }))
     : storeSeriesData.map((s, i) => ({
-        label: s.label,
-        color: CHART_COLORS[i % CHART_COLORS.length],
-        revenues: s.valuesRev,
-        profits:  s.valuesProfit,
-        sales:    s.valuesQty,
-      }));
+      label: s.label,
+      color: CHART_COLORS[i % CHART_COLORS.length],
+      revenues: s.valuesRev,
+      profits: s.valuesProfit,
+      sales: s.valuesQty,
+    }));
 
   const handleAddOrder = async (order: any) => {
     try {
@@ -1836,7 +1892,7 @@ const [loading, setLoading] = useState<boolean>(true);
       });
 
       const result = await response.json();
-      
+
       if (!response.ok) {
         throw new Error(result.error || 'Failed to create store');
       }
@@ -1847,10 +1903,10 @@ const [loading, setLoading] = useState<boolean>(true);
         `Username: ${result.credentials.username}\n` +
         `Password: ${result.credentials.password}\n\n` +
         `Please save these credentials!`;
-      
+
       toast.success(credentialsMessage);
       console.log('Shop Credentials:', result.credentials);
-      
+
       refresh();
     } catch (error: any) {
       toast.error(error.message || 'Failed to create store');
@@ -2105,8 +2161,8 @@ const [loading, setLoading] = useState<boolean>(true);
         </div>
 
         {(isAdmin || user.role === 'store') && (
-          <SectionCard 
-            title={isAdmin ? "Store Partners" : "My Store Performance"} 
+          <SectionCard
+            title={isAdmin ? "Store Partners" : "My Store Performance"}
             icon={IC.store}
             action={
               isSuperAdmin ? (
@@ -2138,10 +2194,10 @@ const [loading, setLoading] = useState<boolean>(true);
               <div className="section-action-wrap">
                 <TableFilter value={partnerFilter} onChange={setPartnerFilter} />
                 <div className="store-select-wrap">
-                  <CustomSelect 
-                    value={partnerStore} 
-                    onChange={setPartnerStore} 
-                    options={['All', ...Object.keys(availableStores)]} 
+                  <CustomSelect
+                    value={partnerStore}
+                    onChange={setPartnerStore}
+                    options={['All', ...Object.keys(availableStores)]}
                     height="36px"
                   />
                 </div>
@@ -2268,12 +2324,12 @@ const [loading, setLoading] = useState<boolean>(true);
                           catch { displayDate = String(dateStr || '-'); }
 
                           const catColors: Record<string, { bg: string; color: string }> = {
-                            'Rent':        { bg: '#ede9fe', color: '#6d28d9' },
-                            'Salaries':    { bg: '#dbeafe', color: '#1d4ed8' },
-                            'Utilities':   { bg: '#dcfce7', color: '#15803d' },
-                            'Marketing':   { bg: '#fef9c3', color: '#a16207' },
-                            'Logistics':   { bg: '#ffedd5', color: '#c2410c' },
-                            'Misc':        { bg: '#f1f5f9', color: '#475569' },
+                            'Rent': { bg: '#ede9fe', color: '#6d28d9' },
+                            'Salaries': { bg: '#dbeafe', color: '#1d4ed8' },
+                            'Utilities': { bg: '#dcfce7', color: '#15803d' },
+                            'Marketing': { bg: '#fef9c3', color: '#a16207' },
+                            'Logistics': { bg: '#ffedd5', color: '#c2410c' },
+                            'Misc': { bg: '#f1f5f9', color: '#475569' },
                           };
                           const cat = e.category || 'Misc';
                           const chip = catColors[cat] || { bg: '#f1f5f9', color: '#475569' };
@@ -2345,6 +2401,14 @@ const [loading, setLoading] = useState<boolean>(true);
                       colorQuantitiesRemaining: si.colorQuantitiesRemaining,
                       variantQuantitiesRemaining: si.variantQuantitiesRemaining,
                     }))
+                  )
+                : user.role === 'store'
+                  ? Object.values(data.storeInventory[user.storeName] || {}).map(si => ({
+                    productName: si.productName,
+                    quantityAvailable: si.quantityRemaining,
+                    sellingPrice: si.storeSellingPrice,
+                    ownerSupplyPrice: si.ownerSupplyPrice,
+                  }))
                   : data.inventory
             }
             storeName={user.storeName}

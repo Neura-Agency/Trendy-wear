@@ -2033,17 +2033,6 @@ input[type="number"] {
     font-size: 11px;
   }
 
-  /* Make filter wrap stack vertically */
-  .table-filter-wrap {
-    flex-direction: column !important;
-    align-items: stretch !important;
-    gap: 8px !important;
-    padding: 10px !important;
-  }
-
-  .table-filter-wrap > * {
-    width: 100% !important;
-  }
 }
 
 /* Extra small devices (400px and below) */
@@ -2447,18 +2436,6 @@ input[type="number"] {
     padding: 2px 4px !important;
   }
 
-  /* Table filter wrapper */
-  .table-filter-wrap {
-    flex-direction: column !important;
-    align-items: stretch !important;
-    gap: 8px !important;
-    padding: 8px 12px !important;
-  }
-
-  .table-filter-wrap > * {
-    width: 100% !important;
-  }
-
   /* Store selector view */
   .store-selector-view .table-wrap {
     margin: 0 -14px;
@@ -2492,6 +2469,628 @@ input[type="number"] {
 
   .kpi-label {
     font-size: 9px !important;
+  }
+}
+
+/* -----------------------------------------------------------
+   TABLE FILTER + WEEK/MONTH PICKER
+------------------------------------------------------------ */
+
+/* ── Base filter bar ── */
+.table-filter-wrap {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  align-items: center;
+  background: var(--surface-2);
+  padding: 8px 14px;
+  border-radius: var(--radius);
+  border: 1px solid var(--border);
+  width: 100%;
+  box-sizing: border-box;
+}
+
+.tf-label {
+  font-weight: 700;
+  font-size: 11px;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+
+.tf-mode-select {
+  min-width: 120px;
+  flex: 0 0 auto;
+}
+
+.tf-picker-wrap {
+  flex: 1 1 160px;
+  min-width: 0;
+}
+
+/* ── WeekMonthPicker trigger ── */
+.wmp-wrap {
+  position: relative;
+  width: 100%;
+}
+
+.wmp-trigger {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  width: 100%;
+  height: 36px;
+  padding: 0 12px;
+  border-radius: var(--radius);
+  border: 1px solid var(--border);
+  background: var(--surface);
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--text-main);
+  cursor: pointer;
+  transition: border-color 0.15s;
+  white-space: nowrap;
+  overflow: hidden;
+}
+
+.wmp-trigger:hover {
+  border-color: var(--acc);
+}
+
+.wmp-trigger-label {
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  text-align: left;
+  font-size: 13px;
+}
+
+.wmp-trigger-arrow {
+  font-size: 11px;
+  color: var(--text-muted);
+  flex-shrink: 0;
+}
+
+/* ── Dropdown panel ── */
+.wmp-dropdown {
+  position: absolute;
+  top: calc(100% + 6px);
+  right: 0;
+  z-index: 1200;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 14px;
+  width: min(300px, calc(100vw - 32px));
+  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.14);
+}
+
+/* Push left edge so it never clips off the left of the viewport */
+@supports (left: max(0px, 1px)) {
+  .wmp-dropdown {
+    right: auto;
+    left: max(0px, calc(100% - min(300px, calc(100vw - 32px))));
+  }
+}
+
+/* ── Navigation row ── */
+.wmp-nav {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 12px;
+}
+
+.wmp-nav-btn {
+  flex-shrink: 0;
+  width: 34px;
+  height: 34px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--surface-2);
+  font-size: 18px;
+  line-height: 1;
+  cursor: pointer;
+  color: var(--text-main);
+  transition: background 0.15s;
+}
+
+.wmp-nav-btn:hover {
+  background: var(--border);
+}
+
+.wmp-nav-label {
+  flex: 1;
+  text-align: center;
+  font-weight: 700;
+  font-size: 13px;
+  color: var(--text-main);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* ── Action buttons row ── */
+.wmp-actions {
+  display: flex;
+  gap: 8px;
+}
+
+.wmp-btn {
+  flex: 1;
+  height: 36px;
+  border-radius: 8px;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  border: 1px solid var(--border);
+  transition: opacity 0.15s;
+  white-space: nowrap;
+}
+
+.wmp-btn:hover { opacity: 0.85; }
+
+.wmp-btn-ghost {
+  background: var(--surface-2);
+  color: var(--text-main);
+  border-color: var(--border);
+}
+
+.wmp-btn-danger {
+  background: #fff2f0;
+  color: #e53935;
+  border-color: #ffccc7;
+}
+
+.wmp-btn-primary {
+  background: var(--acc);
+  color: #fff;
+  border-color: var(--acc);
+  font-weight: 700;
+}
+
+/* ── Responsive: stack filter on ≤768px ── */
+@media (max-width: 768px) {
+  .table-filter-wrap {
+    flex-direction: column !important;
+    align-items: stretch !important;
+    gap: 8px !important;
+    padding: 10px 12px !important;
+  }
+
+  .tf-label {
+    display: none; /* saves vertical space on tiny screens */
+  }
+
+  .tf-mode-select {
+    width: 100%;
+    flex: none;
+  }
+
+  .tf-picker-wrap {
+    width: 100%;
+    flex: none;
+  }
+
+  .wmp-dropdown {
+    /* On small screens use the full available width, anchored left */
+    left: 0;
+    right: 0;
+    width: auto;
+  }
+
+  .wmp-nav-label {
+    font-size: 12px;
+  }
+
+  .wmp-btn {
+    font-size: 11px;
+    height: 38px;
+  }
+}
+
+@media (max-width: 400px) {
+  .wmp-trigger {
+    font-size: 12px;
+    height: 38px;
+    padding: 0 10px;
+  }
+
+  .wmp-dropdown {
+    padding: 12px;
+    border-radius: 10px;
+  }
+
+  .wmp-nav-btn {
+    width: 30px;
+    height: 30px;
+    font-size: 16px;
+  }
+
+  .wmp-nav-label {
+    font-size: 11px;
+  }
+}
+
+/* -----------------------------------------------------------
+   PARTNER STORE SALES – RESPONSIVE
+------------------------------------------------------------ */
+
+/* ── Orders section wrapper ── */
+.orders-section {
+  width: 100%;
+}
+
+/* ── Desktop table: visible by default, hidden on small ── */
+.orders-desktop-table {
+  display: block;
+  max-height: 420px;
+  overflow-y: auto;
+}
+
+/* ── Mobile cards: hidden by default ── */
+.orders-mobile-cards {
+  display: none;
+}
+
+.orders-mobile-empty {
+  text-align: center;
+  padding: 32px 16px;
+  color: var(--text-muted);
+  font-size: 0.85rem;
+}
+
+/* ── Summary bar ── */
+.orders-summary-bar {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  gap: 8px;
+  margin-top: 12px;
+  padding: 10px 14px;
+  background: var(--surface-2);
+  border-radius: var(--radius);
+  font-size: 12px;
+}
+
+.orders-summary-showing {
+  font-weight: 700;
+  color: var(--text-main);
+}
+
+.orders-summary-all {
+  color: var(--text-muted);
+  text-align: right;
+}
+
+/* ── Edit sale modal ── */
+.edit-sale-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.45);
+  z-index: 1300;
+  display: flex;
+  align-items: flex-start;
+  justify-content: center;
+  padding: 60px 16px 16px;
+  overflow-y: auto;
+}
+
+.edit-sale-modal {
+  background: var(--surface);
+  border-radius: 16px;
+  padding: 24px;
+  width: 100%;
+  max-width: 480px;
+  box-shadow: 0 8px 40px rgba(0, 0, 0, 0.25);
+}
+
+.edit-sale-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 24px;
+}
+
+.edit-sale-header h2 {
+  margin: 0;
+  font-size: 1.2rem;
+  font-weight: 800;
+}
+
+.edit-sale-close {
+  width: 32px;
+  height: 32px;
+  padding: 0;
+}
+
+.edit-sale-fields {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.edit-sale-fields label {
+  font-weight: 600;
+  font-size: 0.85rem;
+}
+
+.edit-sale-fields .form-input {
+  margin-top: 4px;
+  display: block;
+  width: 100%;
+}
+
+.edit-sale-readonly {
+  margin-top: 4px;
+  padding: 8px 12px;
+  background: var(--surface-2);
+  border-radius: 8px;
+  border: 1px solid var(--border);
+  color: var(--text-muted);
+}
+
+.edit-sale-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin-top: 24px;
+}
+
+.edit-sale-delete {
+  flex: 0 0 auto;
+  background: var(--danger);
+  border-color: var(--danger);
+  color: #fff;
+  font-weight: 700;
+  padding: 0 20px;
+  height: 44px;
+}
+
+.edit-sale-cancel {
+  flex: 1;
+  height: 44px;
+}
+
+.edit-sale-save {
+  flex: 1;
+  height: 44px;
+  font-weight: 700;
+}
+
+/* ── Mobile card layout ── */
+.order-card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 14px;
+  margin-bottom: 10px;
+  cursor: pointer;
+  transition: box-shadow 0.15s, border-color 0.15s;
+}
+
+.order-card:hover {
+  border-color: var(--acc);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
+}
+
+.order-card:last-child {
+  margin-bottom: 0;
+}
+
+.order-card-top {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 6px;
+}
+
+.order-card-store {
+  font-weight: 700;
+  color: var(--pri-700);
+  font-size: 0.85rem;
+}
+
+.order-card-date {
+  font-size: 0.72rem;
+  color: var(--text-muted);
+}
+
+.order-card-product {
+  font-weight: 700;
+  font-size: 0.9rem;
+  color: var(--text-main);
+  margin-bottom: 10px;
+  padding-bottom: 8px;
+  border-bottom: 1px solid var(--border);
+}
+
+.order-card-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px 12px;
+}
+
+.order-card-field {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.order-card-label {
+  font-size: 0.68rem;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  font-weight: 600;
+}
+
+.order-card-value {
+  font-size: 0.82rem;
+  color: var(--text-body);
+}
+
+/* ── Responsive: 768px ── */
+@media (max-width: 768px) {
+  .orders-desktop-table {
+    display: none !important;
+  }
+
+  .orders-mobile-cards {
+    display: block;
+    max-height: 400px;
+    overflow-y: auto;
+    -webkit-overflow-scrolling: touch;
+  }
+
+  .orders-summary-bar {
+    flex-direction: column;
+    gap: 4px;
+    text-align: left;
+    padding: 10px 12px;
+  }
+
+  .orders-summary-all {
+    text-align: left;
+  }
+
+  .edit-sale-overlay {
+    padding: 16px 10px 10px;
+  }
+
+  .edit-sale-modal {
+    max-width: 100%;
+    border-radius: 12px;
+    padding: 18px;
+  }
+
+  .edit-sale-header h2 {
+    font-size: 1rem;
+  }
+
+  .edit-sale-fields .form-input,
+  .edit-sale-fields input {
+    height: 42px;
+    font-size: 14px;
+  }
+
+  .edit-sale-fields label {
+    font-size: 0.82rem;
+  }
+
+  .edit-sale-actions {
+    flex-direction: column;
+  }
+
+  .edit-sale-delete,
+  .edit-sale-cancel,
+  .edit-sale-save {
+    width: 100%;
+    flex: none;
+  }
+
+  /* Store action buttons: full-width stack */
+  .store-action-buttons {
+    flex-direction: column !important;
+    gap: 10px !important;
+  }
+
+  .store-action-buttons .btn {
+    flex: 1 1 auto !important;
+    min-width: 0 !important;
+    width: 100% !important;
+  }
+}
+
+/* ── Responsive: 576px ── */
+@media (max-width: 576px) {
+  .orders-mobile-cards {
+    max-height: 340px;
+  }
+
+  .order-card {
+    padding: 12px;
+  }
+
+  .order-card-grid {
+    gap: 6px 10px;
+  }
+
+  .order-card-store {
+    font-size: 0.8rem;
+  }
+
+  .order-card-product {
+    font-size: 0.82rem;
+  }
+
+  .order-card-value {
+    font-size: 0.78rem;
+  }
+
+  .orders-summary-bar {
+    font-size: 11px;
+    padding: 8px 10px;
+  }
+
+  .edit-sale-overlay {
+    padding: 8px 6px 6px;
+  }
+
+  .edit-sale-modal {
+    padding: 14px;
+    border-radius: 10px;
+  }
+
+  .store-action-buttons {
+    gap: 8px !important;
+    margin-top: 16px !important;
+  }
+
+  .store-action-buttons .btn {
+    height: 44px !important;
+    font-size: 12px !important;
+  }
+}
+
+/* ── Responsive: 400px ── */
+@media (max-width: 400px) {
+  .orders-mobile-cards {
+    max-height: 300px;
+  }
+
+  .order-card {
+    padding: 10px;
+    border-radius: 8px;
+  }
+
+  .order-card-grid {
+    grid-template-columns: 1fr 1fr;
+    gap: 5px 8px;
+  }
+
+  .order-card-label {
+    font-size: 0.62rem;
+  }
+
+  .order-card-value {
+    font-size: 0.74rem;
+  }
+
+  .orders-summary-bar {
+    font-size: 10px;
+    padding: 6px 8px;
+    border-radius: 6px;
+  }
+
+  .edit-sale-modal {
+    padding: 10px;
   }
 }
 

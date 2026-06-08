@@ -47,6 +47,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
           quantity_assigned,
           quantity_remaining,
           "extra_Qty",
+          "Aloted_by",
           created_at,
           updated_at,
           stores:store_id ( name ),
@@ -241,6 +242,21 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 
       const supply = num(ownerSupplyPrice)
       const commission = num(commissionPercent)
+
+      // Resolve the logged-in user to an owner for Aloted_by
+      let alotedById: string | null = null
+      const { data: ownerMatch } = await supabaseAdmin
+        .from(TABLES.OWNERS)
+        .select('id, name')
+        .eq('is_active', true)
+      if (ownerMatch && ownerMatch.length > 0) {
+        const uname = session.username.toLowerCase()
+        const match = ownerMatch.find((o: any) => {
+          const oname = o.name.toLowerCase()
+          return oname === uname || uname.startsWith(oname) || oname.startsWith(uname)
+        })
+        if (match) alotedById = match.id
+      }
 
       const { data: inserted, error: insertErr } = await supabaseAdmin
         .from(TABLES.STORE_INVENTORY)
