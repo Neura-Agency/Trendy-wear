@@ -1,5 +1,5 @@
-import React, { useState } from 'react';
-import { InventoryItem, Order, Purchase, Expense } from '../types';
+import React, { useMemo, useState } from 'react';
+import { InventoryItem, Order, Purchase, Expense, User } from '../types';
 import { usePopup } from './Popup';
 
 /* =========================
@@ -12,6 +12,18 @@ interface AddSaleFormProps {
   onAdd: (order: Partial<Order>) => void;
 }
 
+const readStoredUser = (): Partial<User> => {
+  if (typeof window === 'undefined') return {};
+
+  try {
+    const stored = window.localStorage.getItem('user');
+    return stored ? JSON.parse(stored) : {};
+  } catch {
+    window.localStorage.removeItem('user');
+    return {};
+  }
+};
+
 export function AddSaleForm({ inventory, storeName, onAdd }: AddSaleFormProps) {
   const { toast } = usePopup();
   const [formData, setFormData] = useState({
@@ -21,7 +33,7 @@ export function AddSaleForm({ inventory, storeName, onAdd }: AddSaleFormProps) {
     includedInPayout: true
   });
 
-  const user = JSON.parse(localStorage.getItem('user') || '{}');
+  const user = useMemo(readStoredUser, []);
 
   let allowedStoreNames = [];
   if (user.role === 'admin' && user.scope === 'all') {

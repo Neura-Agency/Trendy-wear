@@ -63,6 +63,8 @@ export interface Order {
   id: string;
   productName: string;
   quantity: number;
+  size?: string | null;
+  color?: string | null;
   sellingPrice: number;
   shipmentCost: number;
   storeName: string;
@@ -77,6 +79,9 @@ export interface Order {
   profit: number;
   paymentStatus?: boolean | null;
   orderReturned?: boolean;
+  returnQuantity?: number | null;
+  refundQuantity?: number | null;
+  variantQuantities?: Record<string, Record<string, number>> | null;
 }
 
 export interface Purchase {
@@ -108,6 +113,11 @@ export interface InventoryItem {
   otherVariants?: any;
   productImage?: string | null;
   sizeQuantities?: Record<string, number> | null;
+  colorQuantities?: Record<string, number> | null;
+  variantQuantities?: Record<string, Record<string, number>> | null;
+  sizeQuantitiesRemaining?: Record<string, number> | null;
+  colorQuantitiesRemaining?: Record<string, number> | null;
+  variantQuantitiesRemaining?: Record<string, Record<string, number>> | null;
   batchNumber: string;
   costPrice: number;
   sellingPrice: number;
@@ -121,12 +131,20 @@ export interface StoreInventoryItem {
   inventoryId?: string; // FK → inventory.id (batch FK)
   productId?: string;
   productName: string;
+  sizes?: string[];
+  colors?: string[];
   ownerSupplyPrice: number;
   commissionPercent: number;
   storeSellingPrice: number;
   quantityAssigned: number;
   quantityRemaining: number;
   extraQty?: number;    // gift / display units allotted (not sold, expensed at cost)
+  sizeQuantitiesAssigned?: Record<string, number> | null;
+  sizeQuantitiesRemaining?: Record<string, number> | null;
+  colorQuantitiesAssigned?: Record<string, number> | null;
+  colorQuantitiesRemaining?: Record<string, number> | null;
+  variantQuantitiesAssigned?: Record<string, Record<string, number>> | null;
+  variantQuantitiesRemaining?: Record<string, Record<string, number>> | null;
   storeName?: string;   // populated when flattened out of the Record
   owner?: string;
 }
@@ -246,6 +264,9 @@ export interface AddInventoryModalProps extends ModalProps {
   onSave: (inventory: any) => void;
   stores: string[];
   products: Product[];
+  inventory?: InventoryItem[];
+  hiddenProductTypes?: string[];
+  onHideProductType?: (typeName: string) => void;
 }
 
 export interface AllotToStoreModalProps extends ModalProps {
@@ -260,5 +281,8 @@ export interface AllotToStoreModalProps extends ModalProps {
     ownerSupplyPrice: number;
     commissionPercent: number;
     extraQty: number;
+    sizeQuantitiesAssigned?: Record<string, number> | undefined;
+    colorQuantitiesAssigned?: Record<string, number> | undefined;
+    variantQuantitiesAssigned?: Record<string, Record<string, number>> | undefined;
   }) => void;
 }

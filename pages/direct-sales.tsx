@@ -187,9 +187,15 @@ export default function DirectSalesPage({ user, onLogin }: PageProps) {
 
   const filtered = getFiltered(orders, filter);
 
-  // KPI calculations
-  const totalRevenue   = filtered.reduce((acc, o) => acc + (o.sellingPrice * o.quantity), 0);
-  const totalUnits     = filtered.reduce((acc, o) => acc + o.quantity, 0);
+  // KPI calculations (effective revenue excludes returned & refunded units)
+  const effectiveQty = (o: Order) => {
+    const soldQty = Math.max(0, Number(o.quantity) || 0);
+    const returnedQty = Math.min(Math.max(0, Number(o.returnQuantity) || 0), soldQty);
+    const refundedQty = Math.min(Math.max(0, Number(o.refundQuantity) || 0), soldQty - returnedQty);
+    return soldQty - returnedQty - refundedQty;
+  };
+  const totalRevenue   = filtered.reduce((acc, o) => acc + (o.sellingPrice * effectiveQty(o)), 0);
+  const totalUnits     = filtered.reduce((acc, o) => acc + effectiveQty(o), 0);
   const totalExpenses  = filtered.reduce((acc, o) => acc + (o.shipmentCost || 0), 0);
   const totalProfit    = filtered.reduce((acc, o) => acc + (o.profit || 0), 0);
 
@@ -199,8 +205,11 @@ export default function DirectSalesPage({ user, onLogin }: PageProps) {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
+          productId:   order.productId,
           productName:  order.productName,
           quantity:     order.quantity,
+          sizeQuantities: order.sizeQuantities || null,
+          colorQuantities: order.colorQuantities || null,
           extraQty:     order.extraQty || 0,
           sellingPrice: order.sellingPrice,
           shipmentCost: order.shipmentCost || 0,

@@ -5,7 +5,7 @@ import Login from "../components/Login";
 import WeekMonthPicker from '../components/WeekMonthPicker';
 import SectionCard from "../components/SectionCard";
 import Badge from "../components/Badge";
-import { SaleModal, CreateStoreModal, ReportModal, ExpenseBreakdownModal } from "../components/Modals";
+import { SaleModal, CreateStoreModal, ReportModal, ExpenseBreakdownModal, SaleReturnModal, SaleRefundModal, VariantQuantityGrid, buildVariantGrid, variantGrandTotal } from "../components/Modals";
 import { AddExpenseForm } from '../components/Forms';
 import CustomSelect from "../components/CustomSelect";
 import { User, Order, Store, InventoryItem, Expense, Client, StoreInventoryItem, AppData, PageProps } from "../types";
@@ -26,6 +26,17 @@ const IC = {
 
 // Helpers
 const Rs = (n: number) => "Rs " + (Number(n) || 0).toLocaleString();
+
+// Effective chargeable units after subtracting returned & refunded quantities
+const effectiveQty = (o: Order) => {
+  const soldQty = Math.max(0, Number(o.quantity) || 0);
+  const returnedQty = Math.min(Math.max(0, Number(o.returnQuantity) || 0), soldQty);
+  const refundedQty = Math.min(Math.max(0, Number(o.refundQuantity) || 0), soldQty - returnedQty);
+  return soldQty - returnedQty - refundedQty;
+};
+
+// Revenue for a single order (sellingPrice × chargeable units only)
+const effectiveRevenue = (o: Order) => ((Number(o.sellingPrice) || 0) * effectiveQty(o));
 
 interface TableFilterProps {
   value: string;
@@ -78,9 +89,9 @@ function TableFilter({ value, onChange }: TableFilterProps) {
   }
 
   return (
-    <div className="table-filter-wrap" style={{ display: 'flex', gap: 12, alignItems: 'center', flexWrap: 'wrap', background: 'var(--surface-2)', padding: '6px 16px', borderRadius: 8, border: '1px solid var(--border)' }}>
+    <div className="table-filter-wrap" style={{ display: 'flex', gap: 12, alignItems: 'center', flexWrap: 'nowrap', overflowX: 'auto', background: 'var(--surface-2)', padding: '6px 16px', borderRadius: 8, border: '1px solid var(--border)' }}>
       <span style={{ fontWeight: 700, fontSize: '12px', color: 'var(--text-muted)', textTransform: 'uppercase' }}>Filter:</span>
-      <div style={{ minWidth: 120, flex: '1 1 140px', maxWidth: 200 }}>
+      <div style={{ minWidth: 120, flex: '0 0 160px', maxWidth: 200 }}>
         <CustomSelect 
           value={mode} 
           onChange={handleModeChange} 
@@ -292,6 +303,7 @@ function GroupedBarChart({ title, groups, series, max, yLabel = '', formatValue 
           </div>
         ))}
       </div>
+
     </div>
   );
 }
@@ -773,8 +785,148 @@ function StoresOverviewSection({ stores, orders, storeInventory, filter, getFilt
 }
 
 // ─── ORDERS SECTION ──────────────────────────────────────────────────
-function OrdersSection({ orders, overallOrders = [], isAdmin, canDelete, onCommissionEdit, onTogglePayout, onEdit, onDelete, onReturn, confirmDialog }: any) {
+function OrdersSection({ orders, overallOrders = [], inventory = [], storeInventory = {}, isAdmin, canDelete, onCommissionEdit, onTogglePayout, onEdit, onDelete, onReturn, onRefund, onUndoReturn, onUndoRefund, confirmDialog }: any) {
   const [editing, setEditing] = useState<any>(null);
+  const [editingCurrency, setEditingCurrency] = useState<'PKR' | 'GBP'>('PKR');
+  const [editingSizeQuantities, setEditingSizeQuantities] = useState<Record<string, number>>({});
+  const [editingColorQuantities, setEditingColorQuantities] = useState<Record<string, number>>({});
+  const [editingVariantQuantities, setEditingVariantQuantities] = useState<Record<string, Record<string, number>>>({});
+  const [returningOrder, setReturningOrder] = useState<any | null>(null);
+  const [refundingOrder, setRefundingOrder] = useState<any | null>(null);
+
+  const normalizeCatalogValue = (value: string) => String(value ?? '').trim().toLowerCase();
+  const buildEmptyQuantities = (keys: string[]) => keys.reduce((acc, key) => {
+    acc[key] = 0;
+    return acc;
+  }, {} as Record<string, number>);
+
+  const getVariantKeys = (item: any, field: 'size' | 'color') => {
+    const raw = item?.[field] ?? item?.[field === 'size' ? 'sizes' : 'colors'];
+    return Array.isArray(raw) ? raw : [];
+  };
+
+  const buildLegacyMaxVariantGrid = (colorQuantities?: Record<string, number> | null, sizeQuantities?: Record<string, number> | null) => {
+    const colors = colorQuantities && typeof colorQuantities === 'object' ? Object.keys(colorQuantities) : [];
+    const sizes = sizeQuantities && typeof sizeQuantities === 'object' ? Object.keys(sizeQuantities) : [];
+    const grid: Record<string, Record<string, number>> = {};
+    colors.forEach(color => {
+      grid[color] = {};
+      sizes.forEach(size => {
+        grid[color][size] = Math.min(Number(colorQuantities?.[color]) || 0, Number(sizeQuantities?.[size]) || 0);
+      });
+    });
+    return grid;
+  };
+
+  const getVariantGridSource = (item: any, order?: any) => {
+    // For store orders, prefer variantQuantitiesRemaining from storeInventory
+    // (keyed by storeName → productName → first matching item)
+    if (order?.storeName && order.storeName !== 'Direct') {
+      const storeItems = Object.values(storeInventory[order.storeName] || {}) as any[];
+      const storeItem = storeItems.find((si: any) => normalizeCatalogValue(si.productName) === normalizeCatalogValue(order.productName));
+      if (storeItem?.variantQuantitiesRemaining && typeof storeItem.variantQuantitiesRemaining === 'object' && Object.keys(storeItem.variantQuantitiesRemaining).length > 0) {
+        return storeItem.variantQuantitiesRemaining;
+      }
+    }
+    const direct = item?.variantQuantitiesRemaining ?? item?.variantQuantities;
+    if (direct && typeof direct === 'object' && Object.keys(direct).length > 0) return direct;
+    return buildLegacyMaxVariantGrid(item?.colorQuantitiesRemaining ?? item?.colorQuantities, item?.sizeQuantitiesRemaining ?? item?.sizeQuantities);
+  };
+
+  const openEdit = (order: any) => {
+    const product = inventory.find((item: any) => normalizeCatalogValue(item.productName) === normalizeCatalogValue(order.productName));
+    const sizeKeys = getVariantKeys(product, 'size');
+    const colorKeys = getVariantKeys(product, 'color');
+
+    setEditing(order);
+    setEditingCurrency('PKR');
+    setEditingSizeQuantities(sizeKeys.length > 0 ? buildEmptyQuantities(sizeKeys) : {});
+    setEditingColorQuantities(colorKeys.length > 0 ? buildEmptyQuantities(colorKeys) : {});
+
+    // Derive variant grid from product inventory OR fall back to the saved order's own variant data
+    const variantSource = getVariantGridSource(product, order);
+    let variantColors = Object.keys(variantSource || {});
+    let variantSizes = Array.from(new Set(Object.values(variantSource || {}).flatMap((sizes: any) => Object.keys(sizes || {}))));
+
+    // If product not found in inventory, derive keys from the order's saved variantQuantities
+    if ((!variantColors.length || !variantSizes.length) && order.variantQuantities && typeof order.variantQuantities === 'object') {
+      variantColors = Object.keys(order.variantQuantities);
+      variantSizes = Array.from(new Set(Object.values(order.variantQuantities as Record<string, Record<string, number>>).flatMap(sizes => Object.keys(sizes || {}))));
+    }
+
+    setEditingVariantQuantities(variantColors.length && variantSizes.length ? buildVariantGrid(variantColors, variantSizes, order.variantQuantities || {}) : {});
+
+    const savedSizeBreakdown = order.sizeQuantities && typeof order.sizeQuantities === 'object' ? order.sizeQuantities : null;
+    const savedColorBreakdown = order.colorQuantities && typeof order.colorQuantities === 'object' ? order.colorQuantities : null;
+
+    if (savedSizeBreakdown && sizeKeys.length > 0) {
+      setEditingSizeQuantities(prev => {
+        const next = { ...prev };
+        sizeKeys.forEach((size: string) => {
+          next[size] = Math.max(0, Number(savedSizeBreakdown[size]) || 0);
+        });
+        return next;
+      });
+    }
+    if (savedColorBreakdown && colorKeys.length > 0) {
+      setEditingColorQuantities(prev => {
+        const next = { ...prev };
+        colorKeys.forEach((color: string) => {
+          next[color] = Math.max(0, Number(savedColorBreakdown[color]) || 0);
+        });
+        return next;
+      });
+    }
+
+    if (order.size && sizeKeys.includes(order.size)) {
+      setEditingSizeQuantities(prev => ({ ...prev, [order.size]: Number(order.quantity) || 0 }));
+    }
+    if (order.color && colorKeys.includes(order.color)) {
+      setEditingColorQuantities(prev => ({ ...prev, [order.color]: Number(order.quantity) || 0 }));
+    }
+  };
+
+  const selectedEditProduct = editing
+    ? inventory.find((item: any) => normalizeCatalogValue(item.productName) === normalizeCatalogValue(editing.productName))
+    : null;
+  // When editing, add back this order's own variantQuantities to the remaining
+  // so the max correctly reflects: remaining + what this sale already consumed.
+  const editingVariantMax = (() => {
+    const base = getVariantGridSource(selectedEditProduct, editing);
+    const orderVariants = editing?.variantQuantities;
+    if (!base || !orderVariants || typeof orderVariants !== 'object') return base;
+    const result: Record<string, Record<string, number>> = {};
+    const allColors = new Set([...Object.keys(base), ...Object.keys(orderVariants)]);
+    allColors.forEach(color => {
+      result[color] = {};
+      const baseSizes = base[color] || {};
+      const orderSizes = (orderVariants as Record<string, Record<string, number>>)[color] || {};
+      const allSizes = new Set([...Object.keys(baseSizes), ...Object.keys(orderSizes)]);
+      allSizes.forEach(size => {
+        result[color][size] = (Number(baseSizes[size]) || 0) + (Number(orderSizes[size]) || 0);
+      });
+    });
+    return result;
+  })();
+  const editingVariantColorKeys = Object.keys(editingVariantMax || {});
+  const editingVariantSizeKeys = Array.from(new Set(Object.values(editingVariantMax || {}).flatMap((sizes: any) => Object.keys(sizes || {}))));
+  const editingHasVariantTracking = editingVariantColorKeys.length > 0 && editingVariantSizeKeys.length > 0;
+  const editingSizeKeys = getVariantKeys(selectedEditProduct, 'size');
+  const editingColorKeys = getVariantKeys(selectedEditProduct, 'color');
+  const editingHasSizeTracking = !editingHasVariantTracking && editingSizeKeys.length > 0;
+  const editingHasColorTracking = !editingHasVariantTracking && editingColorKeys.length > 0;
+  const editingSizeTotal = Object.values(editingSizeQuantities).reduce((sum, qty) => sum + (Number(qty) || 0), 0);
+  const editingColorTotal = Object.values(editingColorQuantities).reduce((sum, qty) => sum + (Number(qty) || 0), 0);
+  const editingVariantTotal = variantGrandTotal(editingVariantQuantities);
+  const editingQuantity = editingHasVariantTracking
+    ? editingVariantTotal
+    : editingHasSizeTracking || editingHasColorTracking
+    ? Math.max(editingSizeTotal, editingColorTotal)
+    : Number(editing?.quantity) || 0;
+  const editingPriceInPKR = editingCurrency === 'GBP' ? Number(editing?.sellingPrice || 0) * 360 : Number(editing?.sellingPrice || 0);
+  const editingGross = editingPriceInPKR * editingQuantity;
+  const editingDeductions = Number(editing?.shipmentCost || 0) + Number(editing?.extraCharges || 0);
+  const editingNetPayable = editingGross - editingDeductions;
 
   const filteredQty = orders.reduce((s, o) => s + (o.quantity || 0), 0);
   const filteredGross = orders.reduce((s, o) => s + ((o.sellingPrice || 0) * (o.quantity || 0)), 0);
@@ -790,72 +942,195 @@ function OrdersSection({ orders, overallOrders = [], isAdmin, canDelete, onCommi
     <div>
       {/* ── Edit modal ── */}
       {editing && (
-        <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.45)', zIndex: 1300, display: 'flex', alignItems: 'flex-start', justifyContent: 'center', padding: '60px 12px 12px', overflowY: 'auto' }}>
-          <div style={{ background: 'var(--surface)', borderRadius: 16, padding: '20px', width: '100%', maxWidth: 480, boxShadow: '0 8px 40px rgba(0,0,0,0.25)' }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 24 }}>
-              <h2 style={{ margin: 0, fontSize: '1.2rem', fontWeight: 800 }}>Edit Sale</h2>
-              <button className="btn btn-glass" style={{ width: 32, height: 32, padding: 0 }} onClick={() => setEditing(null)}>✕</button>
+        <div className="modal-overlay">
+          <div className="modal-box" style={{ maxWidth: '560px', width: 'min(96vw, 560px)', maxHeight: '85vh', overflow: 'hidden', display: 'flex', flexDirection: 'column' }}>
+            <div className="modal-head" style={{ padding: '12px 20px', borderBottom: '1px solid var(--border)', background: 'var(--surface)', flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12 }}>
+              <h3 style={{ fontSize: '16px', margin: 0, fontWeight: 700 }}>Edit Sale</h3>
+              <div style={{ display: 'flex', gap: 8, flexShrink: 0 }}>
+                {['PKR', 'GBP'].map(curr => (
+                  <button
+                    key={curr}
+                    type="button"
+                    style={{
+                      padding: '2px 8px', fontSize: '10px', fontWeight: 800, borderRadius: 4,
+                      background: editingCurrency === curr ? 'var(--pri-600)' : '#f0f0f0',
+                      color: editingCurrency === curr ? '#fff' : '#8c8c8c', border: 'none', cursor: 'pointer'
+                    }}
+                    onClick={() => setEditingCurrency(curr as 'PKR' | 'GBP')}
+                  >
+                    {curr}
+                  </button>
+                ))}
+                <button className="btn btn-sm" onClick={() => setEditing(null)} style={{ border: 'none', fontSize: '16px', marginLeft: 8 }}>✕</button>
+              </div>
             </div>
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
-              <label style={{ fontWeight: 600, fontSize: '0.85rem' }}>
-                Product
-                <div style={{ marginTop: 4, padding: '8px 12px', background: 'var(--surface-2)', borderRadius: 8, border: '1px solid var(--border)', color: 'var(--text-muted)' }}>{editing.productName}</div>
-              </label>
-              <label style={{ fontWeight: 600, fontSize: '0.85rem' }}>
-                Quantity Sold
-                <input type="text" inputMode="numeric" className="form-input" style={{ marginTop: 4, display: 'block', width: '100%' }}
-                  value={editing.quantity}
-                  onChange={e => setEditing(prev => ({ ...prev, quantity: e.target.value }))}
-                />
-              </label>
-              <label style={{ fontWeight: 600, fontSize: '0.85rem' }}>
-                Selling Price (Rs)
-                <input type="text" inputMode="numeric" className="form-input" style={{ marginTop: 4, display: 'block', width: '100%' }}
-                  value={editing.sellingPrice}
-                  onChange={e => setEditing(prev => ({ ...prev, sellingPrice: e.target.value }))}
-                />
-              </label>
-              <label style={{ fontWeight: 600, fontSize: '0.85rem' }}>
-                Shipment Cost (Rs)
-                <input type="text" inputMode="numeric" className="form-input" style={{ marginTop: 4, display: 'block', width: '100%' }}
-                  value={editing.shipmentCost}
-                  onChange={e => setEditing(prev => ({ ...prev, shipmentCost: e.target.value }))}
-                />
-              </label>
-              <label style={{ fontWeight: 600, fontSize: '0.85rem' }}>
-                Customer Name
-                <input type="text" className="form-input" style={{ marginTop: 4, display: 'block', width: '100%' }}
-                  value={editing.clientName}
-                  onChange={e => setEditing(prev => ({ ...prev, clientName: e.target.value }))}
-                />
-              </label>
-              <label style={{ fontWeight: 600, fontSize: '0.85rem' }}>
-                Date of Sale
-                <input type="date" className="form-input" style={{ marginTop: 4, display: 'block', width: '100%' }}
-                  value={editing.date ? editing.date.slice(0, 10) : ''}
-                  max={new Date().toISOString().slice(0, 10)}
-                  onChange={e => setEditing(prev => ({ ...prev, date: e.target.value }))}
-                />
-              </label>
-            </div>
-            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 10, marginTop: 24 }}>
-              {canDelete && (
-                <button className="btn" style={{ flex: '0 0 auto', background: 'var(--danger)', borderColor: 'var(--danger)', color: '#fff', fontWeight: 700, padding: '0 20px', height: 44 }}
-                  onClick={async () => { if (await confirmDialog('Delete this sale? This cannot be undone.')) { onDelete(editing.id); setEditing(null); } }}
-                ><svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{verticalAlign:'middle',marginRight:4}}><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>Delete</button>
-              )}
-              {!editing.orderReturned && (
-                <button className="btn" style={{ flex: '0 0 auto', background: '#f59e0b', borderColor: '#f59e0b', color: '#fff', fontWeight: 700, padding: '0 20px', height: 44 }}
-                  onClick={async () => { if (await confirmDialog('Mark this order as RETURNED? This will add stock back to inventory.')) { onReturn(editing.id); setEditing(null); } }}
-                >
-                  <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{verticalAlign:'middle',marginRight:6}}><polyline points="9 14 4 9 9 4"/><path d="M20 20v-7a4 4 0 0 0-4-4H4"/></svg>
-                  Return
-                </button>
-              )}
+            <div className="modal-body" style={{ padding: '16px 20px 12px' }}>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 18, paddingBottom: 8 }}>
+                <div className="input-group full-width">
+                  <label>Select Product</label>
+                  <div style={{ padding: '12px 14px', borderRadius: 10, border: '1px solid var(--border)', background: 'var(--surface-2)', color: 'var(--text-muted)' }}>
+                    {editing.productName}
+                  </div>
+                </div>
+
+                {editingHasVariantTracking && (
+                  <div className="input-group full-width">
+                    <VariantQuantityGrid
+                      colors={editingVariantColorKeys}
+                      sizes={editingVariantSizeKeys}
+                      values={editingVariantQuantities}
+                      maxValues={editingVariantMax}
+                      title="Sale by Color & Size"
+                      showRemainingLabel={true}
+                      onChange={setEditingVariantQuantities}
+                    />
+                  </div>
+                )}
+
+                {editingHasSizeTracking && (
+                  <div className="input-group full-width">
+                    <label>Quantity by Size</label>
+                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(120px, 1fr))', gap: 12 }}>
+                      {editingSizeKeys.map((size: string) => (
+                        <div key={size} style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+                          <label style={{ fontSize: 11, fontWeight: 700, color: 'var(--text-muted)' }}>{size} <span style={{ fontSize: 10 }}>(max: {selectedEditProduct?.sizeQuantitiesRemaining?.[size] ?? selectedEditProduct?.sizeQuantities?.[size] ?? '∞'})</span></label>
+                          <input
+                            type="number"
+                            min="0"
+                            value={editingSizeQuantities[size] || 0}
+                            onChange={e => setEditingSizeQuantities(curr => ({ ...curr, [size]: Math.max(0, parseInt(e.target.value) || 0) }))}
+                          />
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                {editingHasColorTracking && (
+                  <div className="input-group full-width">
+                    <label>Quantity by Color</label>
+                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(120px, 1fr))', gap: 12 }}>
+                      {editingColorKeys.map((color: string) => (
+                        <div key={color} style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+                          <label style={{ fontSize: 11, fontWeight: 700, color: 'var(--text-muted)' }}>{color} <span style={{ fontSize: 10 }}>(max: {selectedEditProduct?.colorQuantitiesRemaining?.[color] ?? selectedEditProduct?.colorQuantities?.[color] ?? '∞'})</span></label>
+                          <input
+                            type="number"
+                            min="0"
+                            value={editingColorQuantities[color] || 0}
+                            onChange={e => setEditingColorQuantities(curr => ({ ...curr, [color]: Math.max(0, parseInt(e.target.value) || 0) }))}
+                          />
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                <div className="form-grid-2">
+                  <div className="input-group">
+                    <label>Qty Sold</label>
+                    <input
+                      type="text"
+                      inputMode="numeric"
+                      value={editingHasVariantTracking || editingHasSizeTracking || editingHasColorTracking ? editingQuantity : editing.quantity}
+                      readOnly={editingHasVariantTracking || editingHasSizeTracking || editingHasColorTracking}
+                      onChange={e => setEditing(prev => ({ ...prev, quantity: e.target.value }))}
+                      style={(editingHasVariantTracking || editingHasSizeTracking || editingHasColorTracking) ? { background: 'var(--surface-2)', cursor: 'default' } : undefined}
+                    />
+                    {(editingHasVariantTracking || editingHasSizeTracking || editingHasColorTracking) && (
+                      <div style={{ fontSize: 11, marginTop: 4, color: 'var(--text-muted)' }}>Auto-calculated from variant quantities.</div>
+                    )}
+                  </div>
+                  <div className="input-group">
+                    <label>Selling Price ({editingCurrency})</label>
+                    <input
+                      type="text"
+                      inputMode="decimal"
+                      value={editing.sellingPrice}
+                      onChange={e => setEditing(prev => ({ ...prev, sellingPrice: e.target.value }))}
+                      style={{ fontWeight: 700 }}
+                    />
+                    {editingCurrency === 'GBP' && (
+                      <div style={{ fontSize: 10, color: 'var(--success)', marginTop: 4, fontWeight: 600 }}>
+                        ≈ Rs {editingPriceInPKR.toLocaleString()} (Rate: 360)
+                      </div>
+                    )}
+                  </div>
+                </div>
+
+                <div className="input-group">
+                  <label style={{ color: 'var(--danger)', fontWeight: 700 }}>Shipment Cost (PKR)</label>
+                  <input
+                    type="text"
+                    inputMode="decimal"
+                    placeholder="0"
+                    value={editing.shipmentCost}
+                    onChange={e => setEditing(prev => ({ ...prev, shipmentCost: e.target.value }))}
+                    style={{ border: '1px solid var(--danger)' }}
+                  />
+                </div>
+
+                <div className="input-group">
+                  <label style={{ color: 'var(--danger)', fontWeight: 700 }}>Extra Charges (PKR)</label>
+                  <input
+                    type="text"
+                    inputMode="decimal"
+                    placeholder="0"
+                    value={editing.extraCharges || 0}
+                    onChange={e => setEditing(prev => ({ ...prev, extraCharges: e.target.value }))}
+                    style={{ border: '1px solid var(--danger)' }}
+                  />
+                </div>
+
+                <div className="input-group full-width">
+                  <label>Date of Sale</label>
+                  <input
+                    type="date"
+                    value={editing.date ? editing.date.slice(0, 10) : ''}
+                    max={new Date().toISOString().slice(0, 10)}
+                    onChange={e => setEditing(prev => ({ ...prev, date: e.target.value }))}
+                  />
+                </div>
+
+                <div className="input-group full-width">
+                  <label>Customer Name</label>
+                  <input
+                    placeholder="Client name..."
+                    value={editing.clientName}
+                    onChange={e => setEditing(prev => ({ ...prev, clientName: e.target.value }))}
+                  />
+                </div>
+
+                <div style={{ marginTop: 6, padding: '12px 16px', background: '#f9fafb', borderRadius: 6, border: '1px solid #1890ff30' }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 4 }}>
+                    <span style={{ color: '#8c8c8c', fontSize: '11px', fontWeight: 700, textTransform: 'uppercase' }}>Gross Order Value:</span>
+                    <span style={{ fontSize: '14px', fontWeight: 800 }}>Rs {editingGross.toLocaleString()}</span>
+                  </div>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderTop: '1px solid #eee', paddingTop: 8 }}>
+                    <span style={{ color: '#000', fontSize: '12px', fontWeight: 700, textTransform: 'uppercase' }}>Final Net Payable (Rs):</span>
+                    <span style={{ fontSize: '18px', fontWeight: 900, color: 'var(--success)' }}>Rs {editingNetPayable.toLocaleString()}</span>
+                  </div>
+                </div>
+              </div>
+              <div style={{ display: 'flex', flexWrap: 'wrap', gap: 10, marginTop: 20, position: 'sticky', bottom: 0, background: 'linear-gradient(180deg, rgba(255,255,255,0) 0%, var(--surface) 24px)', paddingTop: 14 }}>
               <button className="btn btn-glass" style={{ flex: 1, height: 44 }} onClick={() => setEditing(null)}>Cancel</button>
               <button className="btn btn-primary" style={{ flex: 1, height: 44, fontWeight: 700 }}
-                onClick={() => { onEdit({ ...editing, quantity: Number(editing.quantity), sellingPrice: Number(editing.sellingPrice), shipmentCost: Number(editing.shipmentCost) }); setEditing(null); }}
+                onClick={() => {
+                  onEdit({
+                    ...editing,
+                    quantity: Number(editingHasVariantTracking || editingHasSizeTracking || editingHasColorTracking ? editingQuantity : editing.quantity),
+                    sellingPrice: Number(editing.sellingPrice),
+                    shipmentCost: Number(editing.shipmentCost),
+                    extraCharges: Number(editing.extraCharges || 0),
+                    variantQuantities: editingHasVariantTracking ? editingVariantQuantities : null,
+                    sizeQuantities: editingHasSizeTracking ? editingSizeQuantities : null,
+                    colorQuantities: editingHasColorTracking ? editingColorQuantities : null,
+                    productName: editing.productName,
+                    productId: editing.productId,
+                  });
+                  setEditing(null);
+                }}
               >Save Changes</button>
+            </div>
             </div>
           </div>
         </div>
@@ -884,21 +1159,49 @@ function OrdersSection({ orders, overallOrders = [], isAdmin, canDelete, onCommi
         </thead>
         <tbody>
           {orders.map((o, idx) => {
+            const soldQty = Number(o.quantity) || 0;
+            const returnedQty = Math.min(Number(o.returnQuantity) || 0, soldQty);
+            const refundedQty = Math.min(Number(o.refundQuantity) || 0, soldQty - returnedQty);
+            const fullyReturned = returnedQty > 0 ? returnedQty >= soldQty : Boolean(o.orderReturned);
+            const fullyRefunded = refundedQty > 0 && refundedQty >= (soldQty - returnedQty);
+            const hasAnyAction = returnedQty > 0 || refundedQty > 0;
+            const remainingQty = soldQty - returnedQty - refundedQty;
             const gross = o.sellingPrice * o.quantity;
             const shipment = o.shipmentCost || 0;
             const netAmount = gross - shipment;
             const totalCost = (o.costPrice || 0) * o.quantity;
             return (
-              <tr key={idx} style={{ cursor: 'pointer', opacity: o.orderReturned ? 0.6 : 1, background: o.orderReturned ? 'rgba(0,0,0,0.05)' : 'transparent' }}
-                onClick={() => setEditing({ ...o })}
+              <tr key={idx} style={{ cursor: 'pointer', opacity: hasAnyAction ? 0.6 : 1, background: hasAnyAction ? 'rgba(0,0,0,0.05)' : 'transparent' }}
+                onClick={() => openEdit(o)}
               >
                 <td className="text-muted" style={{ fontSize: '0.75rem' }}>
                   {new Date(o.date).toLocaleDateString()}
-                  {o.orderReturned && <div style={{ color: 'var(--danger)', fontWeight: 800, fontSize: '9px', marginTop: 2 }}>RETURNED</div>}
+                  {fullyReturned
+                    ? <div style={{ color: 'var(--danger)', fontWeight: 800, fontSize: '9px', marginTop: 2 }}>RETURNED</div>
+                    : fullyRefunded
+                      ? <div style={{ color: 'var(--danger)', fontWeight: 800, fontSize: '9px', marginTop: 2 }}>REFUNDED</div>
+                      : returnedQty > 0 && refundedQty > 0
+                        ? <div style={{ color: '#d97706', fontWeight: 800, fontSize: '9px', marginTop: 2 }}>RETURNED {returnedQty} · REFUNDED {refundedQty}</div>
+                        : returnedQty > 0
+                          ? <div style={{ color: '#d97706', fontWeight: 800, fontSize: '9px', marginTop: 2 }}>PARTIAL RETURN</div>
+                          : refundedQty > 0
+                            ? <div style={{ color: '#991b1b', fontWeight: 800, fontSize: '9px', marginTop: 2 }}>PARTIAL REFUND</div>
+                            : null
+                  }
                 </td>
                 <td className="font-bold" style={{ color: 'var(--pri-700)' }}>{o.storeName}</td>
                 <td className="font-bold">{o.productName}</td>
-                <td>{o.quantity}</td>
+                <td>
+                  {hasAnyAction
+                    ? <>
+                        <span style={{ textDecoration: 'line-through', opacity: 0.5 }}>{o.quantity}</span>
+                        {returnedQty > 0 && <span style={{ color: 'var(--warning,#f59e0b)', fontWeight: 700 }}> ↩ {returnedQty} returned</span>}
+                        {refundedQty > 0 && <span style={{ color: 'var(--danger)', fontWeight: 700 }}> 💸 {refundedQty} refunded</span>}
+                        {remainingQty > 0 && <span style={{ color: 'var(--text-muted)', fontWeight: 500 }}> ({remainingQty} left)</span>}
+                      </>
+                    : o.quantity
+                  }
+                </td>
                 <td className="font-bold">{Rs(gross)}</td>
                 <td style={{ color: 'var(--danger)', fontWeight: 600 }}>-{Rs(shipment)}</td>
                 <td className="font-bold" style={{ color: 'var(--text-main)' }}>{Rs(netAmount)}</td>
@@ -919,17 +1222,73 @@ function OrdersSection({ orders, overallOrders = [], isAdmin, canDelete, onCommi
                     <td className="font-bold" style={{ color: 'var(--success)', fontSize: '1.1rem' }}>{Rs(o.profit)}</td>
                   </>
                 )}
-                <td>
-                  {!o.orderReturned && (
-                    <button 
-                      className="btn btn-sm" 
-                      style={{ padding: '4px 8px', fontSize: '10px', background: '#f59e0b', color: '#fff', border: 'none' }}
-                      onClick={(e) => { e.stopPropagation(); onReturn(o.id); }}
-                      title="Mark as Returned"
+                <td onClick={e => e.stopPropagation()}>
+                  <div style={{
+                    display: 'grid',
+                    gridTemplateColumns: '1fr 1fr',
+                    gap: 5,
+                    minWidth: 160,
+                  }}>
+                    {/* Row 1: Edit + Delete */}
+                    <button
+                      className="btn btn-sm"
+                      style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 5, padding: '6px 10px', fontSize: 11, fontWeight: 700, background: 'rgba(99,102,241,0.1)', color: '#4f46e5', border: '1.5px solid rgba(99,102,241,0.25)', borderRadius: 8 }}
+                      onClick={(e) => { e.stopPropagation(); openEdit(o); }}
                     >
-                      ↩
+                      <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4Z"/></svg>
+                      Edit
                     </button>
-                  )}
+                    {canDelete ? (
+                      <button
+                        className="btn btn-sm"
+                        style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 5, padding: '6px 10px', fontSize: 11, fontWeight: 700, background: 'rgba(239,68,68,0.09)', color: '#dc2626', border: '1.5px solid rgba(239,68,68,0.22)', borderRadius: 8 }}
+                        onClick={async (e) => { e.stopPropagation(); if (await confirmDialog('Delete this sale? This action cannot be undone.')) { onDelete(o.id); } }}
+                      >
+                        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="M3 6h18"/><path d="M8 6V4a1 1 0 0 1 1-1h6a1 1 0 0 1 1 1v2"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/></svg>
+                        Delete
+                      </button>
+                    ) : <div />}
+
+                    {/* Row 2: Return/Undo + Refund/Undo */}
+                    {fullyReturned ? (
+                      <button
+                        className="btn btn-sm"
+                        style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 5, padding: '6px 10px', fontSize: 11, fontWeight: 700, background: 'rgba(107,114,128,0.1)', color: '#4b5563', border: '1.5px solid rgba(107,114,128,0.22)', borderRadius: 8, gridColumn: '1 / -1' }}
+                        onClick={async (e) => { e.stopPropagation(); if (await confirmDialog('Undo this return? The sale will be restored and stock will be deducted again.')) { onUndoReturn(o.id); } }}
+                      >
+                        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="M9 14l-4-4 4-4"/><path d="M5 10h9a6 6 0 0 1 0 12H8"/></svg>
+                        Undo Return
+                      </button>
+                    ) : refundedQty > 0 && !fullyReturned ? (
+                      <button
+                        className="btn btn-sm"
+                        style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 5, padding: '6px 10px', fontSize: 11, fontWeight: 700, background: 'rgba(107,114,128,0.1)', color: '#4b5563', border: '1.5px solid rgba(107,114,128,0.22)', borderRadius: 8, gridColumn: '1 / -1' }}
+                        onClick={async (e) => { e.stopPropagation(); if (await confirmDialog('Undo this refund? The sale financials will be restored to their pre-refund state.')) { onUndoRefund(o.id); } }}
+                      >
+                        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="M9 14l-4-4 4-4"/><path d="M5 10h9a6 6 0 0 1 0 12H8"/></svg>
+                        Undo Refund
+                      </button>
+                    ) : !fullyReturned && !fullyRefunded && remainingQty > 0 ? (
+                      <>
+                        <button
+                          className="btn btn-sm"
+                          style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 5, padding: '6px 10px', fontSize: 11, fontWeight: 700, background: 'rgba(245,158,11,0.1)', color: '#b45309', border: '1.5px solid rgba(245,158,11,0.28)', borderRadius: 8 }}
+                          onClick={(e) => { e.stopPropagation(); setReturningOrder(o); }}
+                        >
+                          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><polyline points="9 14 4 9 9 4"/><path d="M20 20v-7a4 4 0 0 0-4-4H4"/></svg>
+                          Return
+                        </button>
+                        <button
+                          className="btn btn-sm"
+                          style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 5, padding: '6px 10px', fontSize: 11, fontWeight: 700, background: 'rgba(220,38,38,0.09)', color: '#b91c1c', border: '1.5px solid rgba(220,38,38,0.22)', borderRadius: 8 }}
+                          onClick={(e) => { e.stopPropagation(); setRefundingOrder(o); }}
+                        >
+                          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><line x1="12" y1="1" x2="12" y2="23"/><path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/></svg>
+                          Refund
+                        </button>
+                      </>
+                    ) : null}
+                  </div>
                 </td>
               </tr>
             );
@@ -947,6 +1306,53 @@ function OrdersSection({ orders, overallOrders = [], isAdmin, canDelete, onCommi
           All partners totals: Items: {overallQty} — Gross: {Rs(overallGross)} — Profit: {Rs(overallProfit)}
         </div>
       </div>
+
+      {returningOrder && (
+        <SaleReturnModal
+          order={{
+            id: returningOrder.id,
+            productName: returningOrder.productName || returningOrder.product || '',
+            storeName: returningOrder.storeName || '',
+            quantity: returningOrder.quantity || 1,
+            sizeQuantities: returningOrder.sizeQuantities ?? null,
+            colorQuantities: returningOrder.colorQuantities ?? null,
+            variantQuantities: returningOrder.variantQuantities ?? null,
+            returnQuantity: returningOrder.returnQuantity ?? null,
+            returnSizeQuantities: returningOrder.returnSizeQuantities ?? null,
+            returnColorQuantities: returningOrder.returnColorQuantities ?? null,
+            returnVariantQuantities: returningOrder.returnVariantQuantities ?? null,
+            storeInventoryId: returningOrder.storeInventoryId ?? null,
+          }}
+          onConfirm={async (payload) => { await onReturn(payload); setReturningOrder(null); }}
+          onClose={() => setReturningOrder(null)}
+        />
+      )}
+
+      {refundingOrder && (
+        <SaleRefundModal
+          order={{
+            id: refundingOrder.id,
+            productName: refundingOrder.productName || refundingOrder.product || '',
+            storeName: refundingOrder.storeName || '',
+            quantity: refundingOrder.quantity || 1,
+            sellingPrice: refundingOrder.sellingPrice ?? 0,
+            costPrice: refundingOrder.costPrice ?? 0,
+            sizeQuantities: refundingOrder.sizeQuantities ?? null,
+            colorQuantities: refundingOrder.colorQuantities ?? null,
+            variantQuantities: refundingOrder.variantQuantities ?? null,
+            returnQuantity: refundingOrder.returnQuantity ?? null,
+            returnSizeQuantities: refundingOrder.returnSizeQuantities ?? null,
+            returnColorQuantities: refundingOrder.returnColorQuantities ?? null,
+            returnVariantQuantities: refundingOrder.returnVariantQuantities ?? null,
+            refundQuantity: refundingOrder.refundQuantity ?? null,
+            refundSizeQuantities: refundingOrder.refundSizeQuantities ?? null,
+            refundColorQuantities: refundingOrder.refundColorQuantities ?? null,
+            refundVariantQuantities: refundingOrder.refundVariantQuantities ?? null,
+          }}
+          onConfirm={async (payload) => { await onRefund(payload); setRefundingOrder(null); }}
+          onClose={() => setRefundingOrder(null)}
+        />
+      )}
     </div>
   );
 }
@@ -1141,13 +1547,18 @@ const [loading, setLoading] = useState<boolean>(true);
   const partnerAll = getFiltered(dashboardOrders.filter(o => o.storeName !== 'Direct'), partnerFilter);
   const partnerOrders = partnerAll.filter(o => partnerStore === 'All' ? true : o.storeName === partnerStore);
 
-  // Stats calculation
-  const totalGross = kpiOrders.reduce((s, o) => s + (o.sellingPrice * o.quantity || 0), 0);
+  // Stats calculation (effective revenue excludes returned & refunded units)
+  const totalGross = kpiOrders.reduce((s, o) => s + effectiveRevenue(o), 0);
   const totalShipping = kpiOrders.reduce((s, o) => s + (o.shipmentCost || 0), 0);
   const totalNetAmt = totalGross - totalShipping;
   const totalShopCut = kpiOrders.reduce((s, o) => s + (o.commissionAmount || 0), 0);
   const totalAdminTake = kpiOrders.reduce((s, o) => s + (o.adminTake || 0), 0);
-  const totalCostPrice = kpiOrders.reduce((s, o) => s + ((o.costPrice || 0) * (o.quantity || 1)), 0);
+  const totalCostPrice = kpiOrders.reduce((s, o) => {
+    const soldQty = Number(o.quantity) || 0;
+    const returnedQty = Math.min(Number(o.returnQuantity) || 0, soldQty);
+    const chargeableQty = soldQty - returnedQty; // returned items have no COGS; refunded items still do
+    return s + ((o.costPrice || 0) * chargeableQty);
+  }, 0);
   const totalNetProfit = kpiOrders.reduce((s, o) => s + (o.profit || 0), 0);
   const lowStock = data.inventory.filter(i => i.quantityAvailable <= (i.lowStockWarning || 5)).length;
   const ordersCount = kpiOrders.length;
@@ -1234,10 +1645,11 @@ const [loading, setLoading] = useState<boolean>(true);
     if (d < graphStart || d > graphNow) return;
 
     const monthKey = `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, '0')}`;
+    const effectiveUnits = effectiveQty(o);
     const qty = Number(o.quantity) || 0;
     monthlyQtyByKey[monthKey] = (monthlyQtyByKey[monthKey] || 0) + qty;
 
-    const revenue = (Number(o.sellingPrice) || 0) * qty;
+    const revenue = effectiveRevenue(o);
     const profit = Number(o.profit) || 0;
     monthlyRevenueByKey[monthKey] = (monthlyRevenueByKey[monthKey] || 0) + revenue;
     monthlyProfitByKey[monthKey] = (monthlyProfitByKey[monthKey] || 0) + profit;
@@ -1377,8 +1789,14 @@ const [loading, setLoading] = useState<boolean>(true);
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
+          productId:   order.productId,
           productName:  order.productName,
+          brandName:    order.brandName,
+          productType:  order.productType,
           quantity:     order.quantity,
+          sizeQuantities: order.sizeQuantities || null,
+          colorQuantities: order.colorQuantities || null,
+          variantQuantities: order.variantQuantities || null,
           extraQty:     order.extraQty || 0,
           sellingPrice: order.sellingPrice,
           shipmentCost: order.shipmentCost || 0,
@@ -1387,6 +1805,8 @@ const [loading, setLoading] = useState<boolean>(true);
           orderType:    order.type || 'Sale',
           occurredAt:   order.occurredAt || new Date().toISOString(),
           storeName:    order.storeName,
+          size:         order.size || null,
+          color:        order.color || null,
         }),
       });
       const result = await res.json();
@@ -1487,18 +1907,68 @@ const [loading, setLoading] = useState<boolean>(true);
     }
   };
 
-  const handleReturnOrder = async (id: string) => {
+  const handleReturnOrder = async (payload: { id: string; returnQuantity: number; returnReason: string; returnSizeQuantities?: Record<string,number>|null; returnColorQuantities?: Record<string,number>|null; returnVariantQuantities?: Record<string, Record<string, number>>|null }) => {
     try {
       const res = await fetch('/api/orders', {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ id, isReturn: true }),
+        body: JSON.stringify({ isReturn: true, ...payload }),
       });
       const result = await res.json();
       if (!res.ok) toast.error(result.error || 'Failed to process return');
       else toast.success('✅ Order marked as returned and stock updated');
     } catch (e: any) {
       toast.error(e?.message || 'Failed to process return');
+    } finally {
+      refresh();
+    }
+  };
+
+  const handleRefundOrder = async (payload: any) => {
+    try {
+      const res = await fetch('/api/orders', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ isRefund: true, ...payload }),
+      });
+      const result = await res.json();
+      if (!res.ok) toast.error(result.error || 'Failed to process refund');
+      else toast.success(`💸 Refund processed — $${(result.refundAmount || 0).toLocaleString()} issued`);
+    } catch (e: any) {
+      toast.error(e?.message || 'Failed to process refund');
+    } finally {
+      refresh();
+    }
+  };
+
+  const handleUndoRefund = async (id: string) => {
+    try {
+      const res = await fetch('/api/orders', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ isUndoRefund: true, id }),
+      });
+      const result = await res.json();
+      if (!res.ok) toast.error(result.error || 'Failed to undo refund');
+      else toast.success('↩ Refund undone — sale restored');
+    } catch (e: any) {
+      toast.error(e?.message || 'Failed to undo refund');
+    }
+    refresh();
+  };
+
+  const handleUndoReturn = async (id: string) => {
+    try {
+      const res = await fetch('/api/orders', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ isUndoReturn: true, id }),
+      });
+      const result = await res.json();
+      if (!res.ok) toast.error(result.error || 'Failed to undo return');
+      else toast.success('↩ Return undone — sale restored');
+    } catch (e: any) {
+      toast.error(e?.message || 'Failed to undo return');
     } finally {
       refresh();
     }
@@ -1515,12 +1985,14 @@ const [loading, setLoading] = useState<boolean>(true);
             <div className="kpi-trend">{isAdmin ? "Gross Sales" : "My Total Sales"}</div>
           </div>
 
-          <div className="kpi-card gray" onClick={() => setShowExpenseBreakdown(true)} style={{ cursor: 'pointer' }}>
-            <div className="kpi-icon">{IC.expense}</div>
-            <div className="kpi-label">Expenses</div>
-            <div className="kpi-value negative">-{Rs(totalExpenses)}</div>
-            <div className="kpi-trend">Expenses + COGS + shipping + commissions</div>
-          </div>
+          {isAdmin && (
+            <div className="kpi-card gray" onClick={() => setShowExpenseBreakdown(true)} style={{ cursor: 'pointer' }}>
+              <div className="kpi-icon">{IC.expense}</div>
+              <div className="kpi-label">Expenses</div>
+              <div className="kpi-value negative">-{Rs(totalExpenses)}</div>
+              <div className="kpi-trend">Expenses + COGS + shipping + commissions</div>
+            </div>
+          )}
 
           <div className="kpi-card blue">
             <div className="kpi-icon">{IC.profit}</div>
@@ -1609,6 +2081,8 @@ const [loading, setLoading] = useState<boolean>(true);
             // Pass dashboardOrders (all time, scope-filtered) so the modal applies its own period filter
             let ordersForReport = dashboardOrders;
             let storesForReport = data.stores || {};
+            // Store users should not see company expenses
+            let expensesForReport = data.expenses;
             if (!isSuperAdmin) {
               if (isAdmin) {
                 const managed = user.managedStores || [];
@@ -1619,9 +2093,10 @@ const [loading, setLoading] = useState<boolean>(true);
               } else if (user.role === 'store') {
                 storesForReport = { [user.storeName]: data.stores[user.storeName] };
                 ordersForReport = dashboardOrders.filter(o => o.storeName === user.storeName);
+                expensesForReport = []; // Store users should not see company expenses
               }
             }
-            setReportData({ ...data, orders: ordersForReport, stores: storesForReport });
+            setReportData({ ...data, orders: ordersForReport, stores: storesForReport, expenses: expensesForReport, isStoreView: user.role === 'store' });
             setShowReport(true);
           }}>
             <span style={{ marginRight: '8px', display: 'inline-flex' }}>{IC.report}</span> Generate Report
@@ -1676,6 +2151,8 @@ const [loading, setLoading] = useState<boolean>(true);
             <OrdersSection
               orders={partnerOrders.slice(-20).reverse()}
               overallOrders={partnerAll}
+              inventory={data.inventory}
+              storeInventory={data.storeInventory}
               isAdmin={isAdmin}
               onCommissionEdit={async (id, v) => {
                 try {
@@ -1704,11 +2181,20 @@ const [loading, setLoading] = useState<boolean>(true);
                       quantity: order.quantity,
                       sellingPrice: order.sellingPrice,
                       shipmentCost: order.shipmentCost,
+                      extraCharges: order.extraCharges || 0,
                       clientName: order.clientName,
                       occurredAt: order.date,
+                      sizeQuantities: order.sizeQuantities || null,
+                      colorQuantities: order.colorQuantities || null,
                     }),
                   });
-                  const result = await res.json();
+                  let result: any = null;
+                  try {
+                    result = await res.json();
+                  } catch (parseErr) {
+                    const text = await res.text();
+                    result = { error: text || `HTTP ${res.status}` };
+                  }
                   if (!res.ok) toast.error(result.error || 'Failed to update sale');
                   else refresh();
                 } catch (e: any) { toast.error(e?.message || 'Failed to update sale'); }
@@ -1720,12 +2206,21 @@ const [loading, setLoading] = useState<boolean>(true);
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({ id }),
                   });
-                  const result = await res.json();
+                  let result: any = null;
+                  try {
+                    result = await res.json();
+                  } catch (parseErr) {
+                    const text = await res.text();
+                    result = { error: text || `HTTP ${res.status}` };
+                  }
                   if (!res.ok) toast.error(result.error || 'Failed to delete sale');
                   else refresh();
                 } catch (e: any) { toast.error(e?.message || 'Failed to delete sale'); }
               }}
               onReturn={handleReturnOrder}
+              onRefund={handleRefundOrder}
+              onUndoReturn={handleUndoReturn}
+              onUndoRefund={handleUndoRefund}
               confirmDialog={confirmDialog}
             />
           </SectionCard>
@@ -1825,18 +2320,30 @@ const [loading, setLoading] = useState<boolean>(true);
                     .filter(([sName]) => (user.managedStores || []).includes(sName))
                     .flatMap(([, items]) =>
                       Object.values(items).map(si => ({
+                        productId: si.productId,
                         productName: si.productName,
+                        sizes: si.sizes,
+                        colors: si.colors,
                         quantityAvailable: si.quantityRemaining,
                         sellingPrice: si.storeSellingPrice,
                         ownerSupplyPrice: si.ownerSupplyPrice,
+                        sizeQuantitiesRemaining: si.sizeQuantitiesRemaining,
+                        colorQuantitiesRemaining: si.colorQuantitiesRemaining,
+                        variantQuantitiesRemaining: si.variantQuantitiesRemaining,
                       }))
                     )
                 : user.role === 'store'
                   ? Object.values(data.storeInventory[user.storeName] || {}).map(si => ({
+                      productId: si.productId,
                       productName: si.productName,
+                      sizes: si.sizes,
+                      colors: si.colors,
                       quantityAvailable: si.quantityRemaining,
                       sellingPrice: si.storeSellingPrice,
                       ownerSupplyPrice: si.ownerSupplyPrice,
+                      sizeQuantitiesRemaining: si.sizeQuantitiesRemaining,
+                      colorQuantitiesRemaining: si.colorQuantitiesRemaining,
+                      variantQuantitiesRemaining: si.variantQuantitiesRemaining,
                     }))
                   : data.inventory
             }

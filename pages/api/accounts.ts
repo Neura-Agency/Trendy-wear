@@ -14,10 +14,12 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     }
 
     if (req.method === 'PATCH') {
-      const { username, password, role, isActive } = req.body;
+      const { username, originalUsername, password, role, isActive } = req.body;
 
-      if (!username) {
-        return res.status(400).json({ error: 'Username is required' });
+      // We require at least the original username or the username to identify the account
+      const matchUsername = originalUsername || username;
+      if (!matchUsername) {
+        return res.status(400).json({ error: 'Username is required to identify account' });
       }
 
       // Build update object
@@ -40,27 +42,35 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
         updates.is_active = isActive;
       }
 
+      // If username is being changed, include it in updates (but use original to match)
+      if (username && username !== matchUsername) {
+        updates.username = username;
+      }
+
       if (Object.keys(updates).length === 0) {
         return res.status(400).json({ error: 'No valid fields to update' });
       }
 
-      // Update the account
-      const { data, error } = await supabaseAdmin
+      // Update the account using the matchUsername to locate the existing row
+      const resp = await supabaseAdmin
         .from(TABLES.ACCOUNTS)
         .update(updates)
-        .eq('username', username)
+        .eq('username', matchUsername)
         .select('id, username, role, is_active')
-        .single();
+        .maybeSingle();
+
+      const { data, error } = resp as any;
 
       if (error) {
         console.error('Error updating account:', error);
         return res.status(500).json({ error: 'Failed to update account' });
       }
 
-      return res.json({
-        success: true,
-        account: data
-      });
+      if (!data) {
+        return res.status(404).json({ error: 'Account not found' });
+      }
+
+      return res.json({ success: true, account: data });
     }
 
     return res.status(405).json({ error: 'Method not allowed' });

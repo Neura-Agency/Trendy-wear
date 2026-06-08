@@ -105,8 +105,16 @@ create table public.products (
   sizes text[] not null default '{}'::text[],
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now(),
-  constraint uq_products_name_brand unique (product_name, brand_name)
+  constraint uq_products_name_brand_type unique (product_name, brand_name, product_type)
 );
+
+alter table if exists public.products drop constraint if exists uq_products_name_brand;
+
+do $$ begin
+  alter table public.products
+    add constraint uq_products_name_brand_type unique (product_name, brand_name, product_type);
+exception when duplicate_object then null;
+end $$;
 
 drop trigger if exists trg_products_updated_at on public.products;
 create trigger trg_products_updated_at

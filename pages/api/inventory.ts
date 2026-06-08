@@ -1,6 +1,13 @@
 import { NextApiRequest, NextApiResponse } from 'next'
 import { supabaseAdmin, TABLES } from '../../lib/supabase'
-import { requireSession, toUserPayload } from '../../lib/api/session'
+import { requireSession, toUserPayload, isSuperAdmin } from '../../lib/api/session'
+import { buildDeterministicProductId, findMatchingProduct, resolveCanonicalBrand } from '../../lib/catalog'
+import {
+  mergeVariantQuantities,
+  normalizeFlatQuantities,
+  normalizeVariantQuantities,
+  rollupVariantQuantities,
+} from '../../lib/variantQuantities'
 
 export const config = {
   api: {
@@ -11,6 +18,32 @@ export const config = {
 }
 
 const PRODUCT_IMAGES_BUCKET = process.env.SUPABASE_PRODUCT_IMAGES_BUCKET || 'Trendy Wear'
+
+/** Safely parse a value that Supabase may return as a JSON string, plain object, or null */
+function parseJsonField(value: any): any {
+  if (value === null || value === undefined) return null
+  if (typeof value === 'string') {
+    try { return JSON.parse(value) } catch { return null }
+  }
+  return value // already an object
+}
+
+const mergeQuantities = (existingValue: any, incomingValue: any) => {
+  const current = existingValue && typeof existingValue === 'object' && !Array.isArray(existingValue) ? existingValue : {}
+  const incoming = incomingValue && typeof incomingValue === 'object' && !Array.isArray(incomingValue) ? incomingValue : {}
+  const merged: Record<string, number> = { ...current }
+
+  Object.entries(incoming).forEach(([key, value]) => {
+    merged[key] = (Number(merged[key]) || 0) + (Number(value) || 0)
+  })
+
+  return merged
+}
+
+const totalQuantityFrom = (value: any) => {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return 0
+  return Object.values(value).reduce((sum: number, qty: any) => sum + (Number(qty) || 0), 0)
+}
 
 function num(v: any): number {
   const n = Number(v)
@@ -61,10 +94,14 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
         itemId,
         quantity,
         sizeQuantities,
+        colorQuantities,
+        variantQuantities,
         pricePerPiece,
         picture,
         productId,
-        newProduct
+        newProduct,
+        forceNewBatch,
+        selectedBatchInventoryId
       } = req.body
 
       let finalProductId = productId
@@ -82,19 +119,75 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 
       // If creating a new product
       if (newProduct) {
-        const { data: product, error: productError } = await supabaseAdmin
+        const productName = String(newProduct.productName || '').trim()
+        const brandName = String(newProduct.brandName || '').trim()
+        const productType = newProduct.productType === 'Other'
+          ? String(newProduct.customType || '').trim()
+          : String(newProduct.productType || '').trim()
+
+        if (!productName) {
+          return res.status(400).json({ error: 'productName is required' })
+        }
+        if (!brandName) {
+          return res.status(400).json({ error: 'brandName is required' })
+        }
+        if (!productType) {
+          return res.status(400).json({ error: 'productType is required' })
+        }
+
+        const { data: existingProducts, error: existingProductsError } = await supabaseAdmin
           .from(TABLES.PRODUCTS)
-          .insert({
-            product_name: newProduct.productName,
-            brand_name: newProduct.brandName || null,
-            product_type: newProduct.productType,
-            price_per_piece: pricePerPiece,
-            colors: newProduct.colors || [],
-            sizes: newProduct.sizes || [],
-            product_image: productImageUrl
-          })
-          .select()
-          .single()
+          .select('*')
+
+        if (existingProductsError) {
+          console.error('Fetch products error:', existingProductsError)
+          return res.status(500).json({ error: 'Failed to fetch products' })
+        }
+
+        const canonicalBrand = resolveCanonicalBrand(existingProducts || [], brandName)
+        const existingProduct = findMatchingProduct(existingProducts || [], productName, canonicalBrand, productType)
+  const productId = buildDeterministicProductId(productName, canonicalBrand, productType)
+
+        let product
+        let productError
+
+        if (existingProduct?.id) {
+          const result = await supabaseAdmin
+            .from(TABLES.PRODUCTS)
+            .update({
+              product_name: productName,
+              brand_name: canonicalBrand,
+              product_type: productType,
+              price_per_piece: pricePerPiece,
+              colors: newProduct.colors || [],
+              sizes: newProduct.sizes || [],
+              product_image: productImageUrl
+            })
+            .eq('id', existingProduct.id)
+            .select()
+            .single()
+
+          product = result.data
+          productError = result.error
+        } else {
+          const result = await supabaseAdmin
+            .from(TABLES.PRODUCTS)
+            .insert({
+              id: productId,
+              product_name: productName,
+              brand_name: canonicalBrand,
+              product_type: productType,
+              price_per_piece: pricePerPiece,
+              colors: newProduct.colors || [],
+              sizes: newProduct.sizes || [],
+              product_image: productImageUrl
+            })
+            .select()
+            .single()
+
+          product = result.data
+          productError = result.error
+        }
 
         if (productError) {
           console.error('Product creation error:', productError)
@@ -110,27 +203,98 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
           .eq('id', finalProductId)
       }
 
-      // Calculate total quantity from size quantities if provided
-      let totalQuantity = quantity
-      if (sizeQuantities && typeof sizeQuantities === 'object') {
-        totalQuantity = Object.values(sizeQuantities).reduce((sum: number, qty: any) => sum + (Number(qty) || 0), 0)
+      const normalizedIncomingVariants = normalizeVariantQuantities(variantQuantities)
+      const incomingRollups = rollupVariantQuantities(normalizedIncomingVariants)
+      const effectiveSizeQuantities = incomingRollups.sizeQuantities ?? normalizeFlatQuantities(sizeQuantities)
+      const effectiveColorQuantities = incomingRollups.colorQuantities ?? normalizeFlatQuantities(colorQuantities)
+      const totalQuantity = Math.max(0, normalizedIncomingVariants ? incomingRollups.total : num(quantity))
+
+      // When forceNewBatch is true the caller explicitly wants a NEW inventory row.
+      // When selectedBatchInventoryId is provided, look up that specific batch row by id.
+      // Otherwise fall back to the original product_id lookup.
+      let existingInventory: any = null
+      let inventoryLookupError: any = null
+
+      if (!forceNewBatch) {
+        if (selectedBatchInventoryId) {
+          // Targeted lookup by inventory row id (user chose a specific batch)
+          const result = await supabaseAdmin
+            .from(TABLES.INVENTORY)
+            .select('*')
+            .eq('id', selectedBatchInventoryId)
+            .maybeSingle()
+          existingInventory = result.data
+          inventoryLookupError = result.error
+        } else {
+          // Default: find first row by product_id
+          const result = await supabaseAdmin
+            .from(TABLES.INVENTORY)
+            .select('*')
+            .eq('product_id', finalProductId)
+            .maybeSingle()
+          existingInventory = result.data
+          inventoryLookupError = result.error
+        }
       }
 
-      // Insert into inventory
-      const { data: inventoryItem, error: inventoryError } = await supabaseAdmin
-        .from(TABLES.INVENTORY)
-        .insert({
-          product_id: finalProductId,
-          batch_number: itemId,
-          cost_price: pricePerPiece,
-          selling_price: 0, // Default, can be set later
-          quantity_available: totalQuantity,
-          size_quantities: sizeQuantities && typeof sizeQuantities === 'object' ? sizeQuantities : null,
-          owner: user.username,
-          low_stock_warning: 5
-        })
-        .select()
-        .single()
+      if (inventoryLookupError) {
+        console.error('Inventory lookup error:', inventoryLookupError)
+        return res.status(500).json({ error: 'Failed to fetch existing inventory' })
+      }
+
+      const nextVariantQuantities = mergeVariantQuantities(existingInventory?.variant_quantities, normalizedIncomingVariants)
+      const variantRollups = rollupVariantQuantities(nextVariantQuantities)
+      const nextSizeQuantities = variantRollups.sizeQuantities ?? mergeQuantities(existingInventory?.size_quantities, effectiveSizeQuantities)
+      const nextColorQuantities = variantRollups.colorQuantities ?? mergeQuantities(existingInventory?.color_quantities, effectiveColorQuantities)
+
+      let inventoryItem
+      let inventoryError
+
+      if (existingInventory?.id) {
+        const updatePayload: Record<string, any> = {
+            batch_number: existingInventory.batch_number || itemId,
+            cost_price: pricePerPiece,
+            selling_price: Number(existingInventory.selling_price) || 0,
+            quantity_available: (Number(existingInventory.quantity_available) || 0) + totalQuantity,
+            owner: existingInventory.owner || user.username,
+            low_stock_warning: Number(existingInventory.low_stock_warning) || 5
+          }
+          if (nextVariantQuantities) updatePayload.variant_quantities = nextVariantQuantities
+          if (Object.keys(nextSizeQuantities).length) updatePayload.size_quantities = nextSizeQuantities
+          if (Object.keys(nextColorQuantities).length) updatePayload.color_quantities = nextColorQuantities
+
+        const result = await supabaseAdmin
+          .from(TABLES.INVENTORY)
+          .update(updatePayload)
+          .eq('id', existingInventory.id)
+          .select()
+          .single()
+
+        inventoryItem = result.data
+        inventoryError = result.error
+      } else {
+        const insertPayload: Record<string, any> = {
+            product_id: finalProductId,
+            batch_number: itemId,
+            cost_price: pricePerPiece,
+            selling_price: 0,
+            quantity_available: totalQuantity,
+            owner: user.username,
+            low_stock_warning: 5
+          }
+          if (normalizedIncomingVariants) insertPayload.variant_quantities = normalizedIncomingVariants
+          if (effectiveSizeQuantities && Object.keys(effectiveSizeQuantities).length) insertPayload.size_quantities = effectiveSizeQuantities
+          if (effectiveColorQuantities && Object.keys(effectiveColorQuantities).length) insertPayload.color_quantities = effectiveColorQuantities
+
+        const result = await supabaseAdmin
+          .from(TABLES.INVENTORY)
+          .insert(insertPayload)
+          .select()
+          .single()
+
+        inventoryItem = result.data
+        inventoryError = result.error
+      }
 
       if (inventoryError) {
         console.error('Inventory creation error:', inventoryError)
@@ -170,6 +334,30 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 
       const formattedInventory = (inventory || []).map((row: any) => {
         const p = row.products || {}
+        // Item ID: use the stored batch_number for rows that have one (new-batch rows get
+        // a unique random ID stored in batch_number at insert time). Fall back to deriving
+        // from the product UUID only when batch_number is absent or still an old legacy value.
+        const storedBatch: string = row.batch_number ?? ''
+        const productUuid: string = row.product_id ?? ''
+        const productDerivedId = productUuid
+          ? `ITEM-${productUuid.replace(/-/g, '').slice(0, 8).toUpperCase()}`
+          : ''
+        // A row is a "new batch" row when its stored batch_number differs from
+        // the product-derived ID — that means it was intentionally created with a
+        // fresh random ID and we must show that ID, not the product-derived one.
+        const derivedItemId = storedBatch && storedBatch !== productDerivedId
+          ? storedBatch
+          : (productDerivedId || storedBatch)
+        
+        // Compute correct quantityAvailable from variant rollup if variant quantities exist
+        let correctQty: number
+        const rawVariants = normalizeVariantQuantities(row.variant_quantities)
+        if (rawVariants) {
+          correctQty = rollupVariantQuantities(rawVariants).total
+        } else {
+          correctQty = Number(row.quantity_available) || 0
+        }
+        
         return {
           id: row.id,
           productId: row.product_id ?? null,
@@ -178,13 +366,16 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
           brand: p.brand_name ?? '',
           size: p.sizes ?? [],
           color: p.colors ?? [],
-          sizeQuantities: row.size_quantities ?? null,
+          sizeQuantities: parseJsonField(row.size_quantities),
+          colorQuantities: parseJsonField(row.color_quantities),
+          variantQuantities: parseJsonField(row.variant_quantities),
+          variantQuantitiesRemaining: parseJsonField(row.variant_quantities_remaining),
           otherVariants: { picture: p.product_image ?? null },
           productImage: p.product_image ?? null,
-          batchNumber: row.batch_number,
+          batchNumber: derivedItemId,
           costPrice: Number(row.cost_price) || 0,
           sellingPrice: Number(row.selling_price) || 0,
-          quantityAvailable: Number(row.quantity_available) || 0,
+          quantityAvailable: correctQty,
           lowStockWarning: Number(row.low_stock_warning) || 5,
           owner: row.owner ?? undefined
         }
@@ -206,6 +397,17 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       const inventoryUpdate: Record<string, any> = {}
       const productUpdate: Record<string, any> = {}
 
+      const { data: currentInventory, error: currentInventoryError } = await supabaseAdmin
+        .from(TABLES.INVENTORY)
+        .select('id, size_quantities, color_quantities, variant_quantities')
+        .eq('id', id)
+        .maybeSingle()
+
+      if (currentInventoryError) {
+        console.error('inventory lookup error:', currentInventoryError)
+        return res.status(500).json({ error: 'Failed to lookup inventory' })
+      }
+
       if (inventoryFields.batchNumber !== undefined) {
         const bn = String(inventoryFields.batchNumber).trim()
         if (!bn) return res.status(400).json({ error: 'batchNumber cannot be empty' })
@@ -219,6 +421,25 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
         inventoryUpdate.low_stock_warning = warn
       }
 
+      const rawVariantQuantities = inventoryFields.variantQuantities
+      if (rawVariantQuantities !== undefined) {
+        if (rawVariantQuantities === null) {
+          inventoryUpdate.variant_quantities = null
+          inventoryUpdate.size_quantities = null
+          inventoryUpdate.color_quantities = null
+        } else {
+          const normalized = normalizeVariantQuantities(rawVariantQuantities)
+          if (!normalized) return res.status(400).json({ error: 'variantQuantities must be a color-size object or null' })
+          const rollups = rollupVariantQuantities(normalized)
+          inventoryUpdate.variant_quantities = normalized
+          inventoryUpdate.size_quantities = rollups.sizeQuantities
+          inventoryUpdate.color_quantities = rollups.colorQuantities
+          // Always use the rollup total for quantity_available when updating variant quantities;
+          // any separately-provided quantityAvailable will be ignored to prevent inconsistency.
+          inventoryUpdate.quantity_available = rollups.total
+        }
+      }
+
       const rawSizeQuantities = inventoryFields.sizeQuantities
       if (rawSizeQuantities !== undefined) {
         if (rawSizeQuantities === null) {
@@ -228,15 +449,30 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
           Object.entries(rawSizeQuantities).forEach(([size, qty]) => {
             normalized[size] = Math.max(0, num(qty))
           })
-          const total = Object.values(normalized).reduce((sum, qty) => sum + num(qty), 0)
           inventoryUpdate.size_quantities = normalized
-          inventoryUpdate.quantity_available = total
         } else {
           return res.status(400).json({ error: 'sizeQuantities must be an object or null' })
         }
       }
 
-      if (inventoryFields.quantityAvailable !== undefined && inventoryUpdate.quantity_available === undefined) {
+      const rawColorQuantities = inventoryFields.colorQuantities
+      if (rawColorQuantities !== undefined) {
+        if (rawColorQuantities === null) {
+          inventoryUpdate.color_quantities = null
+        } else if (typeof rawColorQuantities === 'object') {
+          const normalized: Record<string, number> = {}
+          Object.entries(rawColorQuantities).forEach(([color, qty]) => {
+            normalized[color] = Math.max(0, num(qty))
+          })
+          inventoryUpdate.color_quantities = normalized
+        } else {
+          return res.status(400).json({ error: 'colorQuantities must be an object or null' })
+        }
+      }
+
+      // Only apply quantityAvailable if variant quantities are NOT being updated
+      // (otherwise the variant rollup total already set quantity_available above)
+      if (inventoryFields.quantityAvailable !== undefined && rawVariantQuantities === undefined) {
         inventoryUpdate.quantity_available = Math.max(0, num(inventoryFields.quantityAvailable))
       }
 
@@ -341,10 +577,43 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       return res.json({ success: true, inventory: updatedInventory, product: updatedProduct })
     }
 
+    if (req.method === 'DELETE') {
+      const { id } = req.body || {}
+
+      if (!isSuperAdmin(session)) {
+        return res.status(403).json({ error: 'Only super admins can delete inventory items' })
+      }
+
+      if (!id) {
+        return res.status(400).json({ error: 'id is required' })
+      }
+
+      const { error: storeInventoryError } = await supabaseAdmin
+        .from(TABLES.STORE_INVENTORY)
+        .delete()
+        .eq('inventory_id', id)
+
+      if (storeInventoryError) {
+        console.error('store inventory delete error:', storeInventoryError)
+        return res.status(500).json({ error: 'Failed to delete related store allocations' })
+      }
+
+      const { error: inventoryDeleteError } = await supabaseAdmin
+        .from(TABLES.INVENTORY)
+        .delete()
+        .eq('id', id)
+
+      if (inventoryDeleteError) {
+        console.error('inventory delete error:', inventoryDeleteError)
+        return res.status(500).json({ error: 'Failed to delete inventory item' })
+      }
+
+      return res.json({ success: true })
+    }
+
     return res.status(405).json({ error: 'Method not allowed' })
   } catch (error: any) {
     console.error('API error:', error)
     return res.status(500).json({ error: error.message || 'Internal server error' })
   }
 }
-
