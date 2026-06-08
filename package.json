@@ -15,7 +15,6 @@
     "migrate:dev": "npm run migrate && npm run dev"
   },
   "dependencies": {
-    "@next/swc-win32-x64-msvc": "^16.2.6",
     "@supabase/supabase-js": "^2.97.0",
     "bcryptjs": "^3.0.3",
     "cors": "2.8.5",
