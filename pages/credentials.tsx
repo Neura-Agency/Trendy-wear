@@ -187,7 +187,7 @@ export default function ShopCredentials({ user, onLogin }: PageProps) {
                                             </td>
                                             <td>
                                                 <button 
-                                                    className="edit-btn"
+                                                    className="btn btn-sm btn-secondary"
                                                     onClick={() => handleEdit(username, acc)}
                                                 >
                                                     Edit
@@ -264,14 +264,14 @@ export default function ShopCredentials({ user, onLogin }: PageProps) {
 
                         <div className="modal-actions">
                             <button 
-                                className="cancel-btn" 
+                                className="btn btn-ghost" 
                                 onClick={handleCancel}
                                 disabled={saving}
                             >
                                 Cancel
                             </button>
                             <button 
-                                className="save-btn" 
+                                className="btn btn-primary" 
                                 onClick={handleSave}
                                 disabled={saving}
                             >
@@ -309,22 +309,8 @@ export default function ShopCredentials({ user, onLogin }: PageProps) {
                     border-color: var(--acc-soft);
                     background: var(--acc-soft);
                 }
-                .edit-btn {
-                    padding: 6px 12px;
-                    border-radius: 6px;
-                    border: 1px solid var(--border);
-                    background: var(--surface-2);
-                    color: var(--text-body);
-                    font-size: 13px;
-                    font-weight: 500;
-                    cursor: pointer;
-                    transition: all 0.2s;
-                }
-                .edit-btn:hover {
-                    background: var(--surface-3);
-                    border-color: var(--acc);
-                    color: var(--acc);
-                }
+                /* .edit-btn removed — using .btn.btn-sm.btn-secondary now */
+                /* .cancel-btn and .save-btn removed — using .btn.btn-ghost and .btn.btn-primary now */
                 .modal-overlay {
                     position: fixed;
                     top: 0;
@@ -388,35 +374,9 @@ export default function ShopCredentials({ user, onLogin }: PageProps) {
                     justify-content: flex-end;
                     margin-top: 24px;
                 }
-                .cancel-btn,
-                .save-btn {
-                    padding: 10px 20px;
-                    border-radius: 6px;
-                    font-size: 14px;
-                    font-weight: 500;
-                    cursor: pointer;
-                    transition: all 0.2s;
-                    border: none;
-                }
-                .cancel-btn {
-                    background: #f3f4f6;
-                    color: #374151;
-                    border: 1px solid #d1d5db;
-                }
-                .cancel-btn:hover {
-                    background: #e5e7eb;
-                }
-                .save-btn {
-                    background: #4f46e5;
-                    color: white;
-                }
-                .save-btn:hover {
-                    opacity: 0.9;
-                }
-                .save-btn:disabled,
-                .cancel-btn:disabled {
-                    opacity: 0.5;
-                    cursor: not-allowed;
+                .modal-actions .btn {
+                    min-width: 130px;
+                    height: 42px;
                 }
             `}</style>
         </>

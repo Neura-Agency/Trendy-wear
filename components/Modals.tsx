@@ -3607,7 +3607,12 @@ export function ExpenseBreakdownModal({ expenses, orders, onClose }: ExpenseBrea
 
     // --- Section totals ---
     const expensesTotal   = expenses.reduce((s, e) => s + (Number(e.amount) || 0), 0);
-    const cogsTotal       = orders.reduce((s, o) => s + ((Number(o.costPrice) || 0) * (Number(o.quantity) || 1)), 0);
+    const cogsTotal       = orders.reduce((s, o) => {
+        const soldQty = Number(o.quantity) || 0;
+        const returnedQty = Math.min(Number(o.returnQuantity) || 0, soldQty);
+        const chargeableQty = soldQty - returnedQty;
+        return s + ((Number(o.costPrice) || 0) * chargeableQty);
+    }, 0);
     const shippingTotal   = orders.reduce((s, o) => s + (Number(o.shipmentCost) || 0), 0);
     const commissionTotal = orders.reduce((s, o) => s + (Number(o.commissionAmount) || 0), 0);
     const grandTotal      = expensesTotal + cogsTotal + shippingTotal + commissionTotal;
@@ -3703,19 +3708,25 @@ export function ExpenseBreakdownModal({ expenses, orders, onClose }: ExpenseBrea
                     )}
 
                     {/* ── 2. Cost of Goods Sold ── */}
-                    <SectionHeader title="Cost of Goods Sold (COGS)" total={cogsTotal} color="#eff6ff" sectionKey="cogs" itemCount={orders.length} />
+                    <SectionHeader title="Cost of Goods Sold (COGS)" total={cogsTotal} color="#eff6ff" sectionKey="cogs" itemCount={orders.filter(o => { const s = Number(o.quantity)||0; return s - Math.min(Number(o.returnQuantity)||0, s) > 0; }).length} />
                     {expandedSections.cogs && (
                         orders.length === 0 ? (
                             <div style={{ fontSize: 12, color: 'var(--text-muted)', padding: '8px 4px' }}>No orders in this period.</div>
                         ) : (
-                            orders.map((o, i) => (
-                                <LineItem
-                                    key={o.id || i}
-                                    label={o.productName}
-                                    sub={`${o.quantity} unit${o.quantity !== 1 ? 's' : ''} × Rs ${(Number(o.costPrice) || 0).toLocaleString()} · ${o.storeName}`}
-                                    amount={(Number(o.costPrice) || 0) * (Number(o.quantity) || 1)}
-                                />
-                            ))
+                            orders.map((o, i) => {
+                                const soldQty = Number(o.quantity) || 0;
+                                const returnedQty = Math.min(Number(o.returnQuantity) || 0, soldQty);
+                                const chargeableQty = soldQty - returnedQty;
+                                if (chargeableQty <= 0) return null; // fully returned — no COGS
+                                return (
+                                    <LineItem
+                                        key={o.id || i}
+                                        label={o.productName}
+                                        sub={`${chargeableQty} unit${chargeableQty !== 1 ? 's' : ''} × Rs ${(Number(o.costPrice) || 0).toLocaleString()} · ${o.storeName}`}
+                                        amount={(Number(o.costPrice) || 0) * chargeableQty}
+                                    />
+                                );
+                            })
                         )
                     )}
 

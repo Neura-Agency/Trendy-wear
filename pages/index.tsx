@@ -1536,7 +1536,12 @@ const [loading, setLoading] = useState<boolean>(true);
   const totalNetAmt = totalGross - totalShipping;
   const totalShopCut = kpiOrders.reduce((s, o) => s + (o.commissionAmount || 0), 0);
   const totalAdminTake = kpiOrders.reduce((s, o) => s + (o.adminTake || 0), 0);
-  const totalCostPrice = kpiOrders.reduce((s, o) => s + ((o.costPrice || 0) * (o.quantity || 1)), 0);
+  const totalCostPrice = kpiOrders.reduce((s, o) => {
+    const soldQty = Number(o.quantity) || 0;
+    const returnedQty = Math.min(Number(o.returnQuantity) || 0, soldQty);
+    const chargeableQty = soldQty - returnedQty; // returned items have no COGS; refunded items still do
+    return s + ((o.costPrice || 0) * chargeableQty);
+  }, 0);
   const totalNetProfit = kpiOrders.reduce((s, o) => s + (o.profit || 0), 0);
   const lowStock = data.inventory.filter(i => i.quantityAvailable <= (i.lowStockWarning || 5)).length;
   const ordersCount = kpiOrders.length;
