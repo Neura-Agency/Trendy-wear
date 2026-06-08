@@ -2096,7 +2096,7 @@ const [loading, setLoading] = useState<boolean>(true);
                 expensesForReport = []; // Store users should not see company expenses
               }
             }
-            setReportData({ ...data, orders: ordersForReport, stores: storesForReport, expenses: expensesForReport });
+            setReportData({ ...data, orders: ordersForReport, stores: storesForReport, expenses: expensesForReport, isStoreView: user.role === 'store' });
             setShowReport(true);
           }}>
             <span style={{ marginRight: '8px', display: 'inline-flex' }}>{IC.report}</span> Generate Report

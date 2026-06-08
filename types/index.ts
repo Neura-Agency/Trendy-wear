@@ -79,6 +79,8 @@ export interface Order {
   profit: number;
   paymentStatus?: boolean | null;
   orderReturned?: boolean;
+  returnQuantity?: number | null;
+  refundQuantity?: number | null;
   variantQuantities?: Record<string, Record<string, number>> | null;
 }
 

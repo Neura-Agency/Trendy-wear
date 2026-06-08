@@ -2816,6 +2816,9 @@ export function ReportModal({ data, onClose }: ReportModalProps) {
         return Math.ceil(((date.getTime() - yearStart.getTime()) / 86400000 + 1) / 7);
     }
 
+    // ── Store owner detection ────────────────────────────────────────────
+    const isStoreView = !!(data as any).isStoreView;
+
     // ── State ────────────────────────────────────────────────────────────
     const now = new Date();
     const [view, setView]             = useState<'products' | 'stores' | 'expenses'>('products');
@@ -2928,13 +2931,17 @@ export function ReportModal({ data, onClose }: ReportModalProps) {
             @page{size:A4 landscape;margin:12mm}`;
 
         const kpiHtml = `<div style="display:flex;gap:12px;flex-wrap:wrap;margin-bottom:20px">
-            ${[
+            ${(isStoreView ? [
+                ['Revenue', Rs(totRevenue), '#7c3aed'],
+                ['My Profit', Rs(totCommission), totCommission >= 0 ? '#16a34a' : '#dc2626'],
+                ['Orders', String(orders.length), '#2563eb'],
+            ] : [
                 ['Revenue', Rs(totRevenue), '#7c3aed'],
                 ['Gross Profit', Rs(grossProfit), grossProfit >= 0 ? '#16a34a' : '#dc2626'],
                 ['Partner Commissions', Rs(totCommission), '#ea580c'],
                 ['Total Expenses', Rs(totExpenses), '#dc2626'],
                 ['Net Profit', Rs(netProfit), netProfit >= 0 ? '#0891b2' : '#dc2626'],
-            ].map(([l, v, c]) => `<div style="flex:1;min-width:120px;border:1px solid #e2e8f0;border-top:3px solid ${c};border-radius:8px;padding:10px 12px">
+            ]).map(([l, v, c]) => `<div style="flex:1;min-width:120px;border:1px solid #e2e8f0;border-top:3px solid ${c};border-radius:8px;padding:10px 12px">
                 <div style="font-size:16px;font-weight:800;color:${c}">${v}</div>
                 <div style="font-size:10px;font-weight:600;color:#6b7280;margin-top:2px">${l}</div>
             </div>`).join('')}
@@ -2944,6 +2951,23 @@ export function ReportModal({ data, onClose }: ReportModalProps) {
 
         if (view === 'products') {
             const rows = sorted(prodRows) as typeof prodRows;
+            if (isStoreView) {
+                bodyHtml = `<h2>Product Performance</h2>
+                <table><thead><tr>
+                    <th>#</th><th>Product</th><th>Orders</th><th>Units Sold</th>
+                    <th>Revenue</th><th>My Profit</th>
+                </tr></thead><tbody>
+                ${rows.map((r, i) => `<tr>
+                    <td>${i+1}</td><td>${r.product}</td><td>${r.orders}</td><td>${r.qty}</td>
+                    <td>${Rs(r.revenue)}</td>
+                    <td style="color:#16a34a;font-weight:600">${Rs(r.commission)}</td>
+                </tr>`).join('')}
+                </tbody><tfoot><tr>
+                    <td></td><td>${prodRows.length} products</td><td>${orders.length}</td><td>${orders.reduce((s,o)=>s+o.quantity,0)}</td>
+                    <td>${Rs(totRevenue)}</td>
+                    <td style="color:#16a34a">${Rs(totCommission)}</td>
+                </tr></tfoot></table>`;
+            } else {
             bodyHtml = `<h2>Product Performance</h2>
             <table><thead><tr>
                 <th>#</th><th>Product</th><th>Orders</th><th>Units Sold</th>
@@ -2963,6 +2987,7 @@ export function ReportModal({ data, onClose }: ReportModalProps) {
                 <td style="color:${grossProfit>=0?'#16a34a':'#dc2626'}">${Rs(grossProfit)}</td>
                 <td>${totRevenue>0?pct(grossProfit/totRevenue*100):'—'}</td>
             </tr></tfoot></table>`;
+            }
 
         } else if (view === 'stores') {
             const rows = sorted(storeRows) as typeof storeRows;
@@ -3068,10 +3093,12 @@ export function ReportModal({ data, onClose }: ReportModalProps) {
                         <div style={{ display: 'flex', border: '1px solid var(--border)', borderRadius: 8, overflow: 'hidden', flexShrink: 0 }}>
                             {([
                                 { id: 'products', label: '📦 Products' },
-                                { id: 'stores',   label: '🏪 Stores' },
-                                { id: 'expenses', label: '💸 Expenses' },
+                                ...(!isStoreView ? [
+                                    { id: 'stores',   label: '🏪 Stores' },
+                                    { id: 'expenses', label: '💸 Expenses' },
+                                ] : []),
                             ] as const).map(v => (
-                                <button key={v.id} onClick={() => { setView(v.id); setSortKey(v.id === 'expenses' ? 'amount' : 'revenue'); setSortDir('desc'); }}
+                                <button key={v.id} onClick={() => { setView(v.id as 'stores' | 'products' | 'expenses'); setSortKey(v.id === 'expenses' ? 'amount' : 'revenue'); setSortDir('desc'); }}
                                     style={{ padding: '6px 14px', border: 'none', cursor: 'pointer', fontWeight: 700, fontSize: 12,
                                         background: view === v.id ? '#7c3aed' : 'transparent',
                                         color: view === v.id ? '#fff' : 'var(--text-muted)', transition: 'all 0.15s' }}>
@@ -3119,14 +3146,18 @@ export function ReportModal({ data, onClose }: ReportModalProps) {
 
                     {/* ── KPI strip ── */}
                     <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', marginBottom: 18 }}>
-                        {[
+                        {(isStoreView ? [
+                            { label: 'Revenue',           val: Rs(totRevenue),    color: '#7c3aed' },
+                            { label: 'My Profit',         val: Rs(totCommission), color: totCommission >= 0 ? '#16a34a' : '#dc2626' },
+                            { label: 'Orders',            val: String(orders.length), color: '#2563eb' },
+                        ] : [
                             { label: 'Revenue',           val: Rs(totRevenue),    color: '#7c3aed' },
                             { label: 'Gross Profit',      val: Rs(grossProfit),   color: grossProfit >= 0 ? '#16a34a' : '#dc2626' },
                             { label: 'Partner Commissions', val: Rs(totCommission), color: '#ea580c' },
                             { label: 'Total Expenses',    val: Rs(totExpenses),   color: '#dc2626' },
                             { label: 'Net Profit',        val: Rs(netProfit),     color: netProfit >= 0 ? '#0891b2' : '#dc2626' },
                             { label: 'Orders',            val: String(orders.length), color: '#2563eb' },
-                        ].map(k => (
+                        ]).map(k => (
                             <div key={k.label} style={{ flex: 1, minWidth: 110, padding: '10px 12px', border: '1px solid var(--border)', borderTop: `3px solid ${k.color}`, borderRadius: 9, background: 'var(--surface-1)' }}>
                                 <div style={{ fontSize: 16, fontWeight: 800, color: k.color }}>{k.val}</div>
                                 <div style={{ fontSize: 11, fontWeight: 600, color: 'var(--text-muted)', marginTop: 2 }}>{k.label}</div>
@@ -3145,15 +3176,16 @@ export function ReportModal({ data, onClose }: ReportModalProps) {
                                         <th style={TH('orders','Orders','right')} onClick={() => toggleSort('orders')}>Orders{sortIcon('orders')}</th>
                                         <th style={TH('qty','Units','right')} onClick={() => toggleSort('qty')}>Units Sold{sortIcon('qty')}</th>
                                         <th style={TH('revenue','Revenue','right')} onClick={() => toggleSort('revenue')}>Revenue{sortIcon('revenue')}</th>
-                                        <th style={TH('cogs','COGS','right')} onClick={() => toggleSort('cogs')}>COGS{sortIcon('cogs')}</th>
-                                        <th style={{ ...TH('commission','Partner\'s Share','right'), color: sortKey === 'commission' ? '#ea580c' : '#374151' }} onClick={() => toggleSort('commission')}>Partner's Share{sortIcon('commission')}</th>
-                                        <th style={TH('gp','Gross Profit','right')} onClick={() => toggleSort('gp')}>Gross Profit{sortIcon('gp')}</th>
-                                        <th style={{ ...TH('margin','Margin','right'), cursor: 'default' }}>Margin %</th>
+                                        {!isStoreView && <th style={TH('cogs','COGS','right')} onClick={() => toggleSort('cogs')}>COGS{sortIcon('cogs')}</th>}
+                                        {!isStoreView && <th style={{ ...TH('commission','Partner\'s Share','right'), color: sortKey === 'commission' ? '#ea580c' : '#374151' }} onClick={() => toggleSort('commission')}>Partner's Share{sortIcon('commission')}</th>}
+                                        {isStoreView && <th style={{ ...TH('commission','My Profit','right'), color: sortKey === 'commission' ? '#16a34a' : '#374151' }} onClick={() => toggleSort('commission')}>My Profit{sortIcon('commission')}</th>}
+                                        {!isStoreView && <th style={TH('gp','Gross Profit','right')} onClick={() => toggleSort('gp')}>Gross Profit{sortIcon('gp')}</th>}
+                                        {!isStoreView && <th style={{ ...TH('margin','Margin','right'), cursor: 'default' }}>Margin %</th>}
                                     </tr>
                                 </thead>
                                 <tbody>
                                     {sorted(prodRows).length === 0 && (
-                                        <tr><td colSpan={9} style={{ textAlign: 'center', padding: 32, color: '#9ca3af' }}>No orders for selected period</td></tr>
+                                        <tr><td colSpan={isStoreView ? 6 : 9} style={{ textAlign: 'center', padding: 32, color: '#9ca3af' }}>No orders for selected period</td></tr>
                                     )}
                                     {sorted(prodRows).map((r, i) => (
                                         <tr key={r.product}>
@@ -3162,12 +3194,12 @@ export function ReportModal({ data, onClose }: ReportModalProps) {
                                             <td style={TD('right', i%2===1)}>{r.orders}</td>
                                             <td style={TD('right', i%2===1)}>{r.qty}</td>
                                             <td style={{ ...TD('right', i%2===1), fontWeight: 600 }}>{Rs(r.revenue)}</td>
-                                            <td style={TD('right', i%2===1)}>{Rs(r.cogs)}</td>
-                                            <td style={{ ...TD('right', i%2===1), color: '#ea580c', fontWeight: 600 }}>{Rs(r.commission)}</td>
-                                            <td style={{ ...TD('right', i%2===1), fontWeight: 700, color: r.gp >= 0 ? '#16a34a' : '#dc2626' }}>{Rs(r.gp)}</td>
-                                            <td style={{ ...TD('right', i%2===1), color: r.revenue > 0 && r.gp / r.revenue > 0.25 ? '#16a34a' : '#ea580c' }}>
+                                            {!isStoreView && <td style={TD('right', i%2===1)}>{Rs(r.cogs)}</td>}
+                                            <td style={{ ...TD('right', i%2===1), color: isStoreView ? '#16a34a' : '#ea580c', fontWeight: 600 }}>{Rs(r.commission)}</td>
+                                            {!isStoreView && <td style={{ ...TD('right', i%2===1), fontWeight: 700, color: r.gp >= 0 ? '#16a34a' : '#dc2626' }}>{Rs(r.gp)}</td>}
+                                            {!isStoreView && <td style={{ ...TD('right', i%2===1), color: r.revenue > 0 && r.gp / r.revenue > 0.25 ? '#16a34a' : '#ea580c' }}>
                                                 {r.revenue > 0 ? pct(r.gp / r.revenue * 100) : '—'}
-                                            </td>
+                                            </td>}
                                         </tr>
                                     ))}
                                 </tbody>
@@ -3178,10 +3210,10 @@ export function ReportModal({ data, onClose }: ReportModalProps) {
                                         <td style={{ ...TFoot, textAlign: 'right' }}>{orders.length}</td>
                                         <td style={{ ...TFoot, textAlign: 'right' }}>{orders.reduce((s, o) => s + (o.quantity || 0), 0)}</td>
                                         <td style={{ ...TFoot, textAlign: 'right' }}>{Rs(totRevenue)}</td>
-                                        <td style={{ ...TFoot, textAlign: 'right' }}>{Rs(totCOGS)}</td>
-                                        <td style={{ ...TFoot, textAlign: 'right', color: '#ea580c' }}>{Rs(totCommission)}</td>
-                                        <td style={{ ...TFoot, textAlign: 'right', color: grossProfit >= 0 ? '#16a34a' : '#dc2626' }}>{Rs(grossProfit)}</td>
-                                        <td style={{ ...TFoot, textAlign: 'right' }}>{totRevenue > 0 ? pct(grossProfit / totRevenue * 100) : '—'}</td>
+                                        {!isStoreView && <td style={{ ...TFoot, textAlign: 'right' }}>{Rs(totCOGS)}</td>}
+                                        <td style={{ ...TFoot, textAlign: 'right', color: isStoreView ? '#16a34a' : '#ea580c' }}>{Rs(totCommission)}</td>
+                                        {!isStoreView && <td style={{ ...TFoot, textAlign: 'right', color: grossProfit >= 0 ? '#16a34a' : '#dc2626' }}>{Rs(grossProfit)}</td>}
+                                        {!isStoreView && <td style={{ ...TFoot, textAlign: 'right' }}>{totRevenue > 0 ? pct(grossProfit / totRevenue * 100) : '—'}</td>}
                                     </tr>
                                 </tfoot>
                             </table>
