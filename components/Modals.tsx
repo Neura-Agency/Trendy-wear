@@ -334,7 +334,7 @@ function CatalogInput({
 }
 
 
-export function AddInventoryModal({ onSave, onClose, stores, products, hiddenProductTypes: hiddenProductTypesProp, onHideProductType }: AddInventoryModalProps) {
+export function AddInventoryModal({ onSave, onClose, stores, products, inventory: warehouseInventory, hiddenProductTypes: hiddenProductTypesProp, onHideProductType }: AddInventoryModalProps) {
     const { toast } = usePopup();
 
     const [item, setItem] = useState({
@@ -355,6 +355,17 @@ export function AddInventoryModal({ onSave, onClose, stores, products, hiddenPro
     const [allotedStores, setAllotedStores] = useState<string[]>([]);
     const [savingCatalog, setSavingCatalog] = useState(false);
     const [resolvedItemId, setResolvedItemId] = useState('');
+    // forceNewBatch: when true a fresh random UUID is generated so same product
+    // gets a new inventory row at a different cost price (new stock batch)
+    const [forceNewBatch, setForceNewBatch] = useState(false);
+    const [newBatchId, setNewBatchId] = useState('');
+
+    const generateNewBatchId = () => {
+        // Generate a random 8-char hex segment mimicking buildDeterministicProductId format
+        const hex = Array.from({ length: 8 }, () => Math.floor(Math.random() * 16).toString(16)).join('');
+        return `ITEM-${hex.toUpperCase()}`;
+    };
+
     const clearForm = () => {
         setItem({
             quantity: 1,
@@ -372,6 +383,8 @@ export function AddInventoryModal({ onSave, onClose, stores, products, hiddenPro
         setAllotedStores([]);
         setSavingCatalog(false);
         setResolvedItemId('');
+        setForceNewBatch(false);
+        setNewBatchId('');
     };
     const [showDeleteProductModal, setShowDeleteProductModal] = useState(false);
     const [deletingProduct, setDeletingProduct] = useState<Product | null>(null);
@@ -413,6 +426,8 @@ export function AddInventoryModal({ onSave, onClose, stores, products, hiddenPro
 
         if (!productName || !brandName || !resolvedProductType) {
             setResolvedItemId('');
+            setForceNewBatch(false);
+            setNewBatchId('');
             return;
         }
 
@@ -420,6 +435,9 @@ export function AddInventoryModal({ onSave, onClose, stores, products, hiddenPro
         const existingProduct = findMatchingProduct(catalogProducts, productName, canonicalBrand, resolvedProductType);
         const stableUuid = existingProduct?.id || buildDeterministicProductId(productName, canonicalBrand, resolvedProductType);
 
+        // Reset new-batch mode whenever the product combo changes
+        setForceNewBatch(false);
+        setNewBatchId('');
         setResolvedItemId(formatItemCodeFromUuid(stableUuid));
     }, [catalogProducts, newProduct.productName, newProduct.brandName, newProduct.productType, newProduct.customType, resolvedProductType]);
 
@@ -835,9 +853,12 @@ export function AddInventoryModal({ onSave, onClose, stores, products, hiddenPro
         const normalizedColorQuantities = normalizedVariantQuantities ? variantRollups.colorQuantities : (Object.keys(item.colorQuantities).length ? item.colorQuantities : null);
         try {
             const savedProduct = await uploadCatalogProduct();
-            // Derive Item ID from the product's real UUID (same format as the dropdown)
-            // so warehouse table and dropdown always show the same ID.
-            const derivedItemId = `ITEM-${savedProduct.id.replace(/-/g, '').slice(0, 8).toUpperCase()}`;
+            // If user requested a new batch (different cost price for same product),
+            // use the freshly generated random Item ID so a NEW inventory row is created.
+            // Otherwise use the deterministic product-derived Item ID (existing row reuse).
+            const derivedItemId = forceNewBatch && newBatchId
+                ? newBatchId
+                : `ITEM-${savedProduct.id.replace(/-/g, '').slice(0, 8).toUpperCase()}`;
 
             onSave({
                 itemId: derivedItemId,
@@ -849,6 +870,7 @@ export function AddInventoryModal({ onSave, onClose, stores, products, hiddenPro
                 colorQuantities: normalizedColorQuantities,
                 productId: savedProduct.id,
                 allotedStores,
+                forceNewBatch: forceNewBatch && !!newBatchId,
             });
 
             onClose();
@@ -936,13 +958,65 @@ export function AddInventoryModal({ onSave, onClose, stores, products, hiddenPro
                                 <label>Item ID</label>
                                 <input
                                     readOnly
-                                    value={resolvedItemId}
+                                    value={forceNewBatch ? newBatchId : resolvedItemId}
                                     placeholder="Select product, brand, and type"
-                                    style={{ background: 'var(--surface-2)', cursor: 'default' }}
+                                    style={{ background: 'var(--surface-2)', cursor: 'default', fontFamily: 'monospace', fontWeight: 700 }}
                                 />
-                                <div style={{ fontSize: 11, marginTop: 4, color: 'var(--text-muted)' }}>
-                                    {matchedExistingProduct ? 'Existing product row will be reused.' : 'A stable ID is generated for this product combo.'}
-                                </div>
+                                {/* Show new-batch notice when existing product combo is detected */}
+                                {matchedExistingProduct && !forceNewBatch && (
+                                    <div style={{ marginTop: 8, padding: '10px 14px', borderRadius: 10, background: '#fffbeb', border: '1.5px solid #fde68a', display: 'flex', flexDirection: 'column', gap: 8 }}>
+                                        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                                            <span style={{ fontSize: 15 }}>⚠️</span>
+                                            <div>
+                                                <div style={{ fontSize: 12, fontWeight: 800, color: '#92400e' }}>Existing stock found for this product</div>
+                                                <div style={{ fontSize: 11, color: '#78350f', marginTop: 2 }}>Same row will be updated. Got new stock at a different price? Generate a new batch instead.</div>
+                                            </div>
+                                        </div>
+                                        <div style={{ display: 'flex', gap: 8 }}>
+                                            <button
+                                                type="button"
+                                                className="btn btn-sm btn-glass"
+                                                style={{ fontSize: 11, fontWeight: 700, flex: 1 }}
+                                                onClick={() => { /* keep default — do nothing, existing row reused */ }}
+                                            >
+                                                ↻ Update Existing Batch
+                                            </button>
+                                            <button
+                                                type="button"
+                                                className="btn btn-sm"
+                                                style={{ fontSize: 11, fontWeight: 700, flex: 1, background: 'linear-gradient(135deg,#7c3aed,#6d28d9)', color: '#fff', border: 'none', boxShadow: '0 4px 12px rgba(109,40,217,0.25)' }}
+                                                onClick={() => {
+                                                    const id = generateNewBatchId();
+                                                    setNewBatchId(id);
+                                                    setForceNewBatch(true);
+                                                }}
+                                            >
+                                                ✦ New Stock (New Price)
+                                            </button>
+                                        </div>
+                                    </div>
+                                )}
+                                {/* New batch confirmed notice */}
+                                {forceNewBatch && newBatchId && (
+                                    <div style={{ marginTop: 8, padding: '10px 14px', borderRadius: 10, background: '#f0fdf4', border: '1.5px solid #86efac', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10 }}>
+                                        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                                            <span style={{ fontSize: 15 }}>✦</span>
+                                            <div>
+                                                <div style={{ fontSize: 12, fontWeight: 800, color: '#166534' }}>New batch — fresh Item ID generated</div>
+                                                <div style={{ fontSize: 11, color: '#14532d', marginTop: 2 }}>A new inventory row will be created at the cost price you enter below.</div>
+                                            </div>
+                                        </div>
+                                        <button
+                                            type="button"
+                                            title="Cancel new batch — revert to updating existing stock"
+                                            onClick={() => { setForceNewBatch(false); setNewBatchId(''); }}
+                                            style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#166534', fontSize: 16, flexShrink: 0 }}
+                                        >✕</button>
+                                    </div>
+                                )}
+                                {!matchedExistingProduct && !forceNewBatch && resolvedItemId && (
+                                    <div style={{ fontSize: 11, marginTop: 4, color: 'var(--text-muted)' }}>A stable ID is generated for this new product combo.</div>
+                                )}
                             </div>
                         </div>
 

@@ -99,7 +99,8 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
         pricePerPiece,
         picture,
         productId,
-        newProduct
+        newProduct,
+        forceNewBatch
       } = req.body
 
       let finalProductId = productId
@@ -207,11 +208,21 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       const effectiveColorQuantities = incomingRollups.colorQuantities ?? normalizeFlatQuantities(colorQuantities)
       const totalQuantity = Math.max(0, normalizedIncomingVariants ? incomingRollups.total : num(quantity))
 
-      const { data: existingInventory, error: inventoryLookupError } = await supabaseAdmin
-        .from(TABLES.INVENTORY)
-        .select('*')
-        .eq('product_id', finalProductId)
-        .maybeSingle()
+      // When forceNewBatch is true the caller explicitly wants a NEW inventory row
+      // for this product (e.g. same product restocked at a different cost price).
+      // Skip the existing-inventory lookup so we always INSERT below.
+      let existingInventory: any = null
+      let inventoryLookupError: any = null
+
+      if (!forceNewBatch) {
+        const result = await supabaseAdmin
+          .from(TABLES.INVENTORY)
+          .select('*')
+          .eq('product_id', finalProductId)
+          .maybeSingle()
+        existingInventory = result.data
+        inventoryLookupError = result.error
+      }
 
       if (inventoryLookupError) {
         console.error('Inventory lookup error:', inventoryLookupError)
@@ -310,12 +321,20 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 
       const formattedInventory = (inventory || []).map((row: any) => {
         const p = row.products || {}
-        // Item ID is ALWAYS derived from the product UUID — never from the stored batch_number.
-        // This auto-corrects all old records (ITEM-6P2FOU etc.) without touching the DB.
+        // Item ID: use the stored batch_number for rows that have one (new-batch rows get
+        // a unique random ID stored in batch_number at insert time). Fall back to deriving
+        // from the product UUID only when batch_number is absent or still an old legacy value.
+        const storedBatch: string = row.batch_number ?? ''
         const productUuid: string = row.product_id ?? ''
-        const derivedItemId = productUuid
+        const productDerivedId = productUuid
           ? `ITEM-${productUuid.replace(/-/g, '').slice(0, 8).toUpperCase()}`
-          : row.batch_number // fallback for orphaned rows with no product_id
+          : ''
+        // A row is a "new batch" row when its stored batch_number differs from
+        // the product-derived ID — that means it was intentionally created with a
+        // fresh random ID and we must show that ID, not the product-derived one.
+        const derivedItemId = storedBatch && storedBatch !== productDerivedId
+          ? storedBatch
+          : (productDerivedId || storedBatch)
         
         // Compute correct quantityAvailable from variant rollup if variant quantities exist
         let correctQty: number

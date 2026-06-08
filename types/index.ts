@@ -262,6 +262,7 @@ export interface AddInventoryModalProps extends ModalProps {
   onSave: (inventory: any) => void;
   stores: string[];
   products: Product[];
+  inventory?: InventoryItem[];
   hiddenProductTypes?: string[];
   onHideProductType?: (typeName: string) => void;
 }
