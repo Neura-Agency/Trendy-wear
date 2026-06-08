@@ -9,8 +9,6 @@ npm install
 npm run dev
 ```
 
-Open http://localhost:3000
-
 Features implemented as a runnable demo:
 - Single-page dashboard with admin/store login
 - Orders, purchases, inventory, expenses APIs
