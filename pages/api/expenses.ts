@@ -16,8 +16,8 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     if (req.method === 'GET') {
       const { data, error } = await supabaseAdmin
         .from(TABLES.EXPENSES)
-        .select('id, title, amount, category, occurred_at, created_at')
-        .order('occurred_at', { ascending: false })
+        .select('id, title, amount, category, expense_date, notes, created_at, paid_by_owner_id, from_acc, expense_type')
+        .order('expense_date', { ascending: false })
 
       if (error) throw error
 
@@ -26,13 +26,13 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
         title: r.title,
         amount: num(r.amount),
         category: r.category || 'Misc',
-        expense_date: r.occurred_at ? r.occurred_at.slice(0, 10) : '',
-        notes: null,
+        expense_date: r.expense_date ? r.expense_date.slice(0, 10) : '',
+        notes: r.notes || null,
         created_at: r.created_at,
-        paid_by_owner_id: null,
+        paid_by_owner_id: r.paid_by_owner_id || null,
         paid_by_owner_name: null,
-        from_acc: null,
-        expense_type: null,
+        from_acc: r.from_acc || null,
+        expense_type: r.expense_type || null,
       }))
 
       return res.status(200).json({ expenses })
@@ -44,7 +44,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
         return res.status(403).json({ error: 'Only super-admins can add expenses' })
       }
 
-      const { title, amount, category } = req.body || {}
+      const { title, amount, category, expense_date, notes, paid_by_owner_id, from_acc, expense_type } = req.body || {}
 
       if (!title || typeof title !== 'string' || !title.trim()) {
         return res.status(400).json({ error: 'Title is required' })
@@ -61,8 +61,13 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
           title: title.trim(),
           amount: amt,
           category: (category || 'Misc').trim(),
+          expense_date: expense_date || undefined,
+          notes: notes || null,
+          paid_by_owner_id: paid_by_owner_id || null,
+          from_acc: from_acc || null,
+          expense_type: expense_type || 'operational',
         })
-        .select('id, title, amount, category, occurred_at, created_at')
+        .select('id, title, amount, category, expense_date, notes, created_at, paid_by_owner_id, from_acc, expense_type')
         .single()
 
       if (error) throw error
@@ -73,12 +78,12 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
           title: inserted.title,
           amount: num(inserted.amount),
           category: inserted.category || 'Misc',
-          expense_date: inserted.occurred_at ? inserted.occurred_at.slice(0, 10) : '',
-          notes: null,
+          expense_date: inserted.expense_date ? inserted.expense_date.slice(0, 10) : '',
+          notes: inserted.notes || null,
           created_at: inserted.created_at,
-          paid_by_owner_id: null,
-          from_acc: null,
-          expense_type: null,
+          paid_by_owner_id: inserted.paid_by_owner_id || null,
+          from_acc: inserted.from_acc || null,
+          expense_type: inserted.expense_type || null,
         },
       })
     }
@@ -89,19 +94,24 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
         return res.status(403).json({ error: 'Only super-admins can edit expenses' })
       }
 
-      const { id, title, amount, category } = req.body || {}
+      const { id, title, amount, category, expense_date, notes, paid_by_owner_id, from_acc, expense_type } = req.body || {}
       if (!id) return res.status(400).json({ error: 'Expense id is required' })
 
       const updates: Record<string, any> = {}
-      if (title !== undefined)    updates.title    = String(title).trim()
-      if (amount !== undefined)   updates.amount   = num(amount)
-      if (category !== undefined) updates.category = String(category).trim()
+      if (title !== undefined)           updates.title           = String(title).trim()
+      if (amount !== undefined)          updates.amount          = num(amount)
+      if (category !== undefined)        updates.category        = String(category).trim()
+      if (expense_date !== undefined)    updates.expense_date    = expense_date
+      if (notes !== undefined)           updates.notes           = notes || null
+      if (paid_by_owner_id !== undefined) updates.paid_by_owner_id = paid_by_owner_id || null
+      if (from_acc !== undefined)        updates.from_acc        = from_acc || null
+      if (expense_type !== undefined)    updates.expense_type    = expense_type || null
 
       const { data: updated, error } = await supabaseAdmin
         .from(TABLES.EXPENSES)
         .update(updates)
         .eq('id', id)
-        .select('id, title, amount, category, occurred_at, created_at')
+        .select('id, title, amount, category, expense_date, notes, created_at, paid_by_owner_id, from_acc, expense_type')
         .single()
 
       if (error) throw error
@@ -112,12 +122,12 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
           title: updated.title,
           amount: num(updated.amount),
           category: updated.category || 'Misc',
-          expense_date: updated.occurred_at ? updated.occurred_at.slice(0, 10) : '',
-          notes: null,
+          expense_date: updated.expense_date ? updated.expense_date.slice(0, 10) : '',
+          notes: updated.notes || null,
           created_at: updated.created_at,
-          paid_by_owner_id: null,
-          from_acc: null,
-          expense_type: null,
+          paid_by_owner_id: updated.paid_by_owner_id || null,
+          from_acc: updated.from_acc || null,
+          expense_type: updated.expense_type || null,
         },
       })
     }
