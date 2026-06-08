@@ -17,6 +17,7 @@ interface RefundOrder {
   refundQuantity: number;
   refundAmount: number;
   refundReason: string | null;
+  refundProofUrl?: string | null;
   sellingPrice: number;
   costPrice: number;
   refundVariantQuantities?: Record<string, Record<string, number>> | null;
@@ -32,6 +33,26 @@ function EmptyState({ message }: { message: string }) {
       </svg>
       <div style={{ fontSize: 14 }}>{message}</div>
     </div>
+  );
+}
+
+function ProofImage({ src }: { src: string }) {
+  const [open, setOpen] = useState(false);
+  useEffect(() => {
+    if (!open) return;
+    const handler = (e: KeyboardEvent) => { if (e.key === "Escape") setOpen(false); };
+    window.addEventListener("keydown", handler);
+    return () => window.removeEventListener("keydown", handler);
+  }, [open]);
+  return (
+    <>
+      <img src={src} alt="proof" onClick={() => setOpen(true)} style={{ width: 48, height: 48, objectFit: "cover", borderRadius: 6, border: "1px solid var(--border)", cursor: "pointer" }} />
+      {open && (
+        <div onClick={() => setOpen(false)} style={{ position: "fixed", inset: 0, zIndex: 9999, background: "rgba(0,0,0,0.75)", display: "flex", alignItems: "center", justifyContent: "center", cursor: "zoom-out" }}>
+          <img src={src} alt="proof full" style={{ maxWidth: "90vw", maxHeight: "90vh", objectFit: "contain", borderRadius: 8, boxShadow: "0 20px 60px rgba(0,0,0,0.5)" }} />
+        </div>
+      )}
+    </>
   );
 }
 
@@ -79,6 +100,7 @@ export default function RefundsPage({ user, onLogin, onLogout }: PageProps) {
           refundQuantity: o.refundQuantity || 0,
           refundAmount: o.refundAmount || 0,
           refundReason: o.refundReason,
+          refundProofUrl: o.refundProofUrl || null,
           sellingPrice: o.sellingPrice,
           costPrice: o.costPrice,
           refundVariantQuantities: o.refundVariantQuantities,
@@ -195,6 +217,7 @@ export default function RefundsPage({ user, onLogin, onLogout }: PageProps) {
                     { label: "Refund Amount", key: "refundAmount" },
                     { label: "COGS Lost", key: null },
                     { label: "Refund Reason", key: null },
+                    { label: "Proof", key: null },
                   ].map(col => (
                     <th key={col.label} style={TH} onClick={() => col.key && toggleSort(col.key as any)}>
                       {col.label}{col.key && <SortIcon k={col.key as any} />}
@@ -241,6 +264,11 @@ export default function RefundsPage({ user, onLogin, onLogout }: PageProps) {
                           <span style={{ display: "inline-block", background: "rgba(99,102,241,0.07)", color: "var(--acc)", fontSize: 12, fontWeight: 500, padding: "4px 10px", borderRadius: 8, lineHeight: 1.4 }}>{o.refundReason}</span>
                         ) : <span style={{ color: "var(--text-faint)", fontStyle: "italic" }}>No reason given</span>}
                       </td>
+                      <td style={TD}>
+                        {o.refundProofUrl ? (
+                          <ProofImage src={o.refundProofUrl} />
+                        ) : <span style={{ color: "var(--text-faint)", fontStyle: "italic", fontSize: 12 }}>—</span>}
+                      </td>
                     </tr>
                   );
                 })}
@@ -254,6 +282,7 @@ export default function RefundsPage({ user, onLogin, onLogout }: PageProps) {
                   <td style={{ ...TD, borderBottom: "none" }} />
                   <td style={{ ...TD, fontWeight: 800, color: "var(--danger)", borderBottom: "none" }}>{Rs(totalRefundAmt)}</td>
                   <td style={{ ...TD, fontWeight: 800, color: "var(--warning)", borderBottom: "none" }}>{Rs(totalCOGSLost)}</td>
+                  <td style={{ ...TD, borderBottom: "none" }} />
                   <td style={{ ...TD, borderBottom: "none" }} />
                 </tr>
               </tfoot>

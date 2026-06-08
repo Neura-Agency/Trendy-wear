@@ -71,6 +71,8 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
           refund_color_quantities,
           refund_variant_quantities,
           refunded_at,
+          return_proof_url,
+          refund_proof_url,
           created_at,
           stores:store_id ( name ),
           store_inventory:store_inventory_id (
@@ -138,6 +140,8 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
           refundColorQuantities: row.refund_color_quantities ?? null,
           refundVariantQuantities: row.refund_variant_quantities ?? null,
           refundedAt: row.refunded_at ?? null,
+          returnProofUrl: row.return_proof_url ?? null,
+          refundProofUrl: row.refund_proof_url ?? null,
           storeInventoryId: row.store_inventory_id ?? null,
         }
       })
@@ -509,6 +513,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
           returnSizeQuantities,
           returnColorQuantities,
           returnVariantQuantities,
+          returnProofUrl,
         } = req.body;
         if (!id) return res.status(400).json({ error: 'id is required' });
 
@@ -576,6 +581,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
             return_color_quantities: mergedReturnColorQuantities,
             return_variant_quantities: mergedReturnVariantQuantities,
             returned_at: new Date().toISOString(),
+            return_proof_url: returnProofUrl || null,
           })
           .eq('id', id);
 
@@ -653,6 +659,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
           refundSizeQuantities,
           refundColorQuantities,
           refundVariantQuantities,
+          refundProofUrl,
         } = req.body;
         if (!id) return res.status(400).json({ error: 'id is required' });
 
@@ -727,6 +734,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
             refund_color_quantities: mergedRefundColorQuantities,
             refund_variant_quantities: mergedRefundVariantQuantities,
             refunded_at: new Date().toISOString(),
+            refund_proof_url: refundProofUrl || null,
           })
           .eq('id', id);
 

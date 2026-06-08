@@ -16,6 +16,7 @@ interface ReturnOrder {
   quantity: number;
   returnQuantity: number;
   returnReason: string | null;
+  returnProofUrl?: string | null;
   sellingPrice: number;
   costPrice: number;
   returnVariantQuantities?: Record<string, Record<string, number>> | null;
@@ -31,6 +32,26 @@ function EmptyState({ message }: { message: string }) {
       </svg>
       <div style={{ fontSize: 14 }}>{message}</div>
     </div>
+  );
+}
+
+function ProofImage({ src }: { src: string }) {
+  const [open, setOpen] = useState(false);
+  useEffect(() => {
+    if (!open) return;
+    const handler = (e: KeyboardEvent) => { if (e.key === "Escape") setOpen(false); };
+    window.addEventListener("keydown", handler);
+    return () => window.removeEventListener("keydown", handler);
+  }, [open]);
+  return (
+    <>
+      <img src={src} alt="proof" onClick={() => setOpen(true)} style={{ width: 48, height: 48, objectFit: "cover", borderRadius: 6, border: "1px solid var(--border)", cursor: "pointer" }} />
+      {open && (
+        <div onClick={() => setOpen(false)} style={{ position: "fixed", inset: 0, zIndex: 9999, background: "rgba(0,0,0,0.75)", display: "flex", alignItems: "center", justifyContent: "center", cursor: "zoom-out" }}>
+          <img src={src} alt="proof full" style={{ maxWidth: "90vw", maxHeight: "90vh", objectFit: "contain", borderRadius: 8, boxShadow: "0 20px 60px rgba(0,0,0,0.5)" }} />
+        </div>
+      )}
+    </>
   );
 }
 
@@ -77,6 +98,7 @@ export default function ReturnsPage({ user, onLogin, onLogout }: PageProps) {
           quantity: o.quantity,
           returnQuantity: o.returnQuantity || 0,
           returnReason: o.returnReason,
+          returnProofUrl: o.returnProofUrl || null,
           sellingPrice: o.sellingPrice,
           costPrice: o.costPrice,
           returnVariantQuantities: o.returnVariantQuantities,
@@ -193,6 +215,7 @@ export default function ReturnsPage({ user, onLogin, onLogout }: PageProps) {
                     { label: "Selling Price", key: null },
                     { label: "Value Recovered", key: null },
                     { label: "Return Reason", key: null },
+                    { label: "Proof", key: null },
                   ].map(col => (
                     <th key={col.label} style={TH} onClick={() => col.key && toggleSort(col.key as any)}>
                       {col.label}{col.key && <SortIcon k={col.key as any} />}
@@ -238,6 +261,11 @@ export default function ReturnsPage({ user, onLogin, onLogout }: PageProps) {
                           <span style={{ display: "inline-block", background: "rgba(220,38,38,0.07)", color: "var(--danger)", fontSize: 12, fontWeight: 500, padding: "4px 10px", borderRadius: 8, lineHeight: 1.4 }}>{o.returnReason}</span>
                         ) : <span style={{ color: "var(--text-faint)", fontStyle: "italic" }}>No reason given</span>}
                       </td>
+                      <td style={TD}>
+                        {o.returnProofUrl ? (
+                          <ProofImage src={o.returnProofUrl} />
+                        ) : <span style={{ color: "var(--text-faint)", fontStyle: "italic", fontSize: 12 }}>—</span>}
+                      </td>
                     </tr>
                   );
                 })}
@@ -250,6 +278,7 @@ export default function ReturnsPage({ user, onLogin, onLogout }: PageProps) {
                   <td style={{ ...TD, borderBottom: "none" }} />
                   <td style={{ ...TD, borderBottom: "none" }} />
                   <td style={{ ...TD, fontWeight: 800, color: "var(--success)", borderBottom: "none" }}>{Rs(totalValue)}</td>
+                  <td style={{ ...TD, borderBottom: "none" }} />
                   <td style={{ ...TD, borderBottom: "none" }} />
                 </tr>
               </tfoot>

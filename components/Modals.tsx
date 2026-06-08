@@ -3809,6 +3809,7 @@ export interface SaleReturnModalProps {
         returnSizeQuantities?: Record<string, number> | null;
         returnColorQuantities?: Record<string, number> | null;
         returnVariantQuantities?: VariantQuantities | null;
+        returnProofUrl?: string | null;
     }) => Promise<void>;
     onClose: () => void;
 }
@@ -3856,10 +3857,19 @@ export function SaleReturnModal({ order, onConfirm, onClose }: SaleReturnModalPr
         remainingColorQuantities ? Object.fromEntries(Object.entries(remainingColorQuantities).map(([k, v]) => [k, v])) : {}
     );
     const [saving, setSaving] = useState(false);
+    const [proofImage, setProofImage] = useState<string | null>(null);
 
     const hasSizes = !hasVariantGrid && remainingSizeQuantities && Object.keys(remainingSizeQuantities).length > 0;
     const hasColors = !hasVariantGrid && remainingColorQuantities && Object.keys(remainingColorQuantities).length > 0;
     const effectiveReturnQty = hasVariantGrid ? variantGrandTotal(variantInputs) : returnQty;
+
+    const handleProofImageChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+        const file = e.target.files?.[0];
+        if (!file) return;
+        const reader = new FileReader();
+        reader.onloadend = () => setProofImage(reader.result as string);
+        reader.readAsDataURL(file);
+    };
 
     const handleSubmit = async () => {
         if (saving) return;
@@ -3873,6 +3883,7 @@ export function SaleReturnModal({ order, onConfirm, onClose }: SaleReturnModalPr
                 returnSizeQuantities: hasSizes ? sizeInputs : null,
                 returnColorQuantities: hasColors ? colorInputs : null,
                 returnVariantQuantities: hasVariantGrid ? variantInputs : null,
+                returnProofUrl: proofImage || null,
             });
         } finally {
             setSaving(false);
@@ -3966,6 +3977,18 @@ export function SaleReturnModal({ order, onConfirm, onClose }: SaleReturnModalPr
                         </select>
                     </div>
 
+                    {/* Proof Image Upload */}
+                    <div className="input-group">
+                        <label style={{ fontSize: 12, fontWeight: 700, color: 'var(--text-muted)', display: 'block', marginBottom: 6 }}>Proof Image <span style={{ fontWeight: 400 }}>(optional)</span></label>
+                        <input type="file" accept="image/*" onChange={handleProofImageChange} style={{ width: '100%', fontSize: 12 }} />
+                        {proofImage && (
+                            <div style={{ marginTop: 8, position: 'relative', display: 'inline-block' }}>
+                                <img src={proofImage} alt="proof" style={{ maxHeight: 120, maxWidth: '100%', borderRadius: 8, border: '1px solid var(--border)' }} />
+                                <button onClick={() => setProofImage(null)} style={{ position: 'absolute', top: 4, right: 4, background: '#dc2626', border: 'none', borderRadius: '50%', width: 20, height: 20, color: '#fff', cursor: 'pointer', fontSize: 12, lineHeight: '20px', textAlign: 'center', padding: 0 }}>&#x2715;</button>
+                            </div>
+                        )}
+                    </div>
+
                     {/* Info */}
                     <div style={{ padding: '10px 14px', background: '#fef3c7', border: '1px solid #fde68a', borderRadius: 8, fontSize: 12, color: '#92400e', fontWeight: 600 }}>
                         ⚠️ Returned pieces will go back to store stock as &lsquo;pending return&rsquo;.
@@ -4020,6 +4043,7 @@ export interface SaleRefundModalProps {
         refundSizeQuantities?: Record<string, number> | null;
         refundColorQuantities?: Record<string, number> | null;
         refundVariantQuantities?: VariantQuantities | null;
+        refundProofUrl?: string | null;
     }) => Promise<void>;
     onClose: () => void;
 }
@@ -4063,11 +4087,20 @@ export function SaleRefundModal({ order, onConfirm, onClose }: SaleRefundModalPr
         remainingColorQuantities ? Object.fromEntries(Object.entries(remainingColorQuantities).map(([k, v]) => [k, v])) : {}
     );
     const [saving, setSaving] = useState(false);
+    const [proofImage, setProofImage] = useState<string | null>(null);
 
     const hasSizes = !hasVariantGrid && remainingSizeQuantities && Object.keys(remainingSizeQuantities).length > 0;
     const hasColors = !hasVariantGrid && remainingColorQuantities && Object.keys(remainingColorQuantities).length > 0;
     const effectiveRefundQty = hasVariantGrid ? variantGrandTotal(variantInputs) : refundQty;
     const refundAmount = (order.sellingPrice || 0) * effectiveRefundQty;
+
+    const handleProofImageChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+        const file = e.target.files?.[0];
+        if (!file) return;
+        const reader = new FileReader();
+        reader.onloadend = () => setProofImage(reader.result as string);
+        reader.readAsDataURL(file);
+    };
 
     const handleSubmit = async () => {
         if (saving) return;
@@ -4081,6 +4114,7 @@ export function SaleRefundModal({ order, onConfirm, onClose }: SaleRefundModalPr
                 refundSizeQuantities: hasSizes ? sizeInputs : null,
                 refundColorQuantities: hasColors ? colorInputs : null,
                 refundVariantQuantities: hasVariantGrid ? variantInputs : null,
+                refundProofUrl: proofImage || null,
             });
         } finally {
             setSaving(false);
@@ -4174,6 +4208,18 @@ export function SaleRefundModal({ order, onConfirm, onClose }: SaleRefundModalPr
                         <select value={reason} onChange={e => setReason(e.target.value)} style={{ width: '100%' }}>
                             {REFUND_REASONS.map(r => <option key={r} value={r}>{r}</option>)}
                         </select>
+                    </div>
+
+                    {/* Proof Image Upload */}
+                    <div className="input-group">
+                        <label style={{ fontSize: 12, fontWeight: 700, color: 'var(--text-muted)', display: 'block', marginBottom: 6 }}>Proof Image <span style={{ fontWeight: 400 }}>(optional)</span></label>
+                        <input type="file" accept="image/*" onChange={handleProofImageChange} style={{ width: '100%', fontSize: 12 }} />
+                        {proofImage && (
+                            <div style={{ marginTop: 8, position: 'relative', display: 'inline-block' }}>
+                                <img src={proofImage} alt="proof" style={{ maxHeight: 120, maxWidth: '100%', borderRadius: 8, border: '1px solid var(--border)' }} />
+                                <button onClick={() => setProofImage(null)} style={{ position: 'absolute', top: 4, right: 4, background: '#dc2626', border: 'none', borderRadius: '50%', width: 20, height: 20, color: '#fff', cursor: 'pointer', fontSize: 12, lineHeight: '20px', textAlign: 'center', padding: 0 }}>&#x2715;</button>
+                            </div>
+                        )}
                     </div>
 
                     {/* Refund amount preview */}
