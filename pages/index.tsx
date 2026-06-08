@@ -2413,14 +2413,6 @@ export default function Home({ user, onLogin }: PageProps) {
                       colorQuantitiesRemaining: si.colorQuantitiesRemaining,
                       variantQuantitiesRemaining: si.variantQuantitiesRemaining,
                     }))
-                  )
-                : user.role === 'store'
-                  ? Object.values(data.storeInventory[user.storeName] || {}).map(si => ({
-                    productName: si.productName,
-                    quantityAvailable: si.quantityRemaining,
-                    sellingPrice: si.storeSellingPrice,
-                    ownerSupplyPrice: si.ownerSupplyPrice,
-                  }))
                   : data.inventory
             }
             storeName={user.storeName}
