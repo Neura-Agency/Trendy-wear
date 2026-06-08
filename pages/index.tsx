@@ -1979,12 +1979,14 @@ const [loading, setLoading] = useState<boolean>(true);
             <div className="kpi-trend">{isAdmin ? "Gross Sales" : "My Total Sales"}</div>
           </div>
 
-          <div className="kpi-card gray" onClick={() => setShowExpenseBreakdown(true)} style={{ cursor: 'pointer' }}>
-            <div className="kpi-icon">{IC.expense}</div>
-            <div className="kpi-label">Expenses</div>
-            <div className="kpi-value negative">-{Rs(totalExpenses)}</div>
-            <div className="kpi-trend">Expenses + COGS + shipping + commissions</div>
-          </div>
+          {isAdmin && (
+            <div className="kpi-card gray" onClick={() => setShowExpenseBreakdown(true)} style={{ cursor: 'pointer' }}>
+              <div className="kpi-icon">{IC.expense}</div>
+              <div className="kpi-label">Expenses</div>
+              <div className="kpi-value negative">-{Rs(totalExpenses)}</div>
+              <div className="kpi-trend">Expenses + COGS + shipping + commissions</div>
+            </div>
+          )}
 
           <div className="kpi-card blue">
             <div className="kpi-icon">{IC.profit}</div>
@@ -2073,6 +2075,8 @@ const [loading, setLoading] = useState<boolean>(true);
             // Pass dashboardOrders (all time, scope-filtered) so the modal applies its own period filter
             let ordersForReport = dashboardOrders;
             let storesForReport = data.stores || {};
+            // Store users should not see company expenses
+            let expensesForReport = data.expenses;
             if (!isSuperAdmin) {
               if (isAdmin) {
                 const managed = user.managedStores || [];
@@ -2083,9 +2087,10 @@ const [loading, setLoading] = useState<boolean>(true);
               } else if (user.role === 'store') {
                 storesForReport = { [user.storeName]: data.stores[user.storeName] };
                 ordersForReport = dashboardOrders.filter(o => o.storeName === user.storeName);
+                expensesForReport = []; // Store users should not see company expenses
               }
             }
-            setReportData({ ...data, orders: ordersForReport, stores: storesForReport });
+            setReportData({ ...data, orders: ordersForReport, stores: storesForReport, expenses: expensesForReport });
             setShowReport(true);
           }}>
             <span style={{ marginRight: '8px', display: 'inline-flex' }}>{IC.report}</span> Generate Report
