@@ -359,6 +359,8 @@ export function AddInventoryModal({ onSave, onClose, stores, products, inventory
     // gets a new inventory row at a different cost price (new stock batch)
     const [forceNewBatch, setForceNewBatch] = useState(false);
     const [newBatchId, setNewBatchId] = useState('');
+    // selectedBatchId: when the user picks a specific existing batch to update
+    const [selectedBatchId, setSelectedBatchId] = useState<string>('');
 
     const generateNewBatchId = () => {
         // Generate a random 8-char hex segment mimicking buildDeterministicProductId format
@@ -385,6 +387,7 @@ export function AddInventoryModal({ onSave, onClose, stores, products, inventory
         setResolvedItemId('');
         setForceNewBatch(false);
         setNewBatchId('');
+        setSelectedBatchId('');
     };
     const [showDeleteProductModal, setShowDeleteProductModal] = useState(false);
     const [deletingProduct, setDeletingProduct] = useState<Product | null>(null);
@@ -438,6 +441,7 @@ export function AddInventoryModal({ onSave, onClose, stores, products, inventory
         // Reset new-batch mode whenever the product combo changes
         setForceNewBatch(false);
         setNewBatchId('');
+        setSelectedBatchId('');
         setResolvedItemId(formatItemCodeFromUuid(stableUuid));
     }, [catalogProducts, newProduct.productName, newProduct.brandName, newProduct.productType, newProduct.customType, resolvedProductType]);
 
@@ -871,6 +875,9 @@ export function AddInventoryModal({ onSave, onClose, stores, products, inventory
                 productId: savedProduct.id,
                 allotedStores,
                 forceNewBatch: forceNewBatch && !!newBatchId,
+                // When user picked a specific batch to update, pass its inventory row id
+                // so the API can do a targeted UPDATE on that exact row.
+                selectedBatchInventoryId: !forceNewBatch && selectedBatchId ? selectedBatchId : undefined,
             });
 
             onClose();
@@ -958,44 +965,94 @@ export function AddInventoryModal({ onSave, onClose, stores, products, inventory
                                 <label>Item ID</label>
                                 <input
                                     readOnly
-                                    value={forceNewBatch ? newBatchId : resolvedItemId}
+                                    value={forceNewBatch ? newBatchId : (selectedBatchId ? (warehouseInventory?.find(i => i.id === selectedBatchId)?.batchNumber ?? resolvedItemId) : resolvedItemId)}
                                     placeholder="Select product, brand, and type"
                                     style={{ background: 'var(--surface-2)', cursor: 'default', fontFamily: 'monospace', fontWeight: 700 }}
                                 />
-                                {/* Show new-batch notice when existing product combo is detected */}
-                                {matchedExistingProduct && !forceNewBatch && (
-                                    <div style={{ marginTop: 8, padding: '10px 14px', borderRadius: 10, background: '#fffbeb', border: '1.5px solid #fde68a', display: 'flex', flexDirection: 'column', gap: 8 }}>
-                                        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                                            <span style={{ fontSize: 15 }}>⚠️</span>
-                                            <div>
-                                                <div style={{ fontSize: 12, fontWeight: 800, color: '#92400e' }}>Existing stock found for this product</div>
-                                                <div style={{ fontSize: 11, color: '#78350f', marginTop: 2 }}>Same row will be updated. Got new stock at a different price? Generate a new batch instead.</div>
+
+                                {/* ── Multiple existing batches found ── */}
+                                {(() => {
+                                    if (!matchedExistingProduct || forceNewBatch) return null;
+                                    const existingBatches = (warehouseInventory || []).filter(
+                                        i => i.productId === matchedExistingProduct.id
+                                    );
+                                    if (existingBatches.length === 0) return null;
+
+                                    if (existingBatches.length === 1) {
+                                        // Single batch — original two-button UI
+                                        return (
+                                            <div style={{ marginTop: 8, padding: '10px 14px', borderRadius: 10, background: '#fffbeb', border: '1.5px solid #fde68a', display: 'flex', flexDirection: 'column', gap: 8 }}>
+                                                <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                                                    <span style={{ fontSize: 15 }}>⚠️</span>
+                                                    <div>
+                                                        <div style={{ fontSize: 12, fontWeight: 800, color: '#92400e' }}>Existing stock found for this product</div>
+                                                        <div style={{ fontSize: 11, color: '#78350f', marginTop: 2 }}>Same row will be updated. Got new stock at a different price? Generate a new batch instead.</div>
+                                                    </div>
+                                                </div>
+                                                <div style={{ display: 'flex', gap: 8 }}>
+                                                    <button type="button" className="btn btn-sm btn-glass" style={{ fontSize: 11, fontWeight: 700, flex: 1 }}
+                                                        onClick={() => setSelectedBatchId('')}>
+                                                        ↻ Update Existing Batch
+                                                    </button>
+                                                    <button type="button" className="btn btn-sm"
+                                                        style={{ fontSize: 11, fontWeight: 700, flex: 1, background: 'linear-gradient(135deg,#7c3aed,#6d28d9)', color: '#fff', border: 'none', boxShadow: '0 4px 12px rgba(109,40,217,0.25)' }}
+                                                        onClick={() => { const id = generateNewBatchId(); setNewBatchId(id); setForceNewBatch(true); setSelectedBatchId(''); }}>
+                                                        ✦ New Stock (New Price)
+                                                    </button>
+                                                </div>
                                             </div>
-                                        </div>
-                                        <div style={{ display: 'flex', gap: 8 }}>
-                                            <button
-                                                type="button"
-                                                className="btn btn-sm btn-glass"
-                                                style={{ fontSize: 11, fontWeight: 700, flex: 1 }}
-                                                onClick={() => { /* keep default — do nothing, existing row reused */ }}
-                                            >
-                                                ↻ Update Existing Batch
+                                        );
+                                    }
+
+                                    // Multiple batches — show picker
+                                    return (
+                                        <div style={{ marginTop: 8, padding: '12px 14px', borderRadius: 10, background: '#fffbeb', border: '1.5px solid #fde68a', display: 'flex', flexDirection: 'column', gap: 10 }}>
+                                            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                                                <span style={{ fontSize: 15 }}>⚠️</span>
+                                                <div>
+                                                    <div style={{ fontSize: 12, fontWeight: 800, color: '#92400e' }}>{existingBatches.length} existing batches found — choose one to update</div>
+                                                    <div style={{ fontSize: 11, color: '#78350f', marginTop: 2 }}>Select the batch to add stock to, or generate a brand-new batch at a new price.</div>
+                                                </div>
+                                            </div>
+
+                                            {/* Batch cards */}
+                                            <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                                                {existingBatches.map(batch => {
+                                                    const isSelected = selectedBatchId === batch.id;
+                                                    return (
+                                                        <button
+                                                            key={batch.id}
+                                                            type="button"
+                                                            onClick={() => setSelectedBatchId(isSelected ? '' : (batch.id ?? ''))}
+                                                            style={{
+                                                                display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+                                                                padding: '8px 12px', borderRadius: 8, cursor: 'pointer', textAlign: 'left',
+                                                                border: isSelected ? '2px solid #7c3aed' : '1.5px solid #fde68a',
+                                                                background: isSelected ? 'rgba(124,58,237,0.07)' : 'var(--surface)',
+                                                                transition: 'all 0.15s',
+                                                            }}
+                                                        >
+                                                            <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
+                                                                <span style={{ fontFamily: 'monospace', fontWeight: 800, fontSize: 12, color: isSelected ? '#7c3aed' : '#92400e' }}>{batch.batchNumber}</span>
+                                                                <span style={{ fontSize: 11, color: '#78350f' }}>Cost: Rs {Number(batch.costPrice).toLocaleString()} &nbsp;·&nbsp; Qty: {batch.quantityAvailable}</span>
+                                                            </div>
+                                                            <div style={{ width: 18, height: 18, borderRadius: '50%', border: `2px solid ${isSelected ? '#7c3aed' : '#d97706'}`, background: isSelected ? '#7c3aed' : 'transparent', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+                                                                {isSelected && <svg width="10" height="10" viewBox="0 0 10 10"><polyline points="1.5,5 4,7.5 8.5,2" stroke="#fff" strokeWidth="1.8" fill="none" strokeLinecap="round" strokeLinejoin="round"/></svg>}
+                                                            </div>
+                                                        </button>
+                                                    );
+                                                })}
+                                            </div>
+
+                                            <button type="button" className="btn btn-sm"
+                                                style={{ fontSize: 11, fontWeight: 700, background: 'linear-gradient(135deg,#7c3aed,#6d28d9)', color: '#fff', border: 'none', boxShadow: '0 4px 12px rgba(109,40,217,0.25)', marginTop: 2 }}
+                                                onClick={() => { const id = generateNewBatchId(); setNewBatchId(id); setForceNewBatch(true); setSelectedBatchId(''); }}>
+                                                ✦ New Stock (New Price) — Generate Fresh Batch
                                             </button>
-                                            <button
-                                                type="button"
-                                                className="btn btn-sm"
-                                                style={{ fontSize: 11, fontWeight: 700, flex: 1, background: 'linear-gradient(135deg,#7c3aed,#6d28d9)', color: '#fff', border: 'none', boxShadow: '0 4px 12px rgba(109,40,217,0.25)' }}
-                                                onClick={() => {
-                                                    const id = generateNewBatchId();
-                                                    setNewBatchId(id);
-                                                    setForceNewBatch(true);
-                                                }}
-                                            >
-                                                ✦ New Stock (New Price)
-                                            </button>
                                         </div>
-                                    </div>
-                                )}
+                                    );
+                                })()}
+
                                 {/* New batch confirmed notice */}
                                 {forceNewBatch && newBatchId && (
                                     <div style={{ marginTop: 8, padding: '10px 14px', borderRadius: 10, background: '#f0fdf4', border: '1.5px solid #86efac', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10 }}>
@@ -1006,12 +1063,9 @@ export function AddInventoryModal({ onSave, onClose, stores, products, inventory
                                                 <div style={{ fontSize: 11, color: '#14532d', marginTop: 2 }}>A new inventory row will be created at the cost price you enter below.</div>
                                             </div>
                                         </div>
-                                        <button
-                                            type="button"
-                                            title="Cancel new batch — revert to updating existing stock"
+                                        <button type="button" title="Cancel new batch"
                                             onClick={() => { setForceNewBatch(false); setNewBatchId(''); }}
-                                            style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#166534', fontSize: 16, flexShrink: 0 }}
-                                        >✕</button>
+                                            style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#166534', fontSize: 16, flexShrink: 0 }}>✕</button>
                                     </div>
                                 )}
                                 {!matchedExistingProduct && !forceNewBatch && resolvedItemId && (

@@ -100,7 +100,8 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
         picture,
         productId,
         newProduct,
-        forceNewBatch
+        forceNewBatch,
+        selectedBatchInventoryId
       } = req.body
 
       let finalProductId = productId
@@ -208,20 +209,32 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       const effectiveColorQuantities = incomingRollups.colorQuantities ?? normalizeFlatQuantities(colorQuantities)
       const totalQuantity = Math.max(0, normalizedIncomingVariants ? incomingRollups.total : num(quantity))
 
-      // When forceNewBatch is true the caller explicitly wants a NEW inventory row
-      // for this product (e.g. same product restocked at a different cost price).
-      // Skip the existing-inventory lookup so we always INSERT below.
+      // When forceNewBatch is true the caller explicitly wants a NEW inventory row.
+      // When selectedBatchInventoryId is provided, look up that specific batch row by id.
+      // Otherwise fall back to the original product_id lookup.
       let existingInventory: any = null
       let inventoryLookupError: any = null
 
       if (!forceNewBatch) {
-        const result = await supabaseAdmin
-          .from(TABLES.INVENTORY)
-          .select('*')
-          .eq('product_id', finalProductId)
-          .maybeSingle()
-        existingInventory = result.data
-        inventoryLookupError = result.error
+        if (selectedBatchInventoryId) {
+          // Targeted lookup by inventory row id (user chose a specific batch)
+          const result = await supabaseAdmin
+            .from(TABLES.INVENTORY)
+            .select('*')
+            .eq('id', selectedBatchInventoryId)
+            .maybeSingle()
+          existingInventory = result.data
+          inventoryLookupError = result.error
+        } else {
+          // Default: find first row by product_id
+          const result = await supabaseAdmin
+            .from(TABLES.INVENTORY)
+            .select('*')
+            .eq('product_id', finalProductId)
+            .maybeSingle()
+          existingInventory = result.data
+          inventoryLookupError = result.error
+        }
       }
 
       if (inventoryLookupError) {
