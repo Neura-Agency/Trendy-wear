@@ -1217,6 +1217,17 @@ function OrdersSection({ orders, overallOrders = [], inventory = [], storeInvent
                   ) : (
                     <span className="font-bold">{o.commissionPercent}%</span>
                   )}
+                  <div style={{ fontSize: '11px', color: isAdmin ? 'var(--danger)' : 'var(--success)', fontWeight: 700 }}>
+                    {isAdmin ? "-" : "+"}{Rs(o.commissionAmount)}
+                  </div>
+                </td>
+                {isAdmin && (
+                  <>
+                    <td className="font-bold" style={{ color: 'var(--pri-600)' }}>{Rs(o.adminTake)}</td>
+                    <td style={{ color: 'var(--text-muted)' }}>{Rs(totalCost)}</td>
+                    <td className="font-bold" style={{ color: 'var(--success)', fontSize: '1.1rem' }}>{Rs(o.profit)}</td>
+                  </>
+                )}
                 </tr>
               );
             })}
