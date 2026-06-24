@@ -709,7 +709,7 @@ function StoresOverviewSection({ stores, orders, storeInventory, filter, getFilt
                 const paidAmount = paidOrders.reduce((acc, o) => acc + (o.commissionAmount || 0), 0);
                 const totalPayout = catOrders.reduce((acc, o) => acc + (o.commissionAmount || 0), 0);
 
-                const itemsSold = catInventory.reduce((acc: number, si) => acc + (((si as StoreInventoryItem).quantityAssigned || 0) - ((si as StoreInventoryItem).quantityRemaining || 0)), 0) as number;
+                const itemsSold = catOrders.reduce((acc: number, o) => acc + effectiveQty(o), 0);
                 const leftover = catInventory.reduce((acc: number, si) => acc + ((si as StoreInventoryItem).quantityRemaining as number), 0) as number;
                 const expenses = catOrders.reduce((acc, o) => acc + (o.shipmentCost || 0), 0);
                 const partnerCut = totalPayout;
