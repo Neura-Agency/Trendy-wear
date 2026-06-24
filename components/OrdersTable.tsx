@@ -48,7 +48,7 @@ export default function OrdersTable({ orders, onRefresh }: { orders: any[]; onRe
         <h3>Recent Orders</h3>
       </div>
       <div className="table-container">
-        <table className="table">
+        <table className="table sticky-actions">
           <thead>
             <tr>
               <th>Date</th>

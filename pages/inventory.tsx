@@ -347,18 +347,18 @@ export default function InventoryPage({ user, onLogin }: PageProps) {
     if (isSuperAdmin) {
         totalInventoryValue = calcInventoryValue(data.inventory);
         totalItemsInWarehouse = data.inventory.reduce((acc, it) => acc + Math.max(0, (Number(it.quantityAvailable) || 0) - (allotedQtyByProduct[it.id] || 0)), 0);
-        totalItemsInStores = stockProvided.reduce((acc, it) => acc + it.quantityRemaining, 0);
+        totalItemsInStores = stockProvided.reduce((acc, it) => acc + Math.max(0, it.quantityRemaining), 0);
     } else if (isStoreAdmin) {
         const ownedItems = data.inventory.filter(it => it.owner === user.username);
         totalInventoryValue = calcInventoryValue(ownedItems);
         totalItemsInWarehouse = ownedItems.reduce((acc, it) => acc + Math.max(0, (Number(it.quantityAvailable) || 0) - (allotedQtyByProduct[it.id] || 0)), 0);
-        totalItemsInStores = stockProvided.filter(it => visibleStoreNames.some((name) => name.trim().toLowerCase() === it.storeName.trim().toLowerCase())).reduce((acc, it) => acc + it.quantityRemaining, 0);
+        totalItemsInStores = stockProvided.filter(it => visibleStoreNames.some((name) => name.trim().toLowerCase() === it.storeName.trim().toLowerCase())).reduce((acc, it) => acc + Math.max(0, it.quantityRemaining), 0);
     } else {
         // Store user: only their own
         const ownedItems = data.inventory.filter(it => it.owner === user.username);
         totalInventoryValue = calcInventoryValue(ownedItems);
         totalItemsInWarehouse = ownedItems.reduce((acc, it) => acc + Math.max(0, (Number(it.quantityAvailable) || 0) - (allotedQtyByProduct[it.id] || 0)), 0);
-        totalItemsInStores = stockProvided.filter(it => storeNameMatches(it.storeName)).reduce((acc, it) => acc + it.quantityRemaining, 0);
+        totalItemsInStores = stockProvided.filter(it => storeNameMatches(it.storeName)).reduce((acc, it) => acc + Math.max(0, it.quantityRemaining), 0);
     }
 
     return (
@@ -480,7 +480,7 @@ export default function InventoryPage({ user, onLogin }: PageProps) {
                                         <th>Item ID</th>
                                         <th>Cost/pc</th>
                                         <th>Qty</th>
-                                        <th>Aloted Qty</th>
+                                        <th>Allotted Qty</th>
                                         <th>Alloted Stores</th>
                                         <th>Status</th>
                                         <th style={{ textAlign: 'center' }}>Actions</th>
@@ -646,7 +646,7 @@ export default function InventoryPage({ user, onLogin }: PageProps) {
                             </thead>
                             <tbody>
                                     {stockProvided.filter(s => isAdmin || storeNameMatches(s.storeName)).length === 0 ? (
-                                    <tr><td colSpan={isAdmin ? 7 : 5} style={{ textAlign: 'center', padding: 40 }} className="text-muted">No stock available currently.</td></tr>
+                                    <tr><td colSpan={isAdmin ? 9 : 7} style={{ textAlign: 'center', padding: 40 }} className="text-muted">No stock available currently.</td></tr>
                                 ) : (
                                     stockProvided.filter(s => isAdmin || storeNameMatches(s.storeName)).map((item, idx) => (
                                         <tr key={item.id || idx} id={`store-inv-row-${item.id || idx}`}>
@@ -656,13 +656,13 @@ export default function InventoryPage({ user, onLogin }: PageProps) {
                                                 {item.ownerSupplyPrice ? `Rs ${Number(item.ownerSupplyPrice).toLocaleString()}` : '-'}
                                             </td>
                                             <td><Badge type="gray">{item.quantityAssigned}</Badge></td>
-                                            <td className="font-bold" style={{ fontSize: '1rem', color: item.quantityRemaining > 0 ? 'var(--text-main)' : 'var(--danger)' }}>
-                                                {item.quantityRemaining}
+                                            <td className="font-bold" style={{ fontSize: '1rem', color: Math.max(0, item.quantityRemaining) > 0 ? 'var(--text-body)' : 'var(--danger)' }}>
+                                                {Math.max(0, item.quantityRemaining)}
                                             </td>
                                             {isAdmin && <td><Badge type="purple">{item.commissionPercent}%</Badge></td>}
                                             <td style={{ textAlign: 'right', fontWeight: 800 }}>
-                                                <Badge type={item.quantityAssigned - item.quantityRemaining > 0 ? 'blue' : 'gray'}>
-                                                    {item.quantityAssigned - item.quantityRemaining}
+                                                <Badge type={Math.max(0, item.quantityAssigned - item.quantityRemaining) > 0 ? 'blue' : 'gray'}>
+                                                    {Math.max(0, item.quantityAssigned - item.quantityRemaining)}
                                                 </Badge>
                                             </td>
                                             <td>
@@ -1199,7 +1199,7 @@ export default function InventoryPage({ user, onLogin }: PageProps) {
                     font-size: 20px;
                     font-weight: 900;
                     line-height: 1.2;
-                    color: var(--text-main);
+                    color: var(--text-head);
                 }
                 .delete-modal__subtitle {
                     margin-top: 10px;
@@ -1208,7 +1208,7 @@ export default function InventoryPage({ user, onLogin }: PageProps) {
                     line-height: 1.55;
                 }
                 .delete-modal__subtitle strong {
-                    color: var(--text-main);
+                    color: var(--text-head);
                 }
                 .delete-modal__body {
                     padding: 22px 30px 18px;
@@ -1241,7 +1241,7 @@ export default function InventoryPage({ user, onLogin }: PageProps) {
                 .delete-modal__item-name {
                     font-size: 15px;
                     font-weight: 900;
-                    color: var(--text-main);
+                    color: var(--text-head);
                     line-height: 1.3;
                 }
                 .delete-modal__batch {

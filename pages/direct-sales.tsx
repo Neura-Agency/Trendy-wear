@@ -144,6 +144,7 @@ export default function DirectSalesPage({ user, onLogin }: PageProps) {
   const { toast } = usePopup();
   const [orders, setOrders] = useState<Order[]>([]);
   const [inventory, setInventory] = useState<InventoryItem[]>([]);
+  const [storeInventory, setStoreInventory] = useState<Record<string, Record<string, any>>>({});
   const [loading, setLoading] = useState(true);
   const [filter, setFilter] = useState<string>("All");
   const [showSaleModal, setShowSaleModal] = useState(false);
@@ -151,15 +152,18 @@ export default function DirectSalesPage({ user, onLogin }: PageProps) {
   const refresh = useCallback(async () => {
     setLoading(true);
     try {
-      const [ordersRes, invRes] = await Promise.all([
+      const [ordersRes, invRes, storeInvRes] = await Promise.all([
         fetch("/api/orders"),
         fetch("/api/inventory"),
+        fetch("/api/storeInventory"),
       ]);
       const ordersData = await ordersRes.json();
       const invData = await invRes.json();
+      const storeInvData = await storeInvRes.json();
       const all: Order[] = ordersData.orders || [];
       setOrders(all.filter((o) => o.storeName === "Direct"));
       setInventory(invData.inventory || []);
+      setStoreInventory(storeInvData.storeInventory || {});
     } catch (e) {
       console.error(e);
     } finally {
@@ -301,7 +305,6 @@ export default function DirectSalesPage({ user, onLogin }: PageProps) {
                   <th>Sale Price</th>
                   <th>Shipment</th>
                   <th>Total Recv.</th>
-                  <th>After Partner's Cut</th>
                   <th style={{ textAlign: "right" }}>Net Profit</th>
                 </tr>
               </thead>
@@ -315,15 +318,14 @@ export default function DirectSalesPage({ user, onLogin }: PageProps) {
                     <td>{Rs(o.sellingPrice)}</td>
                     <td className="text-muted">{o.shipmentCost ? Rs(o.shipmentCost) : "—"}</td>
                     <td className="font-bold">{Rs(o.sellingPrice * o.quantity)}</td>
-                    <td className="text-muted">{o.adminTake ? Rs(o.adminTake) : "—"}</td>
-                    <td style={{ textAlign: "right", fontWeight: 800, color: "var(--success)" }}>
+                    <td style={{ textAlign: "right", fontWeight: 800, color: (o.profit || 0) < 0 ? "var(--danger)" : "var(--success)" }}>
                       {Rs(o.profit)}
                     </td>
                   </tr>
                 ))}
                 {filtered.length === 0 && (
                   <tr>
-                    <td colSpan={9} style={{ textAlign: "center", padding: 40 }} className="text-muted">
+                    <td colSpan={8} style={{ textAlign: "center", padding: 40 }} className="text-muted">
                       No direct warehouse sales for this period.
                     </td>
                   </tr>
@@ -337,11 +339,20 @@ export default function DirectSalesPage({ user, onLogin }: PageProps) {
       {/* ── Sale Modal ── */}
       {showSaleModal && (
         <SaleModal
-          inventory={inventory.map((item) => ({
-            productName: item.productName,
-            quantityAvailable: item.quantityAvailable,
-            sellingPrice: item.sellingPrice ?? 0,
-          }))}
+          inventory={inventory.map((item) => {
+            const allotedAcrossStores = Object.values(storeInventory || {}).reduce((sum: number, storeItems: unknown) => {
+              const items = storeItems as Record<string, any>;
+              const storeTotal = Object.values(items || {}).reduce((sub: number, si: any) => {
+                return sub + (si.inventoryId === item.id ? (Number(si.quantityAssigned) || 0) : 0);
+              }, 0);
+              return sum + storeTotal;
+            }, 0);
+            return {
+              productName: item.productName,
+              quantityAvailable: Math.max(0, (Number(item.quantityAvailable) || 0) - allotedAcrossStores),
+              sellingPrice: item.sellingPrice ?? 0,
+            };
+          })}
           storeName="Direct"
           isAdmin={false}
           storeNames={["Direct"]}

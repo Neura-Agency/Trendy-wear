@@ -1142,7 +1142,7 @@ function OrdersSection({ orders, overallOrders = [], inventory = [], storeInvent
 
       {/* ── Desktop table view (hidden on mobile) ── */}
       <div className="table-wrap orders-desktop-table">
-        <table>
+        <table className="sticky-actions">
         <thead>
           <tr>
             <th>Date</th>
@@ -1228,11 +1228,71 @@ function OrdersSection({ orders, overallOrders = [], inventory = [], storeInvent
                     <td className="font-bold" style={{ color: 'var(--success)', fontSize: '1.1rem' }}>{Rs(o.profit)}</td>
                   </>
                 )}
+                <td onClick={(e) => e.stopPropagation()} style={{ textAlign: 'center' }}>
+                  <div style={{ display: 'flex', gap: 6, justifyContent: 'center', flexWrap: 'wrap' }}>
+                    <button
+                      type="button"
+                      className="btn btn-sm"
+                      style={{ fontSize: 11, padding: '4px 10px', background: 'rgba(99,102,241,0.1)', color: '#4f46e5', border: '1.5px solid rgba(99,102,241,0.25)' }}
+                      onClick={(e) => { e.stopPropagation(); openEdit(o); }}
+                    >
+                      Edit
+                    </button>
+                    {canDelete && (
+                      <button
+                        type="button"
+                        className="btn btn-sm"
+                        style={{ fontSize: 11, padding: '4px 10px', background: 'rgba(239,68,68,0.09)', color: '#dc2626', border: '1.5px solid rgba(239,68,68,0.22)' }}
+                        onClick={async (e) => { e.stopPropagation(); if (await confirmDialog('Delete this sale? This action cannot be undone.')) { onDelete(o.id); } }}
+                      >
+                        Delete
+                      </button>
+                    )}
+                    {fullyReturned ? (
+                      <button
+                        type="button"
+                        className="btn btn-sm"
+                        style={{ fontSize: 11, padding: '4px 10px', background: 'rgba(107,114,128,0.1)', color: '#4b5563', border: '1.5px solid rgba(107,114,128,0.22)' }}
+                        onClick={async (e) => { e.stopPropagation(); if (await confirmDialog('Undo this return? The sale will be restored and stock will be deducted again.')) { onUndoReturn(o.id); } }}
+                      >
+                        Undo Return
+                      </button>
+                    ) : refundedQty > 0 && !fullyReturned ? (
+                      <button
+                        type="button"
+                        className="btn btn-sm"
+                        style={{ fontSize: 11, padding: '4px 10px', background: 'rgba(107,114,128,0.1)', color: '#4b5563', border: '1.5px solid rgba(107,114,128,0.22)' }}
+                        onClick={async (e) => { e.stopPropagation(); if (await confirmDialog('Undo this refund? The sale financials will be restored to their pre-refund state.')) { onUndoRefund(o.id); } }}
+                      >
+                        Undo Refund
+                      </button>
+                    ) : !fullyReturned && !fullyRefunded && remainingQty > 0 ? (
+                      <>
+                        <button
+                          type="button"
+                          className="btn btn-sm"
+                          style={{ fontSize: 11, padding: '4px 10px', background: 'rgba(245,158,11,0.1)', color: '#b45309', border: '1.5px solid rgba(245,158,11,0.28)' }}
+                          onClick={(e) => { e.stopPropagation(); setReturningOrder(o); }}
+                        >
+                          Return
+                        </button>
+                        <button
+                          type="button"
+                          className="btn btn-sm"
+                          style={{ fontSize: 11, padding: '4px 10px', background: 'rgba(220,38,38,0.09)', color: '#b91c1c', border: '1.5px solid rgba(220,38,38,0.22)' }}
+                          onClick={(e) => { e.stopPropagation(); setRefundingOrder(o); }}
+                        >
+                          Refund
+                        </button>
+                      </>
+                    ) : null}
+                  </div>
+                </td>
                 </tr>
               );
             })}
             {orders.length === 0 && (
-              <tr><td colSpan={isAdmin ? 11 : 8} style={{ textAlign: 'center', padding: 30, color: 'var(--text-muted)' }}>No partner sales match this period.</td></tr>
+              <tr><td colSpan={isAdmin ? 12 : 9} style={{ textAlign: 'center', padding: 30, color: 'var(--text-muted)' }}>No partner sales match this period.</td></tr>
             )}
           </tbody>
         </table>

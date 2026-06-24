@@ -665,7 +665,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 
         const { data: order, error: fetchErr } = await supabaseAdmin
           .from(TABLES.ORDERS)
-          .select('id, quantity, size_quantities, color_quantities, variant_quantities, return_quantity, return_variant_quantities, refund_quantity, refund_size_quantities, refund_color_quantities, refund_variant_quantities, commission_percent, selling_price, shipment_cost, cost_price')
+          .select('id, quantity, size_quantities, color_quantities, variant_quantities, return_quantity, return_variant_quantities, refund_quantity, refund_size_quantities, refund_color_quantities, refund_variant_quantities, commission_percent, selling_price, shipment_cost, cost_price, store_inventory_id')
           .eq('id', id)
           .single();
 
@@ -743,58 +743,43 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
           return res.status(500).json({ error: `Failed to process refund: ${updErr.message || JSON.stringify(updErr)}` });
         }
 
-        // If the order has store inventory with pending returns, reduce the pending
-        // count because refunded units will NOT be physically returned to the warehouse.
+        // NO stock restoration — customer keeps the item.
+        // But if those units were previously logged as a pending Scenario A return,
+        // the refund resolves that liability so we must decrement pending_return_qty.
         if (order.store_inventory_id) {
           const { data: inv, error: invFetchErr } = await supabaseAdmin
             .from(TABLES.STORE_INVENTORY)
             .select('pending_return_qty, pending_return_size_quantities, pending_return_color_quantities, pending_return_variant_quantities')
             .eq('id', order.store_inventory_id)
-            .single()
+            .single();
 
-          if (!invFetchErr && inv) {
-            const pendingQty = num(inv.pending_return_qty) || 0
-            if (pendingQty > 0 && refQty > 0) {
-              const reduceBy = Math.min(refQty, pendingQty)
-
-              // Rebuild pending size/color/variant breakdowns (subtract refunded units)
-              const newPendingSize = { ...(inv.pending_return_size_quantities || {}) } as Record<string, number>
-              if (effectiveRefundSizeQuantities) {
-                Object.entries(effectiveRefundSizeQuantities).forEach(([size, qty]) => {
-                  if (newPendingSize[size] != null) {
-                    newPendingSize[size] = Math.max(0, (newPendingSize[size] || 0) - num(qty))
-                  }
-                })
-              }
-              const newPendingColor = { ...(inv.pending_return_color_quantities || {}) } as Record<string, number>
-              if (effectiveRefundColorQuantities) {
-                Object.entries(effectiveRefundColorQuantities).forEach(([color, qty]) => {
-                  if (newPendingColor[color] != null) {
-                    newPendingColor[color] = Math.max(0, (newPendingColor[color] || 0) - num(qty))
-                  }
-                })
-              }
-
-              const newPendingVariant = adjustVariantQuantities(
-                inv.pending_return_variant_quantities,
-                normalizedRefundVariants,
-                -1
-              )
-
-              await supabaseAdmin
-                .from(TABLES.STORE_INVENTORY)
-                .update({
-                  pending_return_qty: Math.max(0, pendingQty - reduceBy),
-                  pending_return_size_quantities: Object.values(newPendingSize).some(v => v > 0) ? newPendingSize : null,
-                  pending_return_color_quantities: Object.values(newPendingColor).some(v => v > 0) ? newPendingColor : null,
-                  pending_return_variant_quantities: newPendingVariant,
-                })
-                .eq('id', order.store_inventory_id)
+          if (!invFetchErr && inv && num(inv.pending_return_qty) > 0) {
+            const decrementQty = Math.min(refQty, num(inv.pending_return_qty));
+            const newPendingSize = { ...(inv.pending_return_size_quantities || {}) } as Record<string, number>;
+            if (effectiveRefundSizeQuantities) {
+              Object.entries(effectiveRefundSizeQuantities).forEach(([size, q]) => {
+                newPendingSize[size] = Math.max(0, (newPendingSize[size] || 0) - num(q));
+              });
             }
+            const newPendingColor = { ...(inv.pending_return_color_quantities || {}) } as Record<string, number>;
+            if (effectiveRefundColorQuantities) {
+              Object.entries(effectiveRefundColorQuantities).forEach(([color, q]) => {
+                newPendingColor[color] = Math.max(0, (newPendingColor[color] || 0) - num(q));
+              });
+            }
+            const { error: invUpdErr } = await supabaseAdmin
+              .from(TABLES.STORE_INVENTORY)
+              .update({
+                pending_return_qty: Math.max(0, num(inv.pending_return_qty) - decrementQty),
+                pending_return_size_quantities: Object.keys(newPendingSize).length ? newPendingSize : null,
+                pending_return_color_quantities: Object.keys(newPendingColor).length ? newPendingColor : null,
+                pending_return_variant_quantities: adjustVariantQuantities(inv.pending_return_variant_quantities, normalizedRefundVariants, -1),
+              })
+              .eq('id', order.store_inventory_id);
+            if (invUpdErr) console.error('Refund pending_return decrement error:', invUpdErr);
           }
         }
 
-        // NO inventory restoration — customer keeps the item
         return res.json({ success: true, refundAmount });
       }
 

@@ -6,7 +6,7 @@ export default function Inventory({ items }){
     <div className="section">
       <div className="section-header">
         <h3>Inventory Management</h3>
-        <button className="primary" onClick={() => toast.info('Add feature coming')}>+ Add Stock</button>
+        <button className="btn btn-primary" onClick={() => toast.info('Add feature coming')}>+ Add Stock</button>
       </div>
       <div className="table-container">
         <table className="table">
@@ -34,9 +34,9 @@ export default function Inventory({ items }){
                 <td style={{fontWeight:700}}>{it.quantityAvailable}</td>
                 <td>
                   {it.quantityAvailable <= (it.lowStockWarning || 5) ? (
-                    <span className="badge badge-danger">Low Stock ⚠</span>
+                    <span className="badge badge-red">Low Stock ⚠</span>
                   ) : (
-                    <span className="badge badge-success">In Stock</span>
+                    <span className="badge badge-green">In Stock</span>
                   )}
                 </td>
               </tr>

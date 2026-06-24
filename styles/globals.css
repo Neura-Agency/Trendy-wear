@@ -992,6 +992,29 @@ tr:hover td {
   background: var(--surface-2) !important;
 }
 
+/* ── Sticky last column (Actions) ─────────────────────
+   Keeps the Actions button visible without needing to
+   scroll the table all the way to the right on laptop
+   screens. Add class "sticky-actions" to the table
+   element to enable this on a specific table. */
+.sticky-actions th:last-child,
+.sticky-actions td:last-child {
+  position: sticky;
+  right: 0;
+  z-index: 2;
+  background: #fff;
+  box-shadow: -6px 0 6px -4px rgba(0, 0, 0, 0.08);
+}
+
+.sticky-actions th:last-child {
+  background: var(--surface-2);
+  z-index: 3;
+}
+
+.sticky-actions tr:hover td:last-child {
+  background: var(--surface-2) !important;
+}
+
 /* ── Buttons ────────────────────────────────────────── */
 /* 
  * Button System (Semantic Variants)
@@ -1711,8 +1734,11 @@ input[type="number"] {
   }
 
   th, td {
-    padding: 10px 12px;
-    font-size: 12px;
+    padding: 8px 10px;
+    font-size: 11px;
+    max-width: 200px;
+    overflow: hidden;
+    text-overflow: ellipsis;
   }
 }
 
