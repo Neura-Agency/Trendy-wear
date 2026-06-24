@@ -25,6 +25,7 @@ const customJestConfig = {
   transformIgnorePatterns: [
     '/node_modules/(?!(.*\\.mjs$|@?react.*|@?next.*|@?recharts.*|@?supabase.*)/)',
   ],
+  testTimeout: 60000,
 }
 
 module.exports = createJestConfig(customJestConfig)

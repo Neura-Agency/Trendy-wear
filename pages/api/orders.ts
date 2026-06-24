@@ -1060,19 +1060,241 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     }
 
     // ────────────────────────────────────────────────────────────────────────
-    // DELETE — remove a sale record
+    // DELETE — remove a sale record and reverse all its effects
     // ────────────────────────────────────────────────────────────────────────
     if (req.method === 'DELETE') {
       const { id } = req.body
       if (!id) return res.status(400).json({ error: 'id is required' })
 
+      // 1. Fetch order with linked store_inventory and warehouse inventory
+      const { data: order, error: fetchErr } = await supabaseAdmin
+        .from(TABLES.ORDERS)
+        .select(`
+          *,
+          store_inventory:store_inventory_id (
+            id,
+            inventory_id,
+            quantity_remaining,
+            size_quantities_remaining,
+            color_quantities_remaining,
+            variant_quantities_remaining
+          )
+        `)
+        .eq('id', id)
+        .single()
+
+      if (fetchErr || !order) return res.status(404).json({ error: 'Order not found' })
+
+      // 2. Block deletion if already included in a payout
+      if (order.included_in_payout) {
+        return res.status(409).json({ error: 'Cannot delete: this order has already been included in a payout. Remove it from the payout first, then retry.' })
+      }
+
+      const retQty = Math.max(0, num(order.return_quantity))
+      const refQty = Math.max(0, num(order.refund_quantity))
+      const soldQty = num(order.quantity)
+      const netToRestore = Math.max(0, soldQty - retQty)
+
+      // Helper: merge flat quantities (add incoming into base)
+      const mergeFlat = (base: unknown, incoming: unknown): Record<string, number> | null => {
+        const next = { ...(normalizeFlatQuantities(base) || {}) }
+        const additions = normalizeFlatQuantities(incoming) || {}
+        Object.entries(additions).forEach(([k, v]) => {
+          next[k] = (next[k] || 0) + num(v)
+        })
+        return Object.keys(next).length ? next : null
+      }
+
+      // 3. Undo refund first (pure financials, no inventory impact)
+      if (refQty > 0) {
+        const price = num(order.selling_price)
+        const ship = num(order.shipment_cost)
+        const cost = num(order.cost_price)
+        const pct = num(order.commission_percent)
+        const gross = price * soldQty - ship
+        const commission = Math.round(gross * pct / 100)
+        const adminTake = gross - commission
+        const profit = adminTake - cost * soldQty
+
+        const { error: updErr } = await supabaseAdmin
+          .from(TABLES.ORDERS)
+          .update({
+            profit,
+            admin_take: Math.max(0, adminTake),
+            commission_amount: Math.max(0, commission),
+            refund_quantity: null,
+            refund_amount: null,
+            refund_reason: null,
+            refund_size_quantities: null,
+            refund_color_quantities: null,
+            refund_variant_quantities: null,
+            refunded_at: null,
+          })
+          .eq('id', id)
+
+        if (updErr) {
+          console.error('Delete undo-refund error:', updErr)
+          return res.status(500).json({ error: 'Failed to undo refund during delete' })
+        }
+      }
+
+      // 4. Undo return and restore store_inventory in a single update
+      if (retQty > 0 || netToRestore > 0) {
+        const siRow = order.store_inventory as any
+        if (siRow?.id) {
+          const price = num(order.selling_price)
+          const ship = num(order.shipment_cost)
+          const cost = num(order.cost_price)
+          const pct = num(order.commission_percent)
+          const gross = price * soldQty - ship
+          const commission = Math.round(gross * pct / 100)
+          const adminTake = gross - commission
+          const profit = adminTake - cost * soldQty
+
+          const { error: updErr } = await supabaseAdmin
+            .from(TABLES.ORDERS)
+            .update({
+              order_returned: false,
+              profit,
+              admin_take: Math.max(0, adminTake),
+              commission_amount: Math.max(0, commission),
+              return_quantity: null,
+              return_reason: null,
+              return_size_quantities: null,
+              return_color_quantities: null,
+              return_variant_quantities: null,
+              returned_at: null,
+            })
+            .eq('id', id)
+
+          if (updErr) {
+            console.error('Delete undo-return error:', updErr)
+            return res.status(500).json({ error: 'Failed to undo return during delete' })
+          }
+
+          const netSizeRem = mergeFlat(siRow.size_quantities_remaining, order.size_quantities)
+          const netColorRem = mergeFlat(siRow.color_quantities_remaining, order.color_quantities)
+
+          const { error: siUpdErr } = await supabaseAdmin
+            .from(TABLES.STORE_INVENTORY)
+            .update({
+              quantity_remaining: num(siRow.quantity_remaining) + netToRestore,
+              size_quantities_remaining: netSizeRem,
+              color_quantities_remaining: netColorRem,
+              pending_return_qty: 0,
+              pending_return_size_quantities: null,
+              pending_return_color_quantities: null,
+              pending_return_variant_quantities: null,
+            })
+            .eq('id', siRow.id)
+
+          if (siUpdErr) {
+            console.error('Delete store_inventory restore error:', siUpdErr)
+            return res.status(500).json({ error: 'Failed to restore store inventory during delete' })
+          }
+        } else if (retQty > 0) {
+          const price = num(order.selling_price)
+          const ship = num(order.shipment_cost)
+          const cost = num(order.cost_price)
+          const pct = num(order.commission_percent)
+          const gross = price * soldQty - ship
+          const commission = Math.round(gross * pct / 100)
+          const adminTake = gross - commission
+          const profit = adminTake - cost * soldQty
+
+          const { error: updErr } = await supabaseAdmin
+            .from(TABLES.ORDERS)
+            .update({
+              order_returned: false,
+              profit,
+              admin_take: Math.max(0, adminTake),
+              commission_amount: Math.max(0, commission),
+              return_quantity: null,
+              return_reason: null,
+              return_size_quantities: null,
+              return_color_quantities: null,
+              return_variant_quantities: null,
+              returned_at: null,
+            })
+            .eq('id', id)
+
+          if (updErr) {
+            console.error('Delete undo-return error:', updErr)
+            return res.status(500).json({ error: 'Failed to undo return during delete' })
+          }
+        }
+      }
+
+      // 6. Restore warehouse inventory (Direct sales only: store_inventory_id is null)
+      if (!order.store_inventory_id && soldQty > 0) {
+        const normalizedVariants = normalizeVariantQuantities(order.variant_quantities)
+        const variantRollups = rollupVariantQuantities(normalizedVariants)
+        const effectiveSizeQty = variantRollups.sizeQuantities ?? normalizeFlatQuantities(order.size_quantities)
+        const effectiveColorQty = variantRollups.colorQuantities ?? normalizeFlatQuantities(order.color_quantities)
+
+        // Find warehouse inventory rows for this product (FIFO — same order as sale creation)
+        let invQuery = supabaseAdmin
+          .from(TABLES.INVENTORY)
+          .select('id, quantity_available, size_quantities, color_quantities, variant_quantities')
+          .order('created_at', { ascending: true })
+
+        if (order.product_id) {
+          invQuery = invQuery.eq('product_id', order.product_id)
+        } else {
+          invQuery = invQuery.eq('product_name', order.product_name)
+        }
+
+        const { data: invRows, error: invErr } = await invQuery
+        if (invErr) {
+          console.error('Delete warehouse lookup error:', invErr)
+          return res.status(500).json({ error: 'Failed to lookup warehouse inventory for delete' })
+        }
+
+        // Distribute restored qty back across rows FIFO
+        let remaining = soldQty
+        for (const row of invRows) {
+          if (remaining <= 0) break
+          const rowQty = num(row.quantity_available)
+          const add = Math.min(rowQty + remaining, remaining)  // Hmm, this isn't right
+
+          // Actually for restoration, each row just gets its share added back
+          // We distribute evenly across all matching rows proportionally?
+          // No — the simplest correct approach: add the full qty to the first row
+          // That's fine for deletion because we're just putting items back
+        }
+
+        // Simpler: just add to the first matching warehouse row
+        if (invRows && invRows.length > 0) {
+          const firstRow = invRows[0]
+          const newInvSizes = mergeFlat(firstRow.size_quantities, effectiveSizeQty)
+          const newInvColors = mergeFlat(firstRow.color_quantities, effectiveColorQty)
+          const newInvVariants = mergeVariantQuantities(firstRow.variant_quantities, normalizedVariants)
+
+          const { error: invUpdErr } = await supabaseAdmin
+            .from(TABLES.INVENTORY)
+            .update({
+              quantity_available: num(firstRow.quantity_available) + soldQty,
+              size_quantities: newInvSizes,
+              color_quantities: newInvColors,
+              variant_quantities: newInvVariants,
+            })
+            .eq('id', firstRow.id)
+
+          if (invUpdErr) {
+            console.error('Delete warehouse restore error:', invUpdErr)
+            return res.status(500).json({ error: 'Failed to restore warehouse inventory during delete' })
+          }
+        }
+      }
+
+      // 7. Hard-delete the order
       const { error: delErr } = await supabaseAdmin
         .from(TABLES.ORDERS)
         .delete()
         .eq('id', id)
 
       if (delErr) {
-        console.error('orders DELETE error:', delErr)
+        console.error('Delete final error:', delErr)
         return res.status(500).json({ error: 'Failed to delete order' })
       }
 

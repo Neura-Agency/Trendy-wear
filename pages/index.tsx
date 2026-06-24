@@ -932,13 +932,13 @@ function OrdersSection({ orders, overallOrders = [], inventory = [], storeInvent
   const editingDeductions = Number(editing?.shipmentCost || 0) + Number(editing?.extraCharges || 0);
   const editingNetPayable = editingGross - editingDeductions;
 
-  const filteredQty = orders.reduce((s, o) => s + (o.quantity || 0), 0);
-  const filteredGross = orders.reduce((s, o) => s + ((o.sellingPrice || 0) * (o.quantity || 0)), 0);
+  const filteredQty = orders.reduce((s, o) => s + effectiveQty(o), 0);
+  const filteredGross = orders.reduce((s, o) => s + effectiveRevenue(o), 0);
   const filteredShipping = orders.reduce((s, o) => s + (o.shipmentCost || 0), 0);
   const filteredProfit = orders.reduce((s, o) => s + (o.profit || 0), 0);
 
-  const overallQty = (overallOrders || []).reduce((s, o) => s + (o.quantity || 0), 0);
-  const overallGross = (overallOrders || []).reduce((s, o) => s + ((o.sellingPrice || 0) * (o.quantity || 0)), 0);
+  const overallQty = (overallOrders || []).reduce((s, o) => s + effectiveQty(o), 0);
+  const overallGross = (overallOrders || []).reduce((s, o) => s + effectiveRevenue(o), 0);
   const overallShipping = (overallOrders || []).reduce((s, o) => s + (o.shipmentCost || 0), 0);
   const overallProfit = (overallOrders || []).reduce((s, o) => s + (o.profit || 0), 0);
 
@@ -1172,10 +1172,11 @@ function OrdersSection({ orders, overallOrders = [], inventory = [], storeInvent
             const fullyRefunded = refundedQty > 0 && refundedQty >= (soldQty - returnedQty);
             const hasAnyAction = returnedQty > 0 || refundedQty > 0;
             const remainingQty = soldQty - returnedQty - refundedQty;
-            const gross = o.sellingPrice * o.quantity;
+            const effectiveQ = soldQty - returnedQty - refundedQty;
+            const gross = o.sellingPrice * effectiveQ;
             const shipment = o.shipmentCost || 0;
             const netAmount = gross - shipment;
-            const totalCost = (o.costPrice || 0) * o.quantity;
+            const totalCost = (o.costPrice || 0) * effectiveQ;
             return (
               <tr key={idx} style={{ cursor: 'pointer', opacity: hasAnyAction ? 0.6 : 1, background: hasAnyAction ? 'rgba(0,0,0,0.05)' : 'transparent' }}
                 onClick={() => openEdit(o)}
@@ -1243,12 +1244,12 @@ function OrdersSection({ orders, overallOrders = [], inventory = [], storeInvent
                         type="button"
                         className="btn btn-sm"
                         style={{ fontSize: 11, padding: '4px 10px', background: 'rgba(239,68,68,0.09)', color: '#dc2626', border: '1.5px solid rgba(239,68,68,0.22)' }}
-                        onClick={async (e) => { e.stopPropagation(); if (await confirmDialog('Delete this sale? This action cannot be undone.')) { onDelete(o.id); } }}
+                        onClick={async (e) => { e.stopPropagation(); if (await confirmDialog('Delete this sale? Inventory will be restored, returns/refunds reversed, and the record permanently removed.')) { onDelete(o.id); } }}
                       >
                         Delete
                       </button>
                     )}
-                    {fullyReturned ? (
+                    {returnedQty > 0 && (
                       <button
                         type="button"
                         className="btn btn-sm"
@@ -1257,7 +1258,8 @@ function OrdersSection({ orders, overallOrders = [], inventory = [], storeInvent
                       >
                         Undo Return
                       </button>
-                    ) : refundedQty > 0 && !fullyReturned ? (
+                    )}
+                    {refundedQty > 0 && (
                       <button
                         type="button"
                         className="btn btn-sm"
@@ -1266,7 +1268,8 @@ function OrdersSection({ orders, overallOrders = [], inventory = [], storeInvent
                       >
                         Undo Refund
                       </button>
-                    ) : !fullyReturned && !fullyRefunded && remainingQty > 0 ? (
+                    )}
+                    {!fullyReturned && !fullyRefunded && remainingQty > 0 && (
                       <>
                         <button
                           type="button"
@@ -1285,7 +1288,7 @@ function OrdersSection({ orders, overallOrders = [], inventory = [], storeInvent
                           Refund
                         </button>
                       </>
-                    ) : null}
+                    )}
                   </div>
                 </td>
                 </tr>
@@ -1310,10 +1313,11 @@ function OrdersSection({ orders, overallOrders = [], inventory = [], storeInvent
           const fullyReturned = returnedQty > 0 ? returnedQty >= soldQty : Boolean(o.orderReturned);
           const fullyRefunded = refundedQty > 0 && refundedQty >= (soldQty - returnedQty);
           const remainingQty = soldQty - returnedQty - refundedQty;
-          const gross = o.sellingPrice * o.quantity;
+          const effectiveQ = soldQty - returnedQty - refundedQty;
+          const gross = o.sellingPrice * effectiveQ;
           const shipment = o.shipmentCost || 0;
           const netAmount = gross - shipment;
-          const totalCost = (o.costPrice || 0) * o.quantity;
+          const totalCost = (o.costPrice || 0) * effectiveQ;
           return (
             <div className="order-card" key={idx} onClick={() => setEditing({ ...o })}>
               <div className="order-card-top">
@@ -1373,7 +1377,7 @@ function OrdersSection({ orders, overallOrders = [], inventory = [], storeInvent
                     <button
                       className="btn btn-sm"
                       style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 5, padding: '6px 10px', fontSize: 11, fontWeight: 700, background: 'rgba(239,68,68,0.09)', color: '#dc2626', border: '1.5px solid rgba(239,68,68,0.22)', borderRadius: 8 }}
-                      onClick={async (e) => { e.stopPropagation(); if (await confirmDialog('Delete this sale? This action cannot be undone.')) { onDelete(o.id); } }}
+                      onClick={async (e) => { e.stopPropagation(); if (await confirmDialog('Delete this sale? Inventory will be restored, returns/refunds reversed, and the record permanently removed.')) { onDelete(o.id); } }}
                     >
                       <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="M3 6h18"/><path d="M8 6V4a1 1 0 0 1 1-1h6a1 1 0 0 1 1 1v2"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/></svg>
                       Delete
@@ -1381,7 +1385,7 @@ function OrdersSection({ orders, overallOrders = [], inventory = [], storeInvent
                   ) : <div />}
 
                   {/* Row 2: Return/Undo + Refund/Undo */}
-                  {fullyReturned ? (
+                  {returnedQty > 0 && (
                     <button
                       className="btn btn-sm"
                       style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 5, padding: '6px 10px', fontSize: 11, fontWeight: 700, background: 'rgba(107,114,128,0.1)', color: '#4b5563', border: '1.5px solid rgba(107,114,128,0.22)', borderRadius: 8, gridColumn: '1 / -1' }}
@@ -1390,7 +1394,8 @@ function OrdersSection({ orders, overallOrders = [], inventory = [], storeInvent
                       <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="M9 14l-4-4 4-4"/><path d="M5 10h9a6 6 0 0 1 0 12H8"/></svg>
                       Undo Return
                     </button>
-                  ) : refundedQty > 0 && !fullyReturned ? (
+                  )}
+                  {refundedQty > 0 && (
                     <button
                       className="btn btn-sm"
                       style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 5, padding: '6px 10px', fontSize: 11, fontWeight: 700, background: 'rgba(107,114,128,0.1)', color: '#4b5563', border: '1.5px solid rgba(107,114,128,0.22)', borderRadius: 8, gridColumn: '1 / -1' }}
@@ -1399,7 +1404,8 @@ function OrdersSection({ orders, overallOrders = [], inventory = [], storeInvent
                       <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="M9 14l-4-4 4-4"/><path d="M5 10h9a6 6 0 0 1 0 12H8"/></svg>
                       Undo Refund
                     </button>
-                  ) : !fullyReturned && !fullyRefunded && remainingQty > 0 ? (
+                  )}
+                  {!fullyReturned && !fullyRefunded && remainingQty > 0 && (
                     <>
                       <button
                         className="btn btn-sm"
@@ -1418,7 +1424,7 @@ function OrdersSection({ orders, overallOrders = [], inventory = [], storeInvent
                         Refund
                       </button>
                     </>
-                  ) : null}
+                  )}
                 </div>
               </div>
             </div>

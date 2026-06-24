@@ -1,9 +1,6 @@
-/** @jest-environment node */
 // Integration test: Inventory → Sale → Return → Refund → Undo Return → Undo Refund
+// and DELETE rollback
 // Uses real Supabase DB with mocked auth session.
-// Goals:
-// 1. Exercise full lifecycle end-to-end against actual API handlers
-// 2. Verify invariants: no inventory loss on return, COGS loss on refund, financials reconcile
 import type { NextApiRequest, NextApiResponse } from 'next'
 
 // ── Mock auth layer ──────────────────────────────────────────────────────────
@@ -62,13 +59,16 @@ const PRICE = 500
 const COST = 300
 const COMMISSION_PCT = 10
 const SALE_QTY = 2
-const TOTAL_ASSIGNED = 6 // from variant rollup: Red(S1,M2,L1)+Blue(S1,M1)
+const TOTAL_ASSIGNED = 6
 
 function num(v: any): number {
   const n = Number(v)
   return Number.isFinite(n) ? n : 0
 }
 
+// ══════════════════════════════════════════════════════════════════════════════
+// Suite 1: Inventory lifecycle
+// ══════════════════════════════════════════════════════════════════════════════
 describe('Inventory lifecycle: allot → sale → return → refund → undo return → undo refund', () => {
   let productId: string
   let storeId: string
@@ -79,7 +79,6 @@ describe('Inventory lifecycle: allot → sale → return → refund → undo ret
   const storeName = `Test Store ${NOW}`
 
   beforeAll(async () => {
-    // ── Seed product ─────────────────────────────────────────────────────────
     const { data: product, error: productErr } = await supabaseAdmin
       .from(TABLES.PRODUCTS)
       .insert({
@@ -95,7 +94,6 @@ describe('Inventory lifecycle: allot → sale → return → refund → undo ret
     if (productErr) throw new Error(`Product insert failed: ${productErr.message}`)
     productId = product!.id
 
-    // ── Seed warehouse inventory batch ────────────────────────────────────────
     const { data: inv, error: invErr } = await supabaseAdmin
       .from(TABLES.INVENTORY)
       .insert({
@@ -115,7 +113,6 @@ describe('Inventory lifecycle: allot → sale → return → refund → undo ret
     if (invErr) throw new Error(`Inventory insert failed: ${invErr.message}`)
     inventoryId = inv!.id
 
-    // ── Seed store ────────────────────────────────────────────────────────────
     const { data: store, error: storeErr } = await supabaseAdmin
       .from(TABLES.STORES)
       .insert({
@@ -151,21 +148,19 @@ describe('Inventory lifecycle: allot → sale → return → refund → undo ret
     const req = makeReq('POST', {
       storeName,
       batchNumber,
-      quantity: 5,
+      quantity: TOTAL_ASSIGNED,
       variantQuantitiesAssigned: { Red: { S: 1, M: 2, L: 1 }, Blue: { S: 1, M: 1 } },
       ownerSupplyPrice: COST,
       commissionPercent: COMMISSION_PCT,
     })
 
     await handlerStoreInventory(req, res)
-    console.log('Allot response:', res.statusCode, res.data)
     expect(res.statusCode).toBe(201)
     expect(res.data.success).toBe(true)
     storeInventoryId = res.data.id
 
     const { data: si } = await supabaseAdmin
       .from(TABLES.STORE_INVENTORY).select('*').eq('id', storeInventoryId).single()
-    console.log('Store inventory after allot:', si)
     expect(si!.quantity_assigned).toBe(TOTAL_ASSIGNED)
     expect(si!.quantity_remaining).toBe(TOTAL_ASSIGNED)
   })
@@ -187,21 +182,18 @@ describe('Inventory lifecycle: allot → sale → return → refund → undo ret
     })
 
     await handlerOrders(req, res)
-    console.log('Sale response:', res.statusCode, res.data)
     expect(res.statusCode).toBe(201)
     expect(res.data.success).toBe(true)
     orderId = res.data.orderId
 
     const { data: order } = await supabaseAdmin
       .from(TABLES.ORDERS).select('*').eq('id', orderId).single()
-    console.log('Order after sale:', order)
     expect(order!.quantity).toBe(SALE_QTY)
     expect(num(order!.selling_price)).toBe(PRICE)
     expect(num(order!.cost_price)).toBe(COST)
 
     const { data: si } = await supabaseAdmin
       .from(TABLES.STORE_INVENTORY).select('*').eq('id', storeInventoryId).single()
-    console.log('Store inventory after sale:', si)
     expect(num(si!.quantity_remaining)).toBe(TOTAL_ASSIGNED - SALE_QTY)
   })
 
@@ -216,29 +208,19 @@ describe('Inventory lifecycle: allot → sale → return → refund → undo ret
     })
 
     await handlerOrders(req, res)
-    console.log('Return response:', res.statusCode, res.data)
     expect(res.statusCode).toBe(200)
     expect(res.data.success).toBe(true)
 
     const { data: order } = await supabaseAdmin
       .from(TABLES.ORDERS).select('*').eq('id', orderId).single()
-    console.log('Order after return:', order)
     expect(num(order!.return_quantity)).toBe(1)
-    expect(order!.order_returned).toBe(false) // partial return: explicitly false
-
-    // Financials after return (1 of 2 returned, 1 remains)
-    // remainingGross = 500*1 - 0 = 500
-    // commission = 500*0.10 = 50
-    // adminTake = 450
-    // remainingProfit = adminTake - cost*remainingUnits = 450 - 300 = 150
+    expect(order!.order_returned).toBe(false)
     expect(num(order!.commission_amount)).toBe(50)
     expect(num(order!.admin_take)).toBe(450)
     expect(num(order!.profit)).toBe(150)
 
     const { data: si } = await supabaseAdmin
       .from(TABLES.STORE_INVENTORY).select('*').eq('id', storeInventoryId).single()
-    console.log('Store inventory after return:', si)
-    // After sale remaining was 4, return restores 1 → 5
     expect(num(si!.quantity_remaining)).toBe(TOTAL_ASSIGNED - SALE_QTY + 1)
     expect(num(si!.pending_return_qty)).toBe(1)
   })
@@ -254,28 +236,21 @@ describe('Inventory lifecycle: allot → sale → return → refund → undo ret
     })
 
     await handlerOrders(req, res)
-    console.log('Refund response:', res.statusCode, res.data)
     expect(res.statusCode).toBe(200)
     expect(res.data.success).toBe(true)
 
     const { data: order } = await supabaseAdmin
       .from(TABLES.ORDERS).select('*').eq('id', orderId).single()
-    console.log('Order after refund:', order)
     expect(num(order!.refund_quantity)).toBe(1)
     expect(num(order!.refund_amount)).toBe(PRICE)
-    // remainingUnits = 0, remainingGross = 0
-    // commission = 0, adminTake = 0
-    // remainingProfit = 0 - 300*2 = -600
     expect(num(order!.profit)).toBe(-600)
     expect(num(order!.admin_take)).toBe(0)
     expect(num(order!.commission_amount)).toBe(0)
 
     const { data: si } = await supabaseAdmin
       .from(TABLES.STORE_INVENTORY).select('*').eq('id', storeInventoryId).single()
-    console.log('Store inventory after refund:', si)
-    // NO inventory change on refund
     expect(num(si!.quantity_remaining)).toBe(TOTAL_ASSIGNED - SALE_QTY + 1)
-    expect(num(si!.pending_return_qty)).toBe(1) // unchanged
+    expect(num(si!.pending_return_qty)).toBe(1)
   })
 
   test('5. Undo the 1-item return', async () => {
@@ -286,24 +261,19 @@ describe('Inventory lifecycle: allot → sale → return → refund → undo ret
     })
 
     await handlerOrders(req, res)
-    console.log('Undo return response:', res.statusCode, res.data)
     expect(res.statusCode).toBe(200)
     expect(res.data.success).toBe(true)
 
     const { data: order } = await supabaseAdmin
       .from(TABLES.ORDERS).select('*').eq('id', orderId).single()
-    console.log('Order after undo return:', order)
     expect(order!.order_returned).toBe(false)
     expect(order!.return_quantity).toBeNull()
-    // Refund of 1 unit still stands, so effectiveQty = 2 - 1 = 1
-    // gross = 500*1 - 0 = 500, commission = 50, adminTake = 450, profit = 150
     expect(num(order!.profit)).toBe(150)
     expect(num(order!.admin_take)).toBe(450)
     expect(num(order!.commission_amount)).toBe(50)
 
     const { data: si } = await supabaseAdmin
       .from(TABLES.STORE_INVENTORY).select('*').eq('id', storeInventoryId).single()
-    console.log('Store inventory after undo return:', si)
     expect(num(si!.quantity_remaining)).toBe(TOTAL_ASSIGNED - SALE_QTY)
     expect(num(si!.pending_return_qty)).toBe(0)
   })
@@ -316,16 +286,13 @@ describe('Inventory lifecycle: allot → sale → return → refund → undo ret
     })
 
     await handlerOrders(req, res)
-    console.log('Undo refund response:', res.statusCode, res.data)
     expect(res.statusCode).toBe(200)
     expect(res.data.success).toBe(true)
 
     const { data: order } = await supabaseAdmin
       .from(TABLES.ORDERS).select('*').eq('id', orderId).single()
-    console.log('Order after undo refund:', order)
     expect(order!.refund_quantity).toBeNull()
     expect(order!.refund_amount).toBeNull()
-    // Back to original sale financials: 2 units, gross=1000, commission=100, adminTake=900, profit=300
     expect(num(order!.profit)).toBe(300)
     expect(num(order!.admin_take)).toBe(900)
     expect(num(order!.commission_amount)).toBe(100)

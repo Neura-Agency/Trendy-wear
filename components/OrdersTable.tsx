@@ -41,6 +41,40 @@ export default function OrdersTable({ orders, onRefresh }: { orders: any[]; onRe
     }
   };
 
+  const handleUndoReturn = async (orderId: string) => {
+    if (!confirm('Undo this return? The item will be marked as sold again.')) return;
+    try {
+      const res = await fetch('/api/orders', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ isUndoReturn: true, id: orderId }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'Failed to undo return');
+      toast.success('\u2705 Return undone');
+      onRefresh?.();
+    } catch (e: any) {
+      toast.error(e?.message || 'Undo return failed');
+    }
+  };
+
+  const handleUndoRefund = async (orderId: string) => {
+    if (!confirm('Undo this refund? The refund will be reversed and order financials will be restored.')) return;
+    try {
+      const res = await fetch('/api/orders', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ isUndoRefund: true, id: orderId }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'Failed to undo refund');
+      toast.success('\u2705 Refund undone');
+      onRefresh?.();
+    } catch (e: any) {
+      toast.error(e?.message || 'Undo refund failed');
+    }
+  };
+
   return (
     <>
     <div className="section">
@@ -93,7 +127,15 @@ export default function OrdersTable({ orders, onRefresh }: { orders: any[]; onRe
                       : o.quantity
                     }
                   </td>
-                  <td>${Number(o.sellingPrice).toLocaleString()}</td>
+                  <td>
+                    {hasAnyAction
+                      ? <>
+                          <span style={{textDecoration:'line-through', opacity:0.5}}>${(Number(o.sellingPrice) * soldQty).toLocaleString()}</span>
+                          <span style={{fontWeight:700}}> ${(Number(o.sellingPrice) * remainingQty).toLocaleString()}</span>
+                        </>
+                      : `$${(Number(o.sellingPrice) * soldQty).toLocaleString()}`
+                    }
+                  </td>
                   <td>${Number(o.costPrice).toLocaleString()}</td>
                   <td>{o.commissionPercent ?? '-'}%</td>
                   <td style={{color: o.profit > 0 ? 'var(--success)' : o.profit < 0 ? 'var(--danger)' : 'inherit', fontWeight:600}}>
@@ -124,7 +166,7 @@ export default function OrdersTable({ orders, onRefresh }: { orders: any[]; onRe
                     }
                   </td>
                   <td style={{ textAlign: 'center' }}>
-                    <div style={{ display: 'flex', gap: 6, justifyContent: 'center' }}>
+                    <div style={{ display: 'flex', gap: 6, justifyContent: 'center', flexWrap: 'wrap' }}>
                       {!fullyReturned && !fullyRefunded && remainingQty > 0 && (
                         <button
                           className="btn btn-sm"
@@ -143,6 +185,26 @@ export default function OrdersTable({ orders, onRefresh }: { orders: any[]; onRe
                           title="Refund this sale (customer keeps item)"
                         >
                           💸 Refund
+                        </button>
+                      )}
+                      {returnedQty > 0 && (
+                        <button
+                          className="btn btn-sm"
+                          style={{ fontSize: 11, padding: '3px 10px', background: '#e0e7ff', borderColor: '#c7d2fe', color: '#3730a3' }}
+                          onClick={() => handleUndoReturn(o.id)}
+                          title="Undo return"
+                        >
+                          ↩ Undo
+                        </button>
+                      )}
+                      {refundedQty > 0 && (
+                        <button
+                          className="btn btn-sm"
+                          style={{ fontSize: 11, padding: '3px 10px', background: '#fce7f3', borderColor: '#fbcfe8', color: '#831843' }}
+                          onClick={() => handleUndoRefund(o.id)}
+                          title="Undo refund"
+                        >
+                          💸 Undo
                         </button>
                       )}
                     </div>

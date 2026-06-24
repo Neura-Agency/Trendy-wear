@@ -242,7 +242,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
         return res.status(500).json({ error: 'Failed to fetch existing inventory' })
       }
 
-      const nextVariantQuantities = mergeVariantQuantities(existingInventory?.variant_quantities, normalizedIncomingVariants)
+      const nextVariantQuantities = mergeVariantQuantities(parseJsonField(existingInventory?.variant_quantities), normalizedIncomingVariants)
       const variantRollups = rollupVariantQuantities(nextVariantQuantities)
       const nextSizeQuantities = variantRollups.sizeQuantities ?? mergeQuantities(existingInventory?.size_quantities, effectiveSizeQuantities)
       const nextColorQuantities = variantRollups.colorQuantities ?? mergeQuantities(existingInventory?.color_quantities, effectiveColorQuantities)
@@ -351,7 +351,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
         
         // Compute correct quantityAvailable from variant rollup if variant quantities exist
         let correctQty: number
-        const rawVariants = normalizeVariantQuantities(row.variant_quantities)
+        const rawVariants = normalizeVariantQuantities(parseJsonField(row.variant_quantities))
         if (rawVariants) {
           correctQty = rollupVariantQuantities(rawVariants).total
         } else {
