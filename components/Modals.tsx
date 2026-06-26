@@ -2524,7 +2524,7 @@ export function SaleModal({ inventory, storeName, isAdmin, storeNames, onAdd, on
                                     <option value="">Choose...</option>
                                     {inventory.map(i => (
                                         <option key={i.productId || i.productName} value={i.productId || i.productName}>
-                                            {i.productName}{i.brandName ? ` • ${i.brandName}` : ''}{i.productType ? ` • ${i.productType}` : ''} ({i.quantityAvailable})
+                                            {i.productName} - {i.productId || i.productName}
                                         </option>
                                     ))}
                                 </select>
@@ -2846,6 +2846,10 @@ export function CartModal({ inventory, storeName, isAdmin, storeNames, onAdd, on
 
     const handleAddToCart = () => {
         if (!canAddToCart) return;
+        if (!selectedItem?.productName) {
+            toast.error('Selected product not found. Please reselect from the dropdown.');
+            return;
+        }
         const finalPrice = currency === 'GBP' ? itemPrice * gbpRate : itemPrice;
         const cartItem: any = {
             productId: selectedItem?.productId || selectedProductId,
@@ -2882,9 +2886,21 @@ export function CartModal({ inventory, storeName, isAdmin, storeNames, onAdd, on
             toast.error('Cart is empty');
             return;
         }
+
+        // Guard: skip cart items that lack productName so a stale/undefined entry
+        // never triggers a "productName is required" 400 from the server.
+        const cleanItems = cartItems.filter(it => it.productName && it.quantity > 0);
+        if (cleanItems.length === 0) {
+            toast.error('No valid items to save. Please reselect a product.');
+            return;
+        }
+        if (cleanItems.length < cartItems.length) {
+            toast.error(`${cartItems.length - cleanItems.length} item(s) skipped — missing product or quantity.`);
+        }
+
         try {
             const orderCodes: string[] = [];
-            for (const item of cartItems) {
+            for (const item of cleanItems) {
                 const res = await fetch('/api/orders', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
@@ -2950,9 +2966,9 @@ export function CartModal({ inventory, storeName, isAdmin, storeNames, onAdd, on
                                     <select value={selectedProductId} onChange={e => setSelectedProductId(e.target.value)} required>
                                         <option value="">Choose...</option>
                                         {inventory.map(i => (
-                                            <option key={i.productId || i.productName} value={i.productId || i.productName}>
-                                                {i.productName}{i.brandName ? ` • ${i.brandName}` : ''}{i.productType ? ` • ${i.productType}` : ''} ({i.quantityAvailable})
-                                            </option>
+                                        <option key={i.productId || i.productName} value={i.productId || i.productName}>
+                                            {i.productName} - {i.productId || i.productName}
+                                        </option>
                                         ))}
                                     </select>
                                 </div>
@@ -3063,7 +3079,7 @@ export function CartModal({ inventory, storeName, isAdmin, storeNames, onAdd, on
                                         <tbody>
                                             {cartItems.map((it, idx) => (
                                                 <tr key={idx}>
-                                                    <td>{it.productName}</td>
+                                                    <td>{it.productName} - {it.productId || it.productName}</td>
                                                     <td style={{ textAlign: 'center' }}>{it.quantity}{it.extraQty ? ` +${it.extraQty}` : ''}</td>
                                                     <td style={{ textAlign: 'right' }}>Rs {Number(it.sellingPrice).toLocaleString()}</td>
                                                     <td style={{ textAlign: 'right', fontWeight: 700 }}>Rs {(Number(it.sellingPrice) * Number(it.quantity)).toLocaleString()}</td>
