@@ -2717,6 +2717,402 @@ export function SaleModal({ inventory, storeName, isAdmin, storeNames, onAdd, on
     );
 }
 
+export function CartModal({ inventory, storeName, isAdmin, storeNames, onAdd, onClose }: SaleModalPropsLocal) {
+    const { toast } = usePopup();
+    const todayIso = new Date().toISOString().slice(0, 10);
+    const [shipmentCost, setShipmentCost] = useState(0);
+    const [extraCharges, setExtraCharges] = useState(0);
+    const [clientName, setClientName] = useState('');
+    const [occurredAt, setOccurredAt] = useState(todayIso);
+    const [orderType, setOrderType] = useState('Sale');
+    const [cartItems, setCartItems] = useState<any[]>([]);
+    const [currency, setCurrency] = useState<string>('PKR');
+    const gbpRate = 360;
+
+    const [selectedProductId, setSelectedProductId] = useState('');
+    const [selectedItem, setSelectedItem] = useState<any>(null);
+    const [itemQty, setItemQty] = useState(0);
+    const [itemExtraQty, setItemExtraQty] = useState(0);
+    const [itemPrice, setItemPrice] = useState(0);
+    const [sizeQuantities, setSizeQuantities] = useState<Record<string, number>>({});
+    const [colorQuantities, setColorQuantities] = useState<Record<string, number>>({});
+    const [variantQuantities, setVariantQuantities] = useState<VariantQuantities>({});
+    const [itemSize, setItemSize] = useState('');
+    const [itemColor, setItemColor] = useState('');
+
+    const buildEmptyQuantities = (keys: string[]) => keys.reduce((acc, key) => { acc[key] = 0; return acc; }, {} as Record<string, number>);
+
+    const currentSelected = inventory.find(i => (selectedProductId && i.productId === selectedProductId) || (!selectedProductId && i.productName === selectedProductId));
+
+    React.useEffect(() => {
+        if (!selectedProductId) {
+            setSelectedItem(null);
+            return;
+        }
+        const found = inventory.find(i => (i.productId && i.productId === selectedProductId) || i.productName === selectedProductId);
+        setSelectedItem(found || null);
+        if (found) {
+            setItemPrice(found.sellingPrice || 0);
+            setItemQty(0);
+            setItemExtraQty(0);
+            setSizeQuantities(buildEmptyQuantities(Array.isArray(found.sizes) ? found.sizes : []));
+            setColorQuantities(buildEmptyQuantities(Array.isArray(found.colors) ? found.colors : []));
+            setVariantQuantities({});
+            setItemSize('');
+            setItemColor('');
+        }
+    }, [selectedProductId, inventory]);
+
+    const cartVariantQuantities = cartItems.reduce((acc, it) => {
+        if (it.variantQuantities) {
+            Object.entries(it.variantQuantities).forEach(([color, sizes]: [string, Record<string, number>]) => {
+                if (!acc[color]) acc[color] = {};
+                Object.entries(sizes).forEach(([size, qty]) => {
+                    acc[color][size] = (acc[color][size] || 0) + qty;
+                });
+            });
+        }
+        return acc;
+    }, {} as VariantQuantities);
+
+    const baseVariantQuantitiesRemaining = selectedItem?.variantQuantitiesRemaining ?? selectedItem?.variantQuantities ?? buildLegacyMaxVariantGrid(selectedItem?.colorQuantitiesRemaining ?? selectedItem?.colorQuantities, selectedItem?.sizeQuantitiesRemaining ?? selectedItem?.sizeQuantities);
+    const variantQuantitiesRemaining = adjustVariantQuantities(baseVariantQuantitiesRemaining, cartVariantQuantities, -1);
+    const variantColors = Object.keys(variantQuantitiesRemaining || {});
+    const variantSizes = Array.from(new Set(Object.values(variantQuantitiesRemaining || {}).flatMap(sizes => Object.keys(sizes || {}))));
+    const hasVariantGrid = variantColors.length > 0 && variantSizes.length > 0;
+
+    const cartSizeQuantities = cartItems.reduce((acc, it) => {
+        if (it.sizeQuantities) {
+            Object.entries(it.sizeQuantities).forEach(([size, qty]) => {
+                acc[size] = (acc[size] || 0) + qty;
+            });
+        }
+        return acc;
+    }, {} as Record<string, number>);
+    const cartColorQuantities = cartItems.reduce((acc, it) => {
+        if (it.colorQuantities) {
+            Object.entries(it.colorQuantities).forEach(([color, qty]) => {
+                acc[color] = (acc[color] || 0) + qty;
+            });
+        }
+        return acc;
+    }, {} as Record<string, number>);
+
+    const effectiveSizeQuantitiesRemaining = Object.entries(selectedItem?.sizeQuantitiesRemaining ?? selectedItem?.sizeQuantities ?? {}).reduce((acc, [size, qty]) => {
+        acc[size] = Math.max(0, (qty as number || 0) - (cartSizeQuantities[size] || 0));
+        return acc;
+    }, {} as Record<string, number>);
+
+    const effectiveColorQuantitiesRemaining = Object.entries(selectedItem?.colorQuantitiesRemaining ?? selectedItem?.colorQuantities ?? {}).reduce((acc, [color, qty]) => {
+        acc[color] = Math.max(0, (qty as number || 0) - (cartColorQuantities[color] || 0));
+        return acc;
+    }, {} as Record<string, number>);
+    const availableSizesFromQuantities = Object.entries(effectiveSizeQuantitiesRemaining).filter(([_, qty]) => (qty as number) > 0);
+    const availableColorsFromQuantities = Object.entries(effectiveColorQuantitiesRemaining).filter(([_, qty]) => (qty as number) > 0);
+    const cartQtyForProduct = cartItems
+        .filter(it => (it.productId && selectedItem?.productId && it.productId === selectedItem.productId) || it.productName === selectedItem?.productName)
+        .reduce((s, it) => s + (it.quantity || 0), 0);
+    const availableSizes = availableSizesFromQuantities.length > 0
+        ? availableSizesFromQuantities
+        : Array.isArray(selectedItem?.sizes)
+            ? selectedItem.sizes.map(size => [size, Math.max(0, (selectedItem?.quantityAvailable ?? 0) - cartQtyForProduct)] as [string, number])
+            : [];
+    const availableColors = availableColorsFromQuantities.length > 0
+        ? availableColorsFromQuantities
+        : Array.isArray(selectedItem?.colors)
+            ? selectedItem.colors.map(color => [color, Math.max(0, (selectedItem?.quantityAvailable ?? 0) - cartQtyForProduct)] as [string, number])
+            : [];
+    const hasSizeTracking = !hasVariantGrid && availableSizes.length > 0;
+    const hasColorTracking = !hasVariantGrid && availableColors.length > 0;
+
+    const sizeQuantityTotal = Object.values(sizeQuantities).reduce((sum, qty) => sum + (Number(qty) || 0), 0);
+    const colorQuantityTotal = Object.values(colorQuantities).reduce((sum, qty) => sum + (Number(qty) || 0), 0);
+    const variantQuantityTotal = variantGrandTotal(variantQuantities);
+    const hasAnyVariantBreakdown = hasVariantGrid || hasSizeTracking || hasColorTracking;
+    const itemTotalQty = hasVariantGrid ? variantQuantityTotal : hasAnyVariantBreakdown ? Math.max(sizeQuantityTotal, colorQuantityTotal) : itemQty;
+    const itemTotalDispatch = itemTotalQty + itemExtraQty;
+
+    const updateSizeQuantity = (size: string, qty: number) => {
+        const maxForSize = Number(effectiveSizeQuantitiesRemaining?.[size] ?? selectedItem?.quantityAvailable ?? 0);
+        setSizeQuantities(curr => ({ ...curr, [size]: Math.max(0, Math.min(qty, maxForSize)) }));
+    };
+
+    const updateColorQuantity = (color: string, qty: number) => {
+        const maxForColor = Number(effectiveColorQuantitiesRemaining?.[color] ?? selectedItem?.quantityAvailable ?? 0);
+        setColorQuantities(curr => ({ ...curr, [color]: Math.max(0, Math.min(qty, maxForColor)) }));
+    };
+
+    const canAddToCart = selectedProductId && itemTotalDispatch > 0 && itemPrice > 0;
+
+    const handleAddToCart = () => {
+        if (!canAddToCart) return;
+        const finalPrice = currency === 'GBP' ? itemPrice * gbpRate : itemPrice;
+        const cartItem: any = {
+            productId: selectedItem?.productId || selectedProductId,
+            productName: selectedItem?.productName || selectedProductId,
+            quantity: itemTotalQty,
+            extraQty: itemExtraQty,
+            sellingPrice: finalPrice,
+            size: itemSize || null,
+            color: itemColor || null,
+            sizeQuantities: hasSizeTracking ? sizeQuantities : null,
+            colorQuantities: hasColorTracking ? colorQuantities : null,
+            variantQuantities: hasVariantGrid ? variantQuantities : null,
+        };
+        setCartItems(prev => [...prev, cartItem]);
+        setSelectedProductId('');
+        setSelectedItem(null);
+        setItemQty(0);
+        setItemExtraQty(0);
+        setItemPrice(0);
+        setSizeQuantities({});
+        setColorQuantities({});
+        setVariantQuantities({});
+        setItemSize('');
+        setItemColor('');
+        toast.success('Item added to cart');
+    };
+
+    const handleRemoveFromCart = (index: number) => {
+        setCartItems(prev => prev.filter((_, i) => i !== index));
+    };
+
+    const handleSaveOrder = async () => {
+        if (cartItems.length === 0) {
+            toast.error('Cart is empty');
+            return;
+        }
+        try {
+            const orderCodes: string[] = [];
+            for (const item of cartItems) {
+                const res = await fetch('/api/orders', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        storeName: storeName || storeNames?.[0] || 'Direct',
+                        clientName: clientName || '',
+                        orderType,
+                        occurredAt: occurredAt || todayIso,
+                        shipmentCost: shipmentCost || 0,
+                        extraCharges: extraCharges || 0,
+                        productId: item.productId,
+                        productName: item.productName,
+                        quantity: item.quantity,
+                        extraQty: item.extraQty,
+                        sellingPrice: item.sellingPrice,
+                        size: item.size,
+                        color: item.color,
+                        sizeQuantities: item.sizeQuantities,
+                        colorQuantities: item.colorQuantities,
+                        variantQuantities: item.variantQuantities,
+                    }),
+                });
+                const result = await res.json();
+                if (!res.ok) {
+                    toast.error(result.error || 'Failed to save order');
+                    return;
+                }
+                orderCodes.push(result.orderCode);
+            }
+            toast.success(orderCodes.length > 1 ? `${orderCodes.length} items saved!` : `Order saved! Code: ${orderCodes[0]}`);
+            onAdd?.({ success: true, orderCode: orderCodes[0] });
+            onClose();
+        } catch (e: any) {
+            toast.error(e?.message || 'Failed to save order');
+        }
+    };
+
+    const cartSubtotal = cartItems.reduce((s, it) => s + (Number(it.sellingPrice) || 0) * (Number(it.quantity) || 0), 0);
+    const cartTotalDispatch = cartItems.reduce((s, it) => s + (Number(it.quantity) || 0) + (Number(it.extraQty) || 0), 0);
+    const totalDeductions = Number(shipmentCost) + Number(extraCharges);
+    const netPayable = cartSubtotal - totalDeductions;
+
+    return (
+        <div className="modal-overlay">
+            <div className="modal-box" style={{ maxWidth: '1100px', width: '95%', maxHeight: '90vh', overflowY: 'auto' }}>
+                <div className="modal-head" style={{ padding: '12px 20px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                    <h3 style={{ fontSize: '16px' }}>New Order (Cart)</h3>
+                    <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+                        {['PKR', 'GBP'].map(curr => (
+                            <button key={curr} type="button" style={{ padding: '2px 8px', fontSize: '10px', fontWeight: 800, borderRadius: 4, background: currency === curr ? 'var(--pri-600)' : '#f0f0f0', color: currency === curr ? '#fff' : '#8c8c8c', border: 'none', cursor: 'pointer' }} onClick={() => setCurrency(curr)}>{curr}</button>
+                        ))}
+                        <button className="btn btn-sm" onClick={onClose} style={{ border: 'none', fontSize: '16px', marginLeft: 8 }}>✕</button>
+                    </div>
+                </div>
+                <div className="modal-body" style={{ padding: '16px 20px' }}>
+                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16 }}>
+                        {/* LEFT: Add item form */}
+                        <div style={{ borderRight: '1px solid var(--border)', paddingRight: 16 }}>
+                            <h4 style={{ margin: '0 0 12px 0', fontSize: 14 }}>Add Item</h4>
+                            <div className="form-grid-2">
+                                <div className="input-group full-width">
+                                    <label>Select Product</label>
+                                    <select value={selectedProductId} onChange={e => setSelectedProductId(e.target.value)} required>
+                                        <option value="">Choose...</option>
+                                        {inventory.map(i => (
+                                            <option key={i.productId || i.productName} value={i.productId || i.productName}>
+                                                {i.productName}{i.brandName ? ` • ${i.brandName}` : ''}{i.productType ? ` • ${i.productType}` : ''} ({i.quantityAvailable})
+                                            </option>
+                                        ))}
+                                    </select>
+                                </div>
+
+                                {hasVariantGrid && (
+                                    <div className="input-group full-width">
+                                        <VariantQuantityGrid colors={variantColors} sizes={variantSizes} values={variantQuantities} maxValues={variantQuantitiesRemaining} title="By Color & Size" showRemainingLabel={true} onChange={setVariantQuantities} />
+                                    </div>
+                                )}
+
+                                {hasSizeTracking && (
+                                    <div className="input-group full-width">
+                                        <label>Quantity by Size</label>
+                                        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(110px, 1fr))', gap: 10 }}>
+                                            {availableSizes.map(([size, qty]) => (
+                                                <div key={size} style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+                                                    <label style={{ fontSize: 11, fontWeight: 700, color: 'var(--text-muted)' }}>{size} <span style={{ fontSize: 10 }}>(max: {qty})</span></label>
+                                                    <input type="number" min="0" value={sizeQuantities[size] || 0} onChange={e => updateSizeQuantity(size, parseInt(e.target.value) || 0)} style={{ padding: '6px 10px', fontSize: 13 }} />
+                                                </div>
+                                            ))}
+                                        </div>
+                                    </div>
+                                )}
+
+                                {hasColorTracking && (
+                                    <div className="input-group full-width">
+                                        <label>Quantity by Color</label>
+                                        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(110px, 1fr))', gap: 10 }}>
+                                            {availableColors.map(([color, qty]) => (
+                                                <div key={color} style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+                                                    <label style={{ fontSize: 11, fontWeight: 700, color: 'var(--text-muted)' }}>{color} <span style={{ fontSize: 10 }}>(max: {qty})</span></label>
+                                                    <input type="number" min="0" value={colorQuantities[color] || 0} onChange={e => updateColorQuantity(color, parseInt(e.target.value) || 0)} style={{ padding: '6px 10px', fontSize: 13 }} />
+                                                </div>
+                                            ))}
+                                        </div>
+                                    </div>
+                                )}
+
+                                <div className="input-group">
+                                    <label>Qty</label>
+                                    <input type="number" min="0" value={hasAnyVariantBreakdown ? itemTotalQty : itemQty} readOnly={hasAnyVariantBreakdown} onChange={e => setItemQty(parseInt(e.target.value) || 0)} style={hasAnyVariantBreakdown ? { background: 'var(--surface-2)', cursor: 'default' } : undefined} />
+                                    {hasAnyVariantBreakdown && <div style={{ fontSize: 10, marginTop: 2, color: 'var(--text-muted)' }}>Auto-calculated</div>}
+                                </div>
+
+                                {isAdmin && (
+                                    <div className="input-group">
+                                        <label>Extra Qty <span style={{ fontSize: '10px', fontWeight: 400, color: '#8c8c8c' }}>(bonus)</span></label>
+                                        <input type="number" min="0" value={itemExtraQty} onChange={e => setItemExtraQty(parseInt(e.target.value) || 0)} />
+                                    </div>
+                                )}
+
+                                <div className="input-group">
+                                    <label>Price ({currency})</label>
+                                    <input type="number" min="0" step="0.01" value={itemPrice} onChange={e => setItemPrice(parseFloat(e.target.value) || 0)} style={{ fontWeight: 700 }} />
+                                    {currency === 'GBP' && <div style={{ fontSize: 10, color: 'var(--success)', marginTop: 2, fontWeight: 600 }}>≈ Rs {(itemPrice * gbpRate).toLocaleString()}</div>}
+                                </div>
+
+                                {isAdmin && (
+                                    <div className="input-group full-width">
+                                        <label>Location</label>
+                                        <select value={storeName || storeNames?.[0] || ''} onChange={e => {}}>
+                                            {Array.isArray(storeNames) && storeNames.map(s => <option key={s} value={s}>{s}</option>)}
+                                        </select>
+                                    </div>
+                                )}
+
+                                <div className="input-group full-width">
+                                    <label>Customer Name</label>
+                                    <input value={clientName} onChange={e => setClientName(e.target.value)} placeholder="Client name..." />
+                                </div>
+
+                                <div className="input-group">
+                                    <label>Date</label>
+                                    <input type="date" value={occurredAt} max={todayIso} onChange={e => setOccurredAt(e.target.value)} />
+                                </div>
+
+                                <div className="input-group">
+                                    <label>Type</label>
+                                    <select value={orderType} onChange={e => setOrderType(e.target.value)}>
+                                        <option value="Sale">Sale</option>
+                                        <option value="Gift">Gift</option>
+                                    </select>
+                                </div>
+                            </div>
+
+                            <button type="button" className="btn btn-primary btn-full" style={{ marginTop: 12, height: 38 }} onClick={handleAddToCart} disabled={!canAddToCart}>
+                                {cartItems.length > 0 ? '+ Add Another Item' : 'Add to Cart'}
+                            </button>
+                        </div>
+
+                        {/* RIGHT: Cart */}
+                        <div>
+                            <h4 style={{ margin: '0 0 12px 0', fontSize: 14 }}>Cart ({cartItems.length})</h4>
+                            {cartItems.length === 0 ? (
+                                <div style={{ textAlign: 'center', padding: 32, color: 'var(--text-muted)', fontSize: 13 }}>No items in cart yet.</div>
+                            ) : (
+                                <div style={{ maxHeight: 340, overflowY: 'auto', marginBottom: 12 }}>
+                                    <table className="table" style={{ fontSize: 12 }}>
+                                        <thead>
+                                            <tr>
+                                                <th>Product</th>
+                                                <th style={{ textAlign: 'center' }}>Qty</th>
+                                                <th style={{ textAlign: 'right' }}>Price</th>
+                                                <th style={{ textAlign: 'right' }}>Subtotal</th>
+                                                <th></th>
+                                            </tr>
+                                        </thead>
+                                        <tbody>
+                                            {cartItems.map((it, idx) => (
+                                                <tr key={idx}>
+                                                    <td>{it.productName}</td>
+                                                    <td style={{ textAlign: 'center' }}>{it.quantity}{it.extraQty ? ` +${it.extraQty}` : ''}</td>
+                                                    <td style={{ textAlign: 'right' }}>Rs {Number(it.sellingPrice).toLocaleString()}</td>
+                                                    <td style={{ textAlign: 'right', fontWeight: 700 }}>Rs {(Number(it.sellingPrice) * Number(it.quantity)).toLocaleString()}</td>
+                                                    <td><button className="btn btn-sm" style={{ border: 'none', color: 'var(--danger)', background: 'transparent', cursor: 'pointer' }} onClick={() => handleRemoveFromCart(idx)}>✕</button></td>
+                                                </tr>
+                                            ))}
+                                        </tbody>
+                                    </table>
+                                </div>
+                            )}
+
+                            <div style={{ borderTop: '1px solid var(--border)', paddingTop: 10, display: 'flex', flexDirection: 'column', gap: 6 }}>
+                                <div style={{ fontSize: 12, color: 'var(--text-muted)', fontWeight: 700, textTransform: 'uppercase' }}>Total Items: {cartTotalDispatch}</div>
+                                <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 13, fontWeight: 800 }}>
+                                    <span>Subtotal:</span><span>Rs {cartSubtotal.toLocaleString()}</span>
+                                </div>
+                                {isAdmin && (
+                                    <>
+                                        <div className="input-group" style={{ marginBottom: 4 }}>
+                                            <label style={{ fontSize: 11 }}>Shipment Cost (PKR)</label>
+                                            <input type="number" min="0" step="0.01" value={shipmentCost} onChange={e => setShipmentCost(parseFloat(e.target.value) || 0)} style={{ border: '1px solid var(--danger)', fontSize: 13 }} />
+                                        </div>
+                                        <div className="input-group" style={{ marginBottom: 4 }}>
+                                            <label style={{ fontSize: 11 }}>Extra Charges (PKR)</label>
+                                            <input type="number" min="0" step="0.01" value={extraCharges} onChange={e => setExtraCharges(parseFloat(e.target.value) || 0)} style={{ border: '1px solid var(--danger)', fontSize: 13 }} />
+                                        </div>
+                                    </>
+                                )}
+                                {totalDeductions > 0 && (
+                                    <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 12, fontWeight: 700, color: 'var(--danger)' }}>
+                                        <span>Deductions:</span><span>− Rs {totalDeductions.toLocaleString()}</span>
+                                    </div>
+                                )}
+                                <div style={{ display: 'flex', justifyContent: 'space-between', borderTop: '1px solid var(--border)', paddingTop: 6, fontSize: 16, fontWeight: 900 }}>
+                                    <span>Net Payable:</span><span style={{ color: 'var(--success)' }}>Rs {netPayable.toLocaleString()}</span>
+                                </div>
+                            </div>
+
+                            <button type="button" className="btn btn-primary btn-full" style={{ marginTop: 10, height: 42, fontSize: '14px', fontWeight: 700 }} onClick={handleSaveOrder} disabled={cartItems.length === 0}>
+                                Save Order
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    );
+}
+
 export function CreateStoreModal({ onSave, onClose }) {
     const [store, setStore] = useState({ 
         name: '', 
@@ -3778,11 +4174,17 @@ export function ExpenseBreakdownModal({ expenses, orders, onClose }: ExpenseBrea
     const cogsTotal       = orders.reduce((s, o) => {
         const soldQty = Number(o.quantity) || 0;
         const returnedQty = Math.min(Number(o.returnQuantity) || 0, soldQty);
-        const chargeableQty = soldQty - returnedQty;
+        const chargeableQty = soldQty - returnedQty; // refunded items still incur COGS loss
         return s + ((Number(o.costPrice) || 0) * chargeableQty);
     }, 0);
     const shippingTotal   = orders.reduce((s, o) => s + (Number(o.shipmentCost) || 0), 0);
-    const commissionTotal = orders.reduce((s, o) => s + (Number(o.commissionAmount) || 0), 0);
+    const commissionTotal = orders.reduce((s, o) => {
+        const soldQty = Number(o.quantity) || 0;
+        const returnedQty = Math.min(Number(o.returnQuantity) || 0, soldQty);
+        const refundedQty = Math.min(Number(o.refundQuantity) || 0, soldQty - returnedQty);
+        const effectiveQ = soldQty - returnedQty - refundedQty;
+        return s + ((Number(o.sellingPrice) || 0) * effectiveQ * (Number(o.commissionPercent) || 0) / 100);
+    }, 0);
     const grandTotal      = expensesTotal + cogsTotal + shippingTotal + commissionTotal;
 
     const ordersWithShipping   = orders.filter(o => (Number(o.shipmentCost) || 0) > 0);
@@ -3921,14 +4323,21 @@ export function ExpenseBreakdownModal({ expenses, orders, onClose }: ExpenseBrea
                         ordersWithCommission.length === 0 ? (
                             <div style={{ fontSize: 12, color: 'var(--text-muted)', padding: '8px 4px' }}>No partner commissions in this period.</div>
                         ) : (
-                            ordersWithCommission.map((o, i) => (
-                                <LineItem
-                                    key={`comm-${o.id || i}`}
-                                    label={`${o.productName} — ${o.storeName}`}
-                                    sub={`${o.quantity} unit${o.quantity !== 1 ? 's' : ''} · ${o.commissionPercent || 0}% commission`}
-                                    amount={Number(o.commissionAmount)}
-                                />
-                            ))
+                            ordersWithCommission.map((o, i) => {
+                                const soldQty = Number(o.quantity) || 0;
+                                const returnedQty = Math.min(Number(o.returnQuantity) || 0, soldQty);
+                                const refundedQty = Math.min(Number(o.refundQuantity) || 0, soldQty - returnedQty);
+                                const effectiveQ = soldQty - returnedQty - refundedQty;
+                                const commissionAmt = (Number(o.sellingPrice) || 0) * effectiveQ * (Number(o.commissionPercent) || 0) / 100;
+                                return effectiveQ > 0 ? (
+                                    <LineItem
+                                        key={`comm-${o.id || i}`}
+                                        label={`${o.productName} — ${o.storeName}`}
+                                        sub={`${effectiveQ} unit${effectiveQ !== 1 ? 's' : ''} · ${o.commissionPercent || 0}% commission`}
+                                        amount={commissionAmt}
+                                    />
+                                ) : null;
+                            })
                         )
                     )}
 

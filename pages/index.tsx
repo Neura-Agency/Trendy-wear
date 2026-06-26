@@ -5,7 +5,7 @@ import Login from "../components/Login";
 import WeekMonthPicker from '../components/WeekMonthPicker';
 import SectionCard from "../components/SectionCard";
 import Badge from "../components/Badge";
-import { SaleModal, CreateStoreModal, ReportModal, ExpenseBreakdownModal, SaleReturnModal, SaleRefundModal, VariantQuantityGrid, buildVariantGrid, variantGrandTotal } from "../components/Modals";
+import { SaleModal as LegacySaleModal, CreateStoreModal, ReportModal, ExpenseBreakdownModal, SaleReturnModal, SaleRefundModal, VariantQuantityGrid, buildVariantGrid, variantGrandTotal, CartModal } from "../components/Modals";
 import { AddExpenseForm } from '../components/Forms';
 import CustomSelect from "../components/CustomSelect";
 import { User, Order, Store, InventoryItem, Expense, Client, StoreInventoryItem, AppData, PageProps } from "../types";
@@ -2447,7 +2447,7 @@ export default function Home({ user, onLogin }: PageProps) {
         )}
 
         {showSaleModal && (
-          <SaleModal
+          <CartModal
             inventory={
               isStoreManager
                 ? Object.entries(data.storeInventory)
@@ -2484,7 +2484,9 @@ export default function Home({ user, onLogin }: PageProps) {
             storeName={user.storeName}
             isAdmin={isAdmin}
             storeNames={isAdmin && user.scope === 'all' ? Object.keys(data.stores) : (isAdmin ? (user.managedStores || []) : [user.storeName])}
-            onAdd={handleAddOrder}
+            onAdd={(result: any) => {
+              handleAddOrder({ success: true, orderCode: result?.orderCode })
+            }}
             onClose={() => setShowSaleModal(false)}
           />
         )}

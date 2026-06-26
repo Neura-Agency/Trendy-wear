@@ -61,16 +61,15 @@ export interface Product {
 
 export interface Order {
   id: string;
-  productName: string;
-  quantity: number;
-  size?: string | null;
-  color?: string | null;
-  sellingPrice: number;
-  shipmentCost: number;
+  orderCode: string;
   storeName: string;
   clientName: string;
   type: string;
   date: string;
+  totalQuantity: number;
+  totalSellingPrice: number;
+  totalShipmentCost: number;
+  items?: OrderItem[];      // populated on GET; empty/absent for legacy orders
   includedInPayout: boolean;
   commissionPercent: number;
   costPrice: number;
@@ -82,6 +81,48 @@ export interface Order {
   returnQuantity?: number | null;
   refundQuantity?: number | null;
   variantQuantities?: Record<string, Record<string, number>> | null;
+  // --- Backward-compatible computed fields for legacy code ---
+  quantity: number;         // computed as totalQuantity or from items
+  sellingPrice: number;     // computed as average price or from items
+  shipmentCost: number;     // computed as totalShipmentCost
+  productName: string;     // computed as items[0]?.productName or fallback
+}
+
+export interface OrderItem {
+  id: string;
+  orderId: string;
+  productId?: string;
+  productName: string;
+  quantity: number;
+  sellingPrice: number;
+  shipmentCost: number;
+  costPrice: number;
+  commissionPercent: number;
+  commissionAmount: number;
+  adminTake: number;
+  profit: number;
+  size?: string | null;
+  color?: string | null;
+  sizeQuantities?: Record<string, number> | null;
+  colorQuantities?: Record<string, number> | null;
+  variantQuantities?: Record<string, Record<string, number>> | null;
+  storeInventoryId?: string | null;
+  orderReturned?: boolean;
+  returnQuantity?: number | null;
+  returnReason?: string | null;
+  returnSizeQuantities?: Record<string, number> | null;
+  returnColorQuantities?: Record<string, number> | null;
+  returnVariantQuantities?: Record<string, Record<string, number>> | null;
+  returnedAt?: string | null;
+  refundQuantity?: number | null;
+  refundAmount?: number | null;
+  refundReason?: string | null;
+  refundSizeQuantities?: Record<string, number> | null;
+  refundColorQuantities?: Record<string, number> | null;
+  refundVariantQuantities?: Record<string, Record<string, number>> | null;
+  refundedAt?: string | null;
+  returnProofUrl?: string | null;
+  refundProofUrl?: string | null;
 }
 
 export interface Purchase {

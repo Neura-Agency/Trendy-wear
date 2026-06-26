@@ -2,7 +2,7 @@ import { useEffect, useState, useCallback } from "react";
 import { usePopup } from '../components/Popup';
 import Login from "../components/Login";
 import SectionCard from "../components/SectionCard";
-import { SaleModal } from "../components/Modals";
+import { CartModal } from "../components/Modals";
 import { PageProps, Order, InventoryItem } from "../types";
 import CustomSelect from "../components/CustomSelect";
 
@@ -338,7 +338,7 @@ export default function DirectSalesPage({ user, onLogin }: PageProps) {
 
       {/* ── Sale Modal ── */}
       {showSaleModal && (
-        <SaleModal
+        <CartModal
           inventory={inventory.map((item) => {
             const allotedAcrossStores = Object.values(storeInventory || {}).reduce((sum: number, storeItems: unknown) => {
               const items = storeItems as Record<string, any>;
@@ -356,7 +356,9 @@ export default function DirectSalesPage({ user, onLogin }: PageProps) {
           storeName="Direct"
           isAdmin={false}
           storeNames={["Direct"]}
-          onAdd={handleAddOrder}
+          onAdd={(result: any) => {
+            handleAddOrder({ success: true, orderCode: result?.orderCode })
+          }}
           onClose={() => setShowSaleModal(false)}
         />
       )}

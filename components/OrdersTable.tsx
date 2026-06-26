@@ -4,8 +4,13 @@ import { usePopup } from './Popup';
 
 export default function OrdersTable({ orders, onRefresh }: { orders: any[]; onRefresh?: () => void }) {
   const { toast } = usePopup();
-  const [returningOrder, setReturningOrder] = useState<any | null>(null);
-  const [refundingOrder, setRefundingOrder] = useState<any | null>(null);
+  const [returningItem, setReturningItem] = useState<{ order: any; item: any } | null>(null);
+  const [refundingItem, setRefundingItem] = useState<{ order: any; item: any } | null>(null);
+  const [expandedOrderId, setExpandedOrderId] = useState<string | null>(null);
+
+  const toggleExpand = (orderId: string) => {
+    setExpandedOrderId(prev => prev === orderId ? null : orderId);
+  };
 
   const handleReturnConfirm = async (payload: any) => {
     try {
@@ -17,7 +22,7 @@ export default function OrdersTable({ orders, onRefresh }: { orders: any[]; onRe
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || 'Failed to process return');
       toast.success('\u2705 Sale return processed');
-      setReturningOrder(null);
+      setReturningItem(null);
       onRefresh?.();
     } catch (e: any) {
       toast.error(e?.message || 'Return failed');
@@ -34,20 +39,20 @@ export default function OrdersTable({ orders, onRefresh }: { orders: any[]; onRe
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || 'Failed to process refund');
       toast.success(`\u2705 Refund processed — ${(data.refundAmount || 0).toLocaleString()} issued`);
-      setRefundingOrder(null);
+      setRefundingItem(null);
       onRefresh?.();
     } catch (e: any) {
       toast.error(e?.message || 'Refund failed');
     }
   };
 
-  const handleUndoReturn = async (orderId: string) => {
+  const handleUndoReturn = async (orderItemId: string) => {
     if (!confirm('Undo this return? The item will be marked as sold again.')) return;
     try {
       const res = await fetch('/api/orders', {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ isUndoReturn: true, id: orderId }),
+        body: JSON.stringify({ isUndoReturn: true, orderItemId }),
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || 'Failed to undo return');
@@ -58,13 +63,13 @@ export default function OrdersTable({ orders, onRefresh }: { orders: any[]; onRe
     }
   };
 
-  const handleUndoRefund = async (orderId: string) => {
+  const handleUndoRefund = async (orderItemId: string) => {
     if (!confirm('Undo this refund? The refund will be reversed and order financials will be restored.')) return;
     try {
       const res = await fetch('/api/orders', {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ isUndoRefund: true, id: orderId }),
+        body: JSON.stringify({ isUndoRefund: true, orderItemId }),
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || 'Failed to undo refund');
@@ -74,6 +79,8 @@ export default function OrdersTable({ orders, onRefresh }: { orders: any[]; onRe
       toast.error(e?.message || 'Undo refund failed');
     }
   };
+
+  const hasItems = (o: any) => Array.isArray(o.items) && o.items.length > 0;
 
   return (
     <>
@@ -88,10 +95,8 @@ export default function OrdersTable({ orders, onRefresh }: { orders: any[]; onRe
               <th>Date</th>
               <th>Store Name</th>
               <th>Product</th>
-              <th>Quantity</th>
+              <th>Qty</th>
               <th>Total Price</th>
-              <th>Cost Price</th>
-              <th>Store Percentage</th>
               <th>Profit</th>
               <th>Type</th>
               <th>Payout</th>
@@ -101,115 +106,119 @@ export default function OrdersTable({ orders, onRefresh }: { orders: any[]; onRe
           </thead>
           <tbody>
             {orders.length === 0 ? (
-              <tr><td colSpan={12} style={{textAlign:'center', padding:'2rem'}} className="muted">No orders found.</td></tr>
+              <tr><td colSpan={10} style={{textAlign:'center', padding:'2rem'}} className="muted">No orders found.</td></tr>
             ) : orders.map(o => {
-              const soldQty = Number(o.quantity) || 0;
-              const returnedQty = Math.min(Number(o.returnQuantity) || 0, soldQty);
-              const refundedQty = Math.min(Number(o.refundQuantity) || 0, soldQty - returnedQty);
-              const fullyReturned = returnedQty > 0 ? returnedQty >= soldQty : Boolean(o.orderReturned);
-              const fullyRefunded = refundedQty > 0 && refundedQty >= (soldQty - returnedQty);
-              const hasAnyAction = returnedQty > 0 || refundedQty > 0;
-              const remainingQty = soldQty - returnedQty - refundedQty;
+              const isLegacy = !hasItems(o);
+              const items = o.items || [];
+              const totalQty = Number(o.quantity) || 0;
+              const orderReturnedQty = Math.min(Number(o.returnQuantity) || 0, totalQty);
+              const orderRefundedQty = Math.min(Number(o.refundQuantity) || 0, totalQty - orderReturnedQty);
+              const isExpanded = expandedOrderId === o.id;
 
               return (
-                <tr key={o.id} style={{ opacity: hasAnyAction ? 0.6 : 1 }}>
-                  <td>{new Date(o.date).toLocaleDateString()}</td>
-                  <td><span className="badge" style={{background:'#e0f2fe', color:'#0369a1'}}>{o.storeName}</span></td>
-                  <td style={{fontWeight:500}}>{o.productName}</td>
-                  <td>
-                    {hasAnyAction
-                      ? <>
-                          <span style={{textDecoration:'line-through', opacity:0.5}}>{o.quantity}</span>
-                          {returnedQty > 0 && <span style={{color:'var(--warning,#f59e0b)',fontWeight:700}}> ↩ {returnedQty} returned</span>}
-                          {refundedQty > 0 && <span style={{color:'var(--danger)',fontWeight:700}}> 💸 {refundedQty} refunded</span>}
-                          {remainingQty > 0 && <span style={{color:'var(--text-muted)',fontWeight:500}}> ({remainingQty} left)</span>}
-                        </>
-                      : o.quantity
-                    }
-                  </td>
-                  <td>
-                    {hasAnyAction
-                      ? <>
-                          <span style={{textDecoration:'line-through', opacity:0.5}}>${(Number(o.sellingPrice) * soldQty).toLocaleString()}</span>
-                          <span style={{fontWeight:700}}> ${(Number(o.sellingPrice) * remainingQty).toLocaleString()}</span>
-                        </>
-                      : `$${(Number(o.sellingPrice) * soldQty).toLocaleString()}`
-                    }
-                  </td>
-                  <td>${Number(o.costPrice).toLocaleString()}</td>
-                  <td>{o.commissionPercent ?? '-'}%</td>
-                  <td style={{color: o.profit > 0 ? 'var(--success)' : o.profit < 0 ? 'var(--danger)' : 'inherit', fontWeight:600}}>
-                    ${Number(o.profit || 0).toLocaleString()}
-                  </td>
-                  <td>
-                    <span className={`badge ${o.type === 'Gift' ? 'badge-pending' : 'badge-success'}`}>
-                      {o.type || 'Sale'}
-                    </span>
-                  </td>
-                  <td>
-                    <span className={`badge ${o.includedInPayout ? 'badge-success' : 'badge-pending'}`}>
-                      {o.includedInPayout ? 'Yes' : 'No'}
-                    </span>
-                  </td>
-                  <td>
-                    {fullyReturned
-                      ? <span className="badge badge-red" style={{fontSize:11}}>Returned{o.returnReason ? ` — ${o.returnReason}` : ''}</span>
-                      : fullyRefunded
-                        ? <span className="badge badge-red" style={{fontSize:11}}>Refunded{o.refundReason ? ` — ${o.refundReason}` : ''}</span>
-                        : returnedQty > 0 && refundedQty > 0
-                          ? <span className="badge badge-pending" style={{fontSize:11}}>↩ {returnedQty} returned · 💸 {refundedQty} refunded</span>
-                          : returnedQty > 0
-                            ? <span className="badge badge-pending" style={{fontSize:11}}>Partial return — {returnedQty}/{soldQty}</span>
-                            : refundedQty > 0
-                              ? <span className="badge badge-pending" style={{fontSize:11}}>Partial refund — {refundedQty}/{soldQty}</span>
-                              : <span className="badge badge-success" style={{fontSize:11}}>Active</span>
-                    }
-                  </td>
-                  <td style={{ textAlign: 'center' }}>
-                    <div style={{ display: 'flex', gap: 6, justifyContent: 'center', flexWrap: 'wrap' }}>
-                      {!fullyReturned && !fullyRefunded && remainingQty > 0 && (
-                        <button
-                          className="btn btn-sm"
-                          style={{ fontSize: 11, padding: '3px 10px', background: '#fef3c7', borderColor: '#fde68a', color: '#92400e' }}
-                          onClick={() => setReturningOrder(o)}
-                          title="Return this sale"
-                        >
-                          &#x21A9; Return
+                <>
+                  <tr key={o.id} style={{ cursor: 'pointer', background: isExpanded ? 'var(--surface-2)' : undefined }}
+                      onClick={() => toggleExpand(o.id)}>
+                    <td>{new Date(o.date).toLocaleDateString()}</td>
+                    <td><span className="badge" style={{background:'#e0f2fe', color:'#0369a1'}}>{o.storeName}</span></td>
+                    <td style={{fontWeight:500}}>
+                      {o.productName}
+                      {!isLegacy && <span style={{ marginLeft: 6, fontSize: 10, background: 'var(--pri-600)', color: '#fff', padding: '1px 6px', borderRadius: 4 }}>{items.length} item{items.length !== 1 ? 's' : ''}</span>}
+                    </td>
+                    <td>{totalQty}</td>
+                    <td>Rs {(Number(o.sellingPrice || 0) * totalQty).toLocaleString()}</td>
+                    <td style={{color: (o.profit || 0) > 0 ? 'var(--success)' : (o.profit || 0) < 0 ? 'var(--danger)' : 'inherit', fontWeight:600}}>
+                      Rs {Number(o.profit || 0).toLocaleString()}
+                    </td>
+                    <td>
+                      <span className={`badge ${o.type === 'Gift' ? 'badge-pending' : 'badge-success'}`}>{o.type || 'Sale'}</span>
+                    </td>
+                    <td>
+                      <span className={`badge ${o.includedInPayout ? 'badge-success' : 'badge-pending'}`}>{o.includedInPayout ? 'Yes' : 'No'}</span>
+                    </td>
+                    <td>
+                      {(orderReturnedQty > 0 || orderRefundedQty > 0)
+                        ? <span className="badge badge-pending" style={{fontSize:11}}>{orderReturnedQty} returned · {orderRefundedQty} refunded</span>
+                        : <span className="badge badge-success" style={{fontSize:11}}>Active</span>}
+                    </td>
+                    <td style={{ textAlign: 'center' }}>
+                      <div style={{ display: 'flex', gap: 4, justifyContent: 'center', flexWrap: 'wrap' }}>
+                        <button className="btn btn-sm" style={{ fontSize: 10, padding: '2px 8px' }} onClick={(e) => { e.stopPropagation(); toggleExpand(o.id); }}>
+                          {isExpanded ? 'Collapse' : 'Expand'}
                         </button>
-                      )}
-                      {!fullyReturned && !fullyRefunded && remainingQty > 0 && (
-                        <button
-                          className="btn btn-sm"
-                          style={{ fontSize: 11, padding: '3px 10px', background: '#fee2e2', borderColor: '#fecaca', color: '#991b1b' }}
-                          onClick={() => setRefundingOrder(o)}
-                          title="Refund this sale (customer keeps item)"
-                        >
-                          💸 Refund
-                        </button>
-                      )}
-                      {returnedQty > 0 && (
-                        <button
-                          className="btn btn-sm"
-                          style={{ fontSize: 11, padding: '3px 10px', background: '#e0e7ff', borderColor: '#c7d2fe', color: '#3730a3' }}
-                          onClick={() => handleUndoReturn(o.id)}
-                          title="Undo return"
-                        >
-                          ↩ Undo
-                        </button>
-                      )}
-                      {refundedQty > 0 && (
-                        <button
-                          className="btn btn-sm"
-                          style={{ fontSize: 11, padding: '3px 10px', background: '#fce7f3', borderColor: '#fbcfe8', color: '#831843' }}
-                          onClick={() => handleUndoRefund(o.id)}
-                          title="Undo refund"
-                        >
-                          💸 Undo
-                        </button>
-                      )}
-                    </div>
-                  </td>
-                </tr>
+                      </div>
+                    </td>
+                  </tr>
+                  {isExpanded && (
+                    <tr key={`${o.id}-items`}>
+                      <td colSpan={10} style={{ padding: 0, background: 'var(--surface-1)' }}>
+                        <div style={{ padding: '8px 12px' }}>
+                          {isLegacy ? (
+                            <div style={{ fontSize: 12, color: 'var(--text-muted)', padding: 8 }}>Legacy order (no line items). Use the original order record for returns/refunds.</div>
+                          ) : items.length === 0 ? (
+                            <div style={{ fontSize: 12, color: 'var(--text-muted)', padding: 8 }}>No line items found.</div>
+                          ) : (
+                            <table className="table" style={{ fontSize: 12 }}>
+                              <thead>
+                                <tr>
+                                  <th>Product</th>
+                                  <th>Qty</th>
+                                  <th>Price</th>
+                                  <th>Profit</th>
+                                  <th>Status</th>
+                                  <th style={{ textAlign: 'center' }}>Actions</th>
+                                </tr>
+                              </thead>
+                              <tbody>
+                                {items.map((item: any) => {
+                                  const itemSold = Number(item.quantity) || 0;
+                                  const itemRet = Math.min(Number(item.returnQuantity) || 0, itemSold);
+                                  const itemRef = Math.min(Number(item.refundQuantity) || 0, itemSold - itemRet);
+                                  const itemRemaining = itemSold - itemRet - itemRef;
+
+                                  return (
+                                    <tr key={item.id} style={{ opacity: (itemRet > 0 || itemRef > 0) ? 0.7 : 1 }}>
+                                      <td style={{ fontWeight: 500 }}>{item.productName}</td>
+                                      <td>{item.quantity}</td>
+                                      <td>Rs {(Number(item.sellingPrice) * itemSold).toLocaleString()}</td>
+                                      <td style={{ color: (item.profit || 0) > 0 ? 'var(--success)' : 'var(--danger)', fontWeight: 600 }}>Rs {Number(item.profit || 0).toLocaleString()}</td>
+                                      <td>
+                                        {itemRet >= itemSold
+                                          ? <span className="badge badge-red" style={{fontSize:10}}>Returned{item.returnReason ? ` — ${item.returnReason}` : ''}</span>
+                                          : itemRef >= (itemSold - itemRet)
+                                            ? <span className="badge badge-red" style={{fontSize:10}}>Refunded{item.refundReason ? ` — ${item.refundReason}` : ''}</span>
+                                            : itemRet > 0
+                                              ? <span className="badge badge-pending" style={{fontSize:10}}>Partial return — {itemRet}/{itemSold}</span>
+                                              : itemRef > 0
+                                                ? <span className="badge badge-pending" style={{fontSize:10}}>Partial refund — {itemRef}/{itemSold}</span>
+                                                : <span className="badge badge-success" style={{fontSize:10}}>Active</span>
+                                        }
+                                      </td>
+                                      <td style={{ textAlign: 'center' }}>
+                                        {!itemRet && !itemRef && itemRemaining > 0 && (
+                                          <div style={{ display: 'flex', gap: 4, justifyContent: 'center', flexWrap: 'wrap' }}>
+                                            <button className="btn btn-sm" style={{ fontSize: 10, padding: '2px 8px', background: '#fef3c7', borderColor: '#fde68a', color: '#92400e' }} onClick={() => setReturningItem({ order: o, item })}>Return</button>
+                                            <button className="btn btn-sm" style={{ fontSize: 10, padding: '2px 8px', background: '#fee2e2', borderColor: '#fecaca', color: '#991b2b' }} onClick={() => setRefundingItem({ order: o, item })}>Refund</button>
+                                          </div>
+                                        )}
+                                        {itemRet > 0 && (
+                                          <button className="btn btn-sm" style={{ fontSize: 10, padding: '2px 8px', background: '#e0e7ff', borderColor: '#c7d2fe', color: '#3730a3' }} onClick={() => handleUndoReturn(item.id)}>Undo Return</button>
+                                        )}
+                                        {itemRef > 0 && (
+                                          <button className="btn btn-sm" style={{ fontSize: 10, padding: '2px 8px', background: '#fce7f3', borderColor: '#fbcfe8', color: '#831843' }} onClick={() => handleUndoRefund(item.id)}>Undo Refund</button>
+                                        )}
+                                      </td>
+                                    </tr>
+                                  );
+                                })}
+                              </tbody>
+                            </table>
+                          )}
+                        </div>
+                      </td>
+                    </tr>
+                  )}
+                </>
               );
             })}
           </tbody>
@@ -217,49 +226,49 @@ export default function OrdersTable({ orders, onRefresh }: { orders: any[]; onRe
       </div>
     </div>
 
-    {returningOrder && (
+    {returningItem && (
       <SaleReturnModal
         order={{
-          id: returningOrder.id,
-          productName: returningOrder.productName,
-          storeName: returningOrder.storeName,
-          quantity: returningOrder.quantity,
-          sizeQuantities: returningOrder.sizeQuantities ?? null,
-          colorQuantities: returningOrder.colorQuantities ?? null,
-          returnQuantity: returningOrder.returnQuantity ?? null,
-          returnSizeQuantities: returningOrder.returnSizeQuantities ?? null,
-          returnColorQuantities: returningOrder.returnColorQuantities ?? null,
-          returnVariantQuantities: returningOrder.returnVariantQuantities ?? null,
-          storeInventoryId: returningOrder.storeInventoryId ?? null,
+          id: returningItem.order.id,
+          productName: returningItem.item.productName,
+          storeName: returningItem.order.storeName,
+          quantity: returningItem.item.quantity,
+          sizeQuantities: returningItem.item.sizeQuantities ?? null,
+          colorQuantities: returningItem.item.colorQuantities ?? null,
+          returnQuantity: returningItem.item.returnQuantity ?? null,
+          returnSizeQuantities: returningItem.item.returnSizeQuantities ?? null,
+          returnColorQuantities: returningItem.item.returnColorQuantities ?? null,
+          returnVariantQuantities: returningItem.item.returnVariantQuantities ?? null,
+          storeInventoryId: returningItem.item.storeInventoryId ?? null,
         }}
-        onConfirm={handleReturnConfirm}
-        onClose={() => setReturningOrder(null)}
+        onConfirm={(payload: any) => handleReturnConfirm({ ...payload, orderItemId: returningItem.item.id })}
+        onClose={() => setReturningItem(null)}
       />
     )}
 
-    {refundingOrder && (
+    {refundingItem && (
       <SaleRefundModal
         order={{
-          id: refundingOrder.id,
-          productName: refundingOrder.productName,
-          storeName: refundingOrder.storeName,
-          quantity: refundingOrder.quantity,
-          sellingPrice: refundingOrder.sellingPrice ?? 0,
-          costPrice: refundingOrder.costPrice ?? 0,
-          sizeQuantities: refundingOrder.sizeQuantities ?? null,
-          colorQuantities: refundingOrder.colorQuantities ?? null,
-          variantQuantities: refundingOrder.variantQuantities ?? null,
-          returnQuantity: refundingOrder.returnQuantity ?? null,
-          returnSizeQuantities: refundingOrder.returnSizeQuantities ?? null,
-          returnColorQuantities: refundingOrder.returnColorQuantities ?? null,
-          returnVariantQuantities: refundingOrder.returnVariantQuantities ?? null,
-          refundQuantity: refundingOrder.refundQuantity ?? null,
-          refundSizeQuantities: refundingOrder.refundSizeQuantities ?? null,
-          refundColorQuantities: refundingOrder.refundColorQuantities ?? null,
-          refundVariantQuantities: refundingOrder.refundVariantQuantities ?? null,
+          id: refundingItem.order.id,
+          productName: refundingItem.item.productName,
+          storeName: refundingItem.order.storeName,
+          quantity: refundingItem.item.quantity,
+          sellingPrice: refundingItem.item.sellingPrice ?? 0,
+          costPrice: refundingItem.item.costPrice ?? 0,
+          sizeQuantities: refundingItem.item.sizeQuantities ?? null,
+          colorQuantities: refundingItem.item.colorQuantities ?? null,
+          variantQuantities: refundingItem.item.variantQuantities ?? null,
+          returnQuantity: refundingItem.item.returnQuantity ?? null,
+          returnSizeQuantities: refundingItem.item.returnSizeQuantities ?? null,
+          returnColorQuantities: refundingItem.item.returnColorQuantities ?? null,
+          returnVariantQuantities: refundingItem.item.returnVariantQuantities ?? null,
+          refundQuantity: refundingItem.item.refundQuantity ?? null,
+          refundSizeQuantities: refundingItem.item.refundSizeQuantities ?? null,
+          refundColorQuantities: refundingItem.item.refundColorQuantities ?? null,
+          refundVariantQuantities: refundingItem.item.refundVariantQuantities ?? null,
         }}
-        onConfirm={handleRefundConfirm}
-        onClose={() => setRefundingOrder(null)}
+        onConfirm={(payload: any) => handleRefundConfirm({ ...payload, orderItemId: refundingItem.item.id })}
+        onClose={() => setRefundingItem(null)}
       />
     )}
     </>

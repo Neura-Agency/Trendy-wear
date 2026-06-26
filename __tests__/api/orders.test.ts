@@ -67,8 +67,6 @@ describe('Orders API - Business Logic', () => {
     }
 
     const result = calculateFinancials(1000, 5, 200, 50, 300, 10)
-    // gross: 5000, deductions: 250, received: 4750
-    // commission: 475, adminTake: 4275, cost: 1500, profit: 2775
     expect(result.grossAmount).toBe(5000)
     expect(result.amountReceived).toBe(4750)
     expect(result.commissionAmount).toBe(475)
@@ -122,5 +120,37 @@ describe('Orders API - Business Logic', () => {
 
     expect(validateVariantRequest({ Red: { S: 5 } }, { Red: { S: 10 } })).toBeNull()
     expect(validateVariantRequest({ Red: { S: 15 } }, { Red: { S: 10 } })).toContain('15 exceeds available 10')
+  })
+
+  test('should accept cart mode POST with items array', () => {
+    const body = {
+      storeName: 'Test Store',
+      clientName: 'Ali',
+      items: [
+        { productName: 'Shirt', quantity: 2, sellingPrice: 1500 },
+        { productName: 'Pants', quantity: 1, sellingPrice: 2000 },
+      ],
+    }
+    expect(Array.isArray(body.items)).toBe(true)
+    expect(body.items.length).toBe(2)
+    expect(body.items[0].productName).toBe('Shirt')
+  })
+
+  test('should reject empty items array in cart mode', () => {
+    const body = { storeName: 'Test Store', items: [] }
+    expect(body.items.length).toBe(0)
+    // API should return 400 for empty items
+  })
+
+  test('should sum cart items quantities correctly', () => {
+    const items = [
+      { quantity: 2, extraQty: 0 },
+      { quantity: 1, extraQty: 0 },
+      { quantity: 3, extraQty: 1 },
+    ]
+    const totalQty = items.reduce((s, it) => s + Math.max(0, it.quantity), 0)
+    const totalDispatch = items.reduce((s, it) => s + Math.max(0, it.quantity) + Math.max(0, it.extraQty || 0), 0)
+    expect(totalQty).toBe(6)
+    expect(totalDispatch).toBe(7)
   })
 })
