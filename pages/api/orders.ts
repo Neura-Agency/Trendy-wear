@@ -1174,6 +1174,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 
           const netSizeRem = mergeFlat(siRow.size_quantities_remaining, order.size_quantities)
           const netColorRem = mergeFlat(siRow.color_quantities_remaining, order.color_quantities)
+          const netVariantRem = mergeVariantQuantities(siRow.variant_quantities_remaining, order.variant_quantities)
 
           const { error: siUpdErr } = await supabaseAdmin
             .from(TABLES.STORE_INVENTORY)
@@ -1181,6 +1182,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
               quantity_remaining: num(siRow.quantity_remaining) + netToRestore,
               size_quantities_remaining: netSizeRem,
               color_quantities_remaining: netColorRem,
+              variant_quantities_remaining: netVariantRem,
               pending_return_qty: 0,
               pending_return_size_quantities: null,
               pending_return_color_quantities: null,
