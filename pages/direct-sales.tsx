@@ -2,6 +2,7 @@ import { useEffect, useState, useCallback } from "react";
 import { usePopup } from '../components/Popup';
 import Login from "../components/Login";
 import SectionCard from "../components/SectionCard";
+import SearchBar from "../components/SearchBar";
 import { CartModal } from "../components/Modals";
 import { PageProps, Order, InventoryItem } from "../types";
 import CustomSelect from "../components/CustomSelect";
@@ -147,6 +148,7 @@ export default function DirectSalesPage({ user, onLogin }: PageProps) {
   const [storeInventory, setStoreInventory] = useState<Record<string, Record<string, any>>>({});
   const [loading, setLoading] = useState(true);
   const [filter, setFilter] = useState<string>("All");
+  const [search, setSearch] = useState("");
   const [showSaleModal, setShowSaleModal] = useState(false);
 
   const refresh = useCallback(async () => {
@@ -294,6 +296,11 @@ export default function DirectSalesPage({ user, onLogin }: PageProps) {
           icon={IC.home}
           action={<TableFilter value={filter} onChange={setFilter} />}
         >
+          <SearchBar value={search} onChange={setSearch} placeholder="Search by product name, customer…" resultCount={filtered.filter(o => {
+            if (!search) return true;
+            const q = search.toLowerCase();
+            return (o.productName || '').toLowerCase().includes(q) || (o.clientName || '').toLowerCase().includes(q);
+          }).length} />
           <div className="table-wrap">
             <table>
               <thead>
@@ -309,7 +316,11 @@ export default function DirectSalesPage({ user, onLogin }: PageProps) {
                 </tr>
               </thead>
               <tbody>
-                {[...filtered].reverse().map((o, idx) => (
+                {[...filtered].filter(o => {
+                  if (!search) return true;
+                  const q = search.toLowerCase();
+                  return (o.productName || '').toLowerCase().includes(q) || (o.clientName || '').toLowerCase().includes(q);
+                }).reverse().map((o, idx) => (
                   <tr key={idx}>
                     <td className="text-muted">{new Date(o.date).toLocaleDateString()}</td>
                     <td className="font-bold">{o.productName}</td>

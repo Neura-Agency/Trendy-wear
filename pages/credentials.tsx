@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback } from 'react';
 import SectionCard from '../components/SectionCard';
 import Badge from '../components/Badge';
 import Login from '../components/Login';
+import SearchBar from '../components/SearchBar';
 import { PageProps, Account, Store } from '../types';
 
 interface EditingAccount {
@@ -21,6 +22,7 @@ export default function ShopCredentials({ user, onLogin }: PageProps) {
     const [editingAccount, setEditingAccount] = useState<EditingAccount | null>(null);
     const [saving, setSaving] = useState<boolean>(false);
     const [accountStatuses, setAccountStatuses] = useState<Record<string, boolean>>({});
+    const [search, setSearch] = useState('');
 
     const refresh = useCallback(async () => {
         try {
@@ -152,6 +154,13 @@ export default function ShopCredentials({ user, onLogin }: PageProps) {
                 </header>
 
                 <SectionCard title="Active Store Accounts" icon={keyIcon}>
+                    <SearchBar value={search} onChange={setSearch} placeholder="Search by store name, username…" resultCount={(() => {
+                        if (!search) return filteredAccounts.length;
+                        const q = search.toLowerCase();
+                        return filteredAccounts.filter(([username, acc]) =>
+                            acc.storeName?.toLowerCase().includes(q) || username?.toLowerCase().includes(q)
+                        ).length;
+                    })()} />
                     <div className="table-wrap">
                         <table>
                             <thead>
@@ -165,10 +174,22 @@ export default function ShopCredentials({ user, onLogin }: PageProps) {
                                 </tr>
                             </thead>
                             <tbody>
-                                {filteredAccounts.length === 0 ? (
-                                    <tr><td colSpan={6} style={{ textAlign: 'center', padding: 40 }} className="text-muted">No managed store accounts found.</td></tr>
+                                {(() => {
+                                    if (!search) return filteredAccounts;
+                                    const q = search.toLowerCase();
+                                    return filteredAccounts.filter(([username, acc]) =>
+                                        acc.storeName?.toLowerCase().includes(q) || username?.toLowerCase().includes(q)
+                                    );
+                                })().length === 0 ? (
+                                    <tr><td colSpan={6} style={{ textAlign: 'center', padding: 40 }} className="text-muted">{search ? 'No accounts match your search.' : 'No managed store accounts found.'}</td></tr>
                                 ) : (
-                                    filteredAccounts.map(([username, acc]) => (
+                                    (search
+                                        ? filteredAccounts.filter(([username, acc]) => {
+                                            const q = search.toLowerCase();
+                                            return acc.storeName?.toLowerCase().includes(q) || username?.toLowerCase().includes(q);
+                                          })
+                                        : filteredAccounts
+                                    ).map(([username, acc]) => (
                                         <tr key={username}>
                                             <td className="store-name-cell">{acc.storeName}</td>
                                             <td>

@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback } from 'react';
 import SectionCard from '../components/SectionCard';
 import Badge from '../components/Badge';
 import Login from '../components/Login';
+import SearchBar from '../components/SearchBar';
 import { usePopup } from '../components/Popup';
 import { PageProps, Owner, OwnerPayout } from '../types';
 
@@ -343,6 +344,7 @@ export default function OwnersPage({ user, onLogin }: PageProps) {
   const [showTransfer, setShowTransfer] = useState(false);
   const [transferToOwner, setTransferToOwner] = useState<string | undefined>(undefined);
   const [transfers, setTransfers] = useState<any[]>([]);
+  const [payoutSearch, setPayoutSearch] = useState('');
   const [stores, setStores] = useState<Record<string, any>>({});
   const [orders, setOrders] = useState<any[]>([]);
   const [expenses, setExpenses] = useState<any[]>([]);
@@ -895,7 +897,13 @@ export default function OwnersPage({ user, onLogin }: PageProps) {
           {payouts.length === 0 ? (
             <p style={{ color: 'var(--text-muted)', padding: '16px 0', textAlign: 'center' }}>No payouts recorded yet.</p>
           ) : (
-            <div className="table-wrap">
+            <>
+              <SearchBar value={payoutSearch} onChange={setPayoutSearch} placeholder="Search by owner name, notes…" resultCount={payouts.filter(p => {
+                if (!payoutSearch) return true;
+                const q = payoutSearch.toLowerCase();
+                return (p.ownerName || '').toLowerCase().includes(q) || (p.notes || '').toLowerCase().includes(q);
+              }).length} />
+              <div className="table-wrap">
               <table>
                 <thead>
                   <tr>
@@ -908,7 +916,11 @@ export default function OwnersPage({ user, onLogin }: PageProps) {
                   </tr>
                 </thead>
                 <tbody>
-                  {payouts.map((p, idx) => {
+                  {payouts.filter(p => {
+                    if (!payoutSearch) return true;
+                    const q = payoutSearch.toLowerCase();
+                    return (p.ownerName || '').toLowerCase().includes(q) || (p.notes || '').toLowerCase().includes(q);
+                  }).map((p, idx) => {
                     const ownerIdx = owners.findIndex(o => o.id === p.ownerId);
                     return (
                       <tr key={p.id}>
@@ -949,7 +961,7 @@ export default function OwnersPage({ user, onLogin }: PageProps) {
                 </tfoot>
               </table>
             </div>
-          )}
+            </>)}
         </SectionCard>
 
         {/* ── Owner Transfers ── */}

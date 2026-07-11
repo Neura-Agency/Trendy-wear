@@ -1,9 +1,21 @@
+import { useState } from 'react';
+import SearchBar from './SearchBar';
+
 export default function Payouts({ payouts }){
+  const [search, setSearch] = useState('');
+
+  const filtered = payouts.filter((p: any) => {
+    if (!search) return true;
+    const q = search.toLowerCase();
+    return (p.storeName || '').toLowerCase().includes(q);
+  });
+
   return (
     <div className="section">
       <div className="section-header">
         <h3>Store Payouts</h3>
       </div>
+      <SearchBar value={search} onChange={setSearch} placeholder="Search by store name…" resultCount={filtered.length} />
       <div className="table-container">
         <table className="table">
           <thead>
@@ -18,7 +30,9 @@ export default function Payouts({ payouts }){
             </tr>
           </thead>
           <tbody>
-            {payouts.map(p=> (
+            {filtered.length === 0 ? (
+              <tr><td colSpan={7} style={{textAlign:'center', padding:'2rem'}} className="muted">{search ? 'No payouts match your search.' : 'No payouts found.'}</td></tr>
+            ) : filtered.map(p=> (
               <tr key={p.storeName}>
                 <td style={{fontWeight:600}}>{p.storeName}</td>
                 <td>{p.totalOrders}</td>

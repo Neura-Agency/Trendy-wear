@@ -171,6 +171,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
         orderType,
         occurredAt,
         storeName,
+        orderCode,     // optional: reuse an existing order code for batch carts
       } = req.body || {}
 
       if (!productName) return res.status(400).json({ error: 'productName is required' })
@@ -408,10 +409,11 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       const profit = adminTake - costPrice * qty
 
       // ── Insert order ─────────────────────────────────────────────────────
+      const finalOrderCode = String(orderCode || '').trim() || generateOrderCode()
       const { data: order, error: orderErr } = await supabaseAdmin
         .from(TABLES.ORDERS)
         .insert({
-          order_code: generateOrderCode(),
+          order_code: finalOrderCode,
           store_id: storeId,
           product_id: resolvedProductId,
           product_name: productName,

@@ -3,6 +3,7 @@ import { usePopup } from '../components/Popup';
 import SectionCard from "../components/SectionCard";
 import Badge from "../components/Badge";
 import Login from "../components/Login";
+import SearchBar from "../components/SearchBar";
 import { 
   PageProps, 
   InventoryItem, 
@@ -57,6 +58,7 @@ export default function InventoryPage({ user, onLogin }: PageProps) {
     const [returnToWarehouseRow, setReturnToWarehouseRow] = useState<any | null>(null);
     const [showAlerts, setShowAlerts] = useState(false);
     const [inventorySearch, setInventorySearch] = useState('');
+    const [storeSearch, setStoreSearch] = useState('');
     // Persisted across modal open/close — tracks product types hidden/replaced by the user
     const [hiddenProductTypes, setHiddenProductTypes] = useState<string[]>([]);
     const handleHideProductType = (typeName: string) => {
@@ -629,6 +631,12 @@ export default function InventoryPage({ user, onLogin }: PageProps) {
                         <button className="btn btn-primary" onClick={() => setShowAllotModal(true)}>+ Alot to Stores</button>
                     ) : undefined}
                 >
+                    <SearchBar value={storeSearch} onChange={setStoreSearch} placeholder="Search by store name, product name…" resultCount={stockProvided.filter(s => {
+                        if (!(isAdmin || storeNameMatches(s.storeName))) return false;
+                        if (!storeSearch) return true;
+                        const q = storeSearch.toLowerCase();
+                        return (s.storeName || '').toLowerCase().includes(q) || (s.productName || '').toLowerCase().includes(q);
+                    }).length} />
                     <div className="table-wrap">
                         <table>
                             <thead>
@@ -645,10 +653,16 @@ export default function InventoryPage({ user, onLogin }: PageProps) {
                                 </tr>
                             </thead>
                             <tbody>
-                                    {stockProvided.filter(s => isAdmin || storeNameMatches(s.storeName)).length === 0 ? (
-                                    <tr><td colSpan={isAdmin ? 9 : 7} style={{ textAlign: 'center', padding: 40 }} className="text-muted">No stock available currently.</td></tr>
-                                ) : (
-                                    stockProvided.filter(s => isAdmin || storeNameMatches(s.storeName)).map((item, idx) => (
+                                    {(() => {
+                                        const rows = stockProvided.filter(s => {
+                                            if (!(isAdmin || storeNameMatches(s.storeName))) return false;
+                                            if (!storeSearch) return true;
+                                            const q = storeSearch.toLowerCase();
+                                            return (s.storeName || '').toLowerCase().includes(q) || (s.productName || '').toLowerCase().includes(q);
+                                        });
+                                        return rows.length === 0 ? (
+                                            <tr><td colSpan={isAdmin ? 9 : 7} style={{ textAlign: 'center', padding: 40 }} className="text-muted">{storeSearch ? 'No stock matches your search.' : 'No stock available currently.'}</td></tr>
+                                        ) : rows.map((item, idx) => (
                                         <tr key={item.id || idx} id={`store-inv-row-${item.id || idx}`}>
                                             {isAdmin && <td className="font-bold" style={{ color: 'var(--pri-900)' }}>{item.storeName}</td>}
                                             <td className="font-bold">{item.productName}</td>
@@ -766,8 +780,8 @@ export default function InventoryPage({ user, onLogin }: PageProps) {
                                                     </div>
                                                 </td>
                                         </tr>
-                                    ))
-                                )}
+                                    ));
+                                })()}
                             </tbody>
                         </table>
                     </div>

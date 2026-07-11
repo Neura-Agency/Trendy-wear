@@ -1,12 +1,26 @@
 import { useState } from 'react';
 import { SaleReturnModal, SaleRefundModal } from './Modals';
 import { usePopup } from './Popup';
+import SearchBar from './SearchBar';
 
 export default function OrdersTable({ orders, onRefresh }: { orders: any[]; onRefresh?: () => void }) {
   const { toast } = usePopup();
   const [returningItem, setReturningItem] = useState<{ order: any; item: any } | null>(null);
   const [refundingItem, setRefundingItem] = useState<{ order: any; item: any } | null>(null);
   const [expandedOrderId, setExpandedOrderId] = useState<string | null>(null);
+  const [search, setSearch] = useState('');
+
+  const filtered = orders.filter((o: any) => {
+    if (!search) return true;
+    const q = search.toLowerCase();
+    return (
+      (o.orderCode || '').toLowerCase().includes(q) ||
+      (o.id || '').toLowerCase().includes(q) ||
+      (o.productName || '').toLowerCase().includes(q) ||
+      (o.storeName || '').toLowerCase().includes(q) ||
+      (o.type || '').toLowerCase().includes(q)
+    );
+  });
 
   const toggleExpand = (orderId: string) => {
     setExpandedOrderId(prev => prev === orderId ? null : orderId);
@@ -88,10 +102,12 @@ export default function OrdersTable({ orders, onRefresh }: { orders: any[]; onRe
       <div className="section-header">
         <h3>Recent Orders</h3>
       </div>
+      <SearchBar value={search} onChange={setSearch} placeholder="Search by order code, product, store…" resultCount={filtered.length} />
       <div className="table-container">
         <table className="table sticky-actions">
           <thead>
             <tr>
+              <th>Order ID</th>
               <th>Date</th>
               <th>Store Name</th>
               <th>Product</th>
@@ -105,9 +121,9 @@ export default function OrdersTable({ orders, onRefresh }: { orders: any[]; onRe
             </tr>
           </thead>
           <tbody>
-            {orders.length === 0 ? (
-              <tr><td colSpan={10} style={{textAlign:'center', padding:'2rem'}} className="muted">No orders found.</td></tr>
-            ) : orders.map(o => {
+            {filtered.length === 0 ? (
+              <tr><td colSpan={11} style={{textAlign:'center', padding:'2rem'}} className="muted">{search ? 'No orders match your search.' : 'No orders found.'}</td></tr>
+            ) : filtered.map(o => {
               const isLegacy = !hasItems(o);
               const items = o.items || [];
               const totalQty = Number(o.quantity) || 0;
@@ -119,6 +135,7 @@ export default function OrdersTable({ orders, onRefresh }: { orders: any[]; onRe
                 <>
                   <tr key={o.id} style={{ cursor: 'pointer', background: isExpanded ? 'var(--surface-2)' : undefined }}
                       onClick={() => toggleExpand(o.id)}>
+                    <td style={{ fontWeight: 700, fontFamily: 'monospace', fontSize: 12 }}>{o.orderCode || o.id.slice(0, 8)}</td>
                     <td>{new Date(o.date).toLocaleDateString()}</td>
                     <td><span className="badge" style={{background:'#e0f2fe', color:'#0369a1'}}>{o.storeName}</span></td>
                     <td style={{fontWeight:500}}>
@@ -151,7 +168,7 @@ export default function OrdersTable({ orders, onRefresh }: { orders: any[]; onRe
                   </tr>
                   {isExpanded && (
                     <tr key={`${o.id}-items`}>
-                      <td colSpan={10} style={{ padding: 0, background: 'var(--surface-1)' }}>
+                      <td colSpan={11} style={{ padding: 0, background: 'var(--surface-1)' }}>
                         <div style={{ padding: '8px 12px' }}>
                           {isLegacy ? (
                             <div style={{ fontSize: 12, color: 'var(--text-muted)', padding: 8 }}>Legacy order (no line items). Use the original order record for returns/refunds.</div>

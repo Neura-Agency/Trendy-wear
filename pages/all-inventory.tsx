@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import SectionCard from '../components/SectionCard';
 import Badge from '../components/Badge';
 import Login from '../components/Login';
+import SearchBar from '../components/SearchBar';
 import { InventoryItem, PageProps } from '../types';
 
 const IC = {
@@ -13,6 +14,7 @@ const Rs = (n: number) => 'Rs ' + (Number(n) || 0).toLocaleString();
 export default function AllInventoryPage({ user, onLogin }: PageProps) {
   const [loading, setLoading] = useState(true);
   const [inventory, setInventory] = useState<InventoryItem[]>([]);
+  const [search, setSearch] = useState('');
 
   useEffect(() => {
     if (!user) return;
@@ -35,6 +37,18 @@ export default function AllInventoryPage({ user, onLogin }: PageProps) {
   if (!user) return <Login onLogin={onLogin} />;
   if (loading) return <div className="loading">Loading...</div>;
 
+  const filtered = search
+    ? inventory.filter(item => {
+        const q = search.toLowerCase();
+        return (
+          item.productName?.toLowerCase().includes(q) ||
+          item.batchNumber?.toLowerCase().includes(q) ||
+          item.category?.toLowerCase().includes(q) ||
+          (item as any).brand?.toLowerCase().includes(q)
+        );
+      })
+    : inventory;
+
   return (
     <div className="inventory-page">
       <header className="page-header">
@@ -47,6 +61,7 @@ export default function AllInventoryPage({ user, onLogin }: PageProps) {
       </header>
 
       <SectionCard title="Warehouse Inventory" icon={IC.warehouse}>
+        <SearchBar value={search} onChange={setSearch} placeholder="Search by name, brand, type, item ID…" resultCount={filtered.length} />
         <div className="table-wrap">
           <table>
             <thead>
@@ -60,14 +75,14 @@ export default function AllInventoryPage({ user, onLogin }: PageProps) {
               </tr>
             </thead>
             <tbody>
-              {inventory.length === 0 ? (
+              {filtered.length === 0 ? (
                 <tr>
                   <td colSpan={6} className="text-muted empty-cell">
-                    No warehouse inventory found.
+                    {search ? 'No warehouse inventory matches your search.' : 'No warehouse inventory found.'}
                   </td>
                 </tr>
               ) : (
-                inventory.map((item, idx) => {
+                filtered.map((item, idx) => {
                   const picture = item.productImage || (item as any)?.otherVariants?.picture as string | undefined;
                   const pictureSrc = (typeof picture === 'string' && picture.trim().length > 0) ? picture : '/images/size_L.webp';
                   const availableQty = Number(item.quantityAvailable) || 0;

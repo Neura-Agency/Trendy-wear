@@ -2726,6 +2726,7 @@ export function CartModal({ inventory, storeName, isAdmin, storeNames, onAdd, on
     const [occurredAt, setOccurredAt] = useState(todayIso);
     const [orderType, setOrderType] = useState('Sale');
     const [cartItems, setCartItems] = useState<any[]>([]);
+    const [cartOrderCode, setCartOrderCode] = useState<string>('');
     const [currency, setCurrency] = useState<string>('PKR');
     const gbpRate = 360;
 
@@ -2741,6 +2742,13 @@ export function CartModal({ inventory, storeName, isAdmin, storeNames, onAdd, on
     const [itemColor, setItemColor] = useState('');
 
     const buildEmptyQuantities = (keys: string[]) => keys.reduce((acc, key) => { acc[key] = 0; return acc; }, {} as Record<string, number>);
+
+    // Client-side preview order code (matches server format: ORD-{timestamp}-{random})
+    const generatePreviewOrderCode = () => {
+        const ts = Date.now().toString(36).toUpperCase();
+        const rand = Math.random().toString(36).substr(2, 4).toUpperCase();
+        return `ORD-${ts}-${rand}`;
+    };
 
     const currentSelected = inventory.find(i => (selectedProductId && i.productId === selectedProductId) || (!selectedProductId && i.productName === selectedProductId));
 
@@ -2850,6 +2858,10 @@ export function CartModal({ inventory, storeName, isAdmin, storeNames, onAdd, on
             toast.error('Selected product not found. Please reselect from the dropdown.');
             return;
         }
+        // Generate a shared preview order code for this cart if not already set
+        const previewCode = cartOrderCode || generatePreviewOrderCode();
+        if (!cartOrderCode) setCartOrderCode(previewCode);
+
         const finalPrice = currency === 'GBP' ? itemPrice * gbpRate : itemPrice;
         const cartItem: any = {
             productId: selectedItem?.productId || selectedProductId,
@@ -2862,6 +2874,7 @@ export function CartModal({ inventory, storeName, isAdmin, storeNames, onAdd, on
             sizeQuantities: hasSizeTracking ? sizeQuantities : null,
             colorQuantities: hasColorTracking ? colorQuantities : null,
             variantQuantities: hasVariantGrid ? variantQuantities : null,
+            orderCode: previewCode,
         };
         setCartItems(prev => [...prev, cartItem]);
         setSelectedProductId('');
@@ -2878,7 +2891,12 @@ export function CartModal({ inventory, storeName, isAdmin, storeNames, onAdd, on
     };
 
     const handleRemoveFromCart = (index: number) => {
-        setCartItems(prev => prev.filter((_, i) => i !== index));
+        setCartItems(prev => {
+            const next = prev.filter((_, i) => i !== index);
+            // Clear shared order code when cart becomes empty
+            if (next.length === 0) setCartOrderCode('');
+            return next;
+        });
     };
 
     const handleSaveOrder = async () => {
@@ -2900,7 +2918,9 @@ export function CartModal({ inventory, storeName, isAdmin, storeNames, onAdd, on
 
         try {
             const orderCodes: string[] = [];
-            for (const item of cleanItems) {
+            const savedIndices: number[] = [];
+            for (let i = 0; i < cleanItems.length; i++) {
+                const item = cleanItems[i];
                 const res = await fetch('/api/orders', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
@@ -2921,6 +2941,7 @@ export function CartModal({ inventory, storeName, isAdmin, storeNames, onAdd, on
                         sizeQuantities: item.sizeQuantities,
                         colorQuantities: item.colorQuantities,
                         variantQuantities: item.variantQuantities,
+                        orderCode: cartOrderCode,
                     }),
                 });
                 const result = await res.json();
@@ -2929,10 +2950,24 @@ export function CartModal({ inventory, storeName, isAdmin, storeNames, onAdd, on
                     return;
                 }
                 orderCodes.push(result.orderCode);
+                const originalIdx = cartItems.findIndex(it => it === item);
+                if (originalIdx >= 0) {
+                    savedIndices.push(originalIdx);
+                }
             }
-            toast.success(orderCodes.length > 1 ? `${orderCodes.length} items saved!` : `Order saved! Code: ${orderCodes[0]}`);
-            onAdd?.({ success: true, orderCode: orderCodes[0] });
-            onClose();
+            // Use the first returned order code as the shared code for the entire batch
+            const sharedCode = orderCodes[0] || cartOrderCode;
+            setCartOrderCode(sharedCode);
+            // Update all saved cart items to show the shared order code
+            setCartItems(prev => prev.map((it, idx) => {
+                const codeIdx = savedIndices.indexOf(idx);
+                if (codeIdx >= 0 && sharedCode) {
+                    return { ...it, orderCode: sharedCode };
+                }
+                return it;
+            }));
+            toast.success(orderCodes.length > 1 ? `${orderCodes.length} items saved!` : `Order saved! Code: ${sharedCode}`);
+            onAdd?.({ success: true, orderCode: sharedCode });
         } catch (e: any) {
             toast.error(e?.message || 'Failed to save order');
         }
@@ -3061,33 +3096,38 @@ export function CartModal({ inventory, storeName, isAdmin, storeNames, onAdd, on
 
                         {/* RIGHT: Cart */}
                         <div>
-                            <h4 style={{ margin: '0 0 12px 0', fontSize: 14 }}>Cart ({cartItems.length})</h4>
+                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
+                                <h4 style={{ margin: 0, fontSize: 14 }}>Cart ({cartItems.length})</h4>
+                                {cartOrderCode && (
+                                    <span style={{ fontWeight: 700, fontFamily: 'monospace', fontSize: 12, color: 'var(--pri-600)', background: 'var(--surface-2)', padding: '2px 8px', borderRadius: 4 }}>{cartOrderCode}</span>
+                                )}
+                            </div>
                             {cartItems.length === 0 ? (
                                 <div style={{ textAlign: 'center', padding: 32, color: 'var(--text-muted)', fontSize: 13 }}>No items in cart yet.</div>
                             ) : (
                                 <div style={{ maxHeight: 340, overflowY: 'auto', marginBottom: 12 }}>
-                                    <table className="table" style={{ fontSize: 12 }}>
-                                        <thead>
-                                            <tr>
-                                                <th>Product</th>
-                                                <th style={{ textAlign: 'center' }}>Qty</th>
-                                                <th style={{ textAlign: 'right' }}>Price</th>
-                                                <th style={{ textAlign: 'right' }}>Subtotal</th>
-                                                <th></th>
-                                            </tr>
-                                        </thead>
-                                        <tbody>
-                                            {cartItems.map((it, idx) => (
-                                                <tr key={idx}>
-                                                    <td>{it.productName} - {it.productId || it.productName}</td>
-                                                    <td style={{ textAlign: 'center' }}>{it.quantity}{it.extraQty ? ` +${it.extraQty}` : ''}</td>
-                                                    <td style={{ textAlign: 'right' }}>Rs {Number(it.sellingPrice).toLocaleString()}</td>
-                                                    <td style={{ textAlign: 'right', fontWeight: 700 }}>Rs {(Number(it.sellingPrice) * Number(it.quantity)).toLocaleString()}</td>
-                                                    <td><button className="btn btn-sm" style={{ border: 'none', color: 'var(--danger)', background: 'transparent', cursor: 'pointer' }} onClick={() => handleRemoveFromCart(idx)}>✕</button></td>
+                                        <table className="table" style={{ fontSize: 12 }}>
+                                            <thead>
+                                                <tr>
+                                                    <th>Product</th>
+                                                    <th style={{ textAlign: 'center' }}>Qty</th>
+                                                    <th style={{ textAlign: 'right' }}>Price</th>
+                                                    <th style={{ textAlign: 'right' }}>Subtotal</th>
+                                                    <th></th>
                                                 </tr>
-                                            ))}
-                                        </tbody>
-                                    </table>
+                                            </thead>
+                                            <tbody>
+                                                {cartItems.map((it, idx) => (
+                                                    <tr key={idx}>
+                                                        <td>{it.productName} - {it.productId || it.productName}</td>
+                                                        <td style={{ textAlign: 'center' }}>{it.quantity}{it.extraQty ? ` +${it.extraQty}` : ''}</td>
+                                                        <td style={{ textAlign: 'right' }}>Rs {Number(it.sellingPrice).toLocaleString()}</td>
+                                                        <td style={{ textAlign: 'right', fontWeight: 700 }}>Rs {(Number(it.sellingPrice) * Number(it.quantity)).toLocaleString()}</td>
+                                                        <td><button className="btn btn-sm" style={{ border: 'none', color: 'var(--danger)', background: 'transparent', cursor: 'pointer' }} onClick={() => handleRemoveFromCart(idx)}>✕</button></td>
+                                                    </tr>
+                                                ))}
+                                            </tbody>
+                                        </table>
                                 </div>
                             )}
 

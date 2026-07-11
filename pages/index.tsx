@@ -10,6 +10,7 @@ import { AddExpenseForm } from '../components/Forms';
 import CustomSelect from "../components/CustomSelect";
 import { User, Order, Store, InventoryItem, Expense, Client, StoreInventoryItem, AppData, PageProps } from "../types";
 import { usePopup } from "../components/Popup";
+import SearchBar from "../components/SearchBar";
 
 // ── SVG Icon Components (mono-color, inherits currentColor) ──
 const IC = {
@@ -627,6 +628,7 @@ function StoresOverviewSection({ stores, orders, storeInventory, filter, getFilt
   const storeNames = Object.keys(stores);
   const [selected, setSelected] = useState(storeNames[0] || "");
   const [paying, setPaying] = useState<string | null>(null); // productName or 'ALL'
+  const [search, setSearch] = useState('');
 
   useEffect(() => {
     if (!selected && storeNames.length > 0) setSelected(storeNames[0]);
@@ -681,6 +683,7 @@ function StoresOverviewSection({ stores, orders, storeInventory, filter, getFilt
         </div>
       )}
 
+      <SearchBar value={search} onChange={setSearch} placeholder="Search by product name…" resultCount={products.filter(p => !search || p.toLowerCase().includes(search.toLowerCase())).length} />
       <div className="table-wrap">
         <table>
           <thead>
@@ -696,10 +699,10 @@ function StoresOverviewSection({ stores, orders, storeInventory, filter, getFilt
             </tr>
           </thead>
           <tbody>
-            {products.length === 0 ? (
-              <tr><td colSpan={8} style={{ textAlign: 'center', padding: 30 }}>No inventory or sales for this partner.</td></tr>
+            {products.filter(p => !search || p.toLowerCase().includes(search.toLowerCase())).length === 0 ? (
+              <tr><td colSpan={8} style={{ textAlign: 'center', padding: 30 }}>{search ? 'No products match your search.' : 'No inventory or sales for this partner.'}</td></tr>
             ) : (
-              products.map(productName => {
+              products.filter(p => !search || p.toLowerCase().includes(search.toLowerCase())).map(productName => {
                 const catOrders = sOrders.filter(o => o.productName === productName);
                 const catInventory = Object.values(storeInventory[name] || {}).filter(si => (si as StoreInventoryItem).productName === productName);
 
@@ -1145,6 +1148,7 @@ function OrdersSection({ orders, overallOrders = [], inventory = [], storeInvent
         <table className="sticky-actions">
         <thead>
           <tr>
+            <th>Order ID</th>
             <th>Date</th>
             <th>Store Name</th>
             <th>Product</th>
@@ -1181,6 +1185,7 @@ function OrdersSection({ orders, overallOrders = [], inventory = [], storeInvent
               <tr key={idx} style={{ cursor: 'pointer', opacity: hasAnyAction ? 0.6 : 1, background: hasAnyAction ? 'rgba(0,0,0,0.05)' : 'transparent' }}
                 onClick={() => openEdit(o)}
               >
+                <td style={{ fontWeight: 700, fontFamily: 'monospace', fontSize: 11, color: 'var(--pri-600)', whiteSpace: 'nowrap' }}>{o.orderCode || o.id.slice(0, 8)}</td>
                 <td className="text-muted" style={{ fontSize: '0.75rem' }}>
                   {new Date(o.date).toLocaleDateString()}
                   {fullyReturned
@@ -1295,7 +1300,7 @@ function OrdersSection({ orders, overallOrders = [], inventory = [], storeInvent
               );
             })}
             {orders.length === 0 && (
-              <tr><td colSpan={isAdmin ? 12 : 9} style={{ textAlign: 'center', padding: 30, color: 'var(--text-muted)' }}>No partner sales match this period.</td></tr>
+              <tr><td colSpan={isAdmin ? 13 : 10} style={{ textAlign: 'center', padding: 30, color: 'var(--text-muted)' }}>No partner sales match this period.</td></tr>
             )}
           </tbody>
         </table>
@@ -1322,6 +1327,7 @@ function OrdersSection({ orders, overallOrders = [], inventory = [], storeInvent
             <div className="order-card" key={idx} onClick={() => setEditing({ ...o })}>
               <div className="order-card-top">
                 <span className="order-card-store">{o.storeName}</span>
+                <span style={{ fontWeight: 700, fontFamily: 'monospace', fontSize: 11, color: 'var(--pri-600)' }}>{o.orderCode || o.id.slice(0, 8)}</span>
                 <span className="order-card-date">{new Date(o.date).toLocaleDateString()}</span>
               </div>
               <div className="order-card-product">{o.productName}</div>
