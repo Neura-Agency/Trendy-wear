@@ -158,6 +158,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
           returnProofUrl: row.return_proof_url ?? null,
           refundProofUrl: row.refund_proof_url ?? null,
           storeInventoryId: row.store_inventory_id ?? null,
+          restockedFromOrderId: row.restocked_from_order_id ?? null,
         }
       })
 
@@ -463,42 +464,111 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
         return res.status(500).json({ error: 'Failed to save order' })
       }
 
-      // ── Decrement quantity_remaining across rows FIFO (sold + bonus) ────
+      // ── Decrement quantity_remaining + pending_return_qty across rows FIFO ─
       let remaining = totalDispatch
       let remainingVariants = normalizedOrderVariants
       let committedQty = 0
       for (const row of rows) {
         if (remaining <= 0) break
+        const rowId = (row as any).id
         const rowQty = num((row as any).quantity_remaining)
-        const deduct = Math.min(rowQty, remaining)
+        const pendingRet = num((row as any).pending_return_qty) || 0
+        const rowDeduct = Math.min(rowQty, remaining)
+        const fromRestock = Math.min(pendingRet, rowDeduct)
+        const newQtyRem = rowQty - rowDeduct
+        const newPendRet = Math.max(0, pendingRet - fromRestock)
 
-        if (remainingVariants) {
-          const validationError = validateVariantRequest(remainingVariants, (row as any).variant_quantities_remaining)
-          if (validationError) {
-            continue
-          }
-          const nextVariants = adjustVariantQuantities((row as any).variant_quantities_remaining, remainingVariants, -1)
-          const rollups = rollupVariantQuantities(nextVariants)
-          const { error: updErr } = await supabaseAdmin
-            .from(TABLES.STORE_INVENTORY)
-            .update({
-              quantity_remaining: rowQty - deduct,
-              variant_quantities_remaining: nextVariants,
-              size_quantities_remaining: rollups.sizeQuantities,
-              color_quantities_remaining: rollups.colorQuantities,
-            })
-            .eq('id', (row as any).id)
-          if (updErr) console.error('stock decrement error:', updErr)
-          remainingVariants = null
-        } else {
-          const { error: updErr } = await supabaseAdmin
-            .from(TABLES.STORE_INVENTORY)
-            .update({ quantity_remaining: rowQty - deduct })
-            .eq('id', (row as any).id)
-          if (updErr) console.error('stock decrement error:', updErr)
+        const sizeRem = ((row as any).size_quantities_remaining || {}) as Record<string, number>
+        const colorRem = ((row as any).color_quantities_remaining || {}) as Record<string, number>
+        const variantRem = (row as any).variant_quantities_remaining
+        const pendSize = ((row as any).pending_return_size_quantities || {}) as Record<string, number>
+        const pendColor = ((row as any).pending_return_color_quantities || {}) as Record<string, number>
+        const pendVariant = (row as any).pending_return_variant_quantities
+        const normalizeFlat = (obj: unknown) => {
+          const out: Record<string, number> = {}
+          Object.entries(obj as Record<string, number> || {}).forEach(([k, v]) => { out[k] = num(v) })
+          return out
         }
-        remaining -= deduct
-        committedQty += deduct
+        const normalizeVariant = (obj: unknown) => {
+          try { return JSON.parse(JSON.stringify(obj)) } catch { return obj }
+        }
+        const rollups = (v: any) => ({
+          sizeQuantities: Object.entries(normalizeVariant(v) || {}).reduce((acc, [, sizes]) => {
+            Object.entries(sizes as Record<string, number>).forEach(([s, q]) => { acc[s] = (acc[s] || 0) + num(q) })
+            return acc
+          }, {} as Record<string, number>),
+          colorQuantities: Object.entries(normalizeVariant(v) || {}).reduce((acc, [, sizes]) => {
+            Object.entries(sizes as Record<string, number>).forEach(([, q]) => { acc[''] = (acc[''] || 0) + num(q) })
+            return acc
+          }, {} as Record<string, number>),
+        })
+
+        const updatePayload: Record<string, any> = {
+          quantity_remaining: newQtyRem,
+          pending_return_qty: newPendRet,
+        }
+        if (fromRestock > 0 && pendSize) {
+          const next = { ...pendSize }
+          const keys = Object.keys(next)
+          const perKey = Math.max(1, Math.floor(fromRestock / keys.length))
+          let consumed = 0
+          keys.forEach((k, i) => {
+            const amt = i === keys.length - 1 ? Math.max(0, fromRestock - consumed) : perKey
+            const sub = Math.min(num(next[k] || 0), amt)
+            next[k] = Math.max(0, num(next[k] || 0) - sub)
+            consumed += sub
+          })
+          updatePayload.pending_return_size_quantities = Object.values(next).some(v => v > 0) ? next : null
+        }
+        if (fromRestock > 0 && pendColor) {
+          const next = { ...pendColor }
+          const keys = Object.keys(next)
+          const perKey = Math.max(1, Math.floor(fromRestock / keys.length))
+          let consumed = 0
+          keys.forEach((k, i) => {
+            const amt = i === keys.length - 1 ? Math.max(0, fromRestock - consumed) : perKey
+            const sub = Math.min(num(next[k] || 0), amt)
+            next[k] = Math.max(0, num(next[k] || 0) - sub)
+            consumed += sub
+          })
+          updatePayload.pending_return_color_quantities = Object.values(next).some(v => v > 0) ? next : null
+        }
+        if (fromRestock > 0 && pendVariant) {
+          updatePayload.pending_return_variant_quantities = adjustVariantQuantities(pendVariant, normalizedOrderVariants, -1) ?? pendVariant
+        }
+
+        if (remainingVariants && variantRem) {
+          const nextVariants = adjustVariantQuantities(variantRem, remainingVariants, -1)
+          const varRollups = rollups(nextVariants)
+          updatePayload.variant_quantities_remaining = nextVariants
+          updatePayload.size_quantities_remaining = Object.keys(varRollups.sizeQuantities).length ? varRollups.sizeQuantities : null
+          updatePayload.color_quantities_remaining = Object.keys(varRollups.colorQuantities).length ? varRollups.colorQuantities : null
+        } else if (normalizedOrderVariants && variantRem) {
+          const nextVariants = adjustVariantQuantities(variantRem, normalizedOrderVariants, -1)
+          const varRollups = rollups(nextVariants)
+          updatePayload.variant_quantities_remaining = nextVariants
+          updatePayload.size_quantities_remaining = Object.keys(varRollups.sizeQuantities).length ? varRollups.sizeQuantities : null
+          updatePayload.color_quantities_remaining = Object.keys(varRollups.colorQuantities).length ? varRollups.colorQuantities : null
+        } else if (!remainingVariants) {
+          updatePayload.size_quantities_remaining = Object.keys(sizeRem).length ? { ...sizeRem } : null
+          if (normalizedOrderVariants) {
+            const nextV = adjustVariantQuantities(variantRem, normalizedOrderVariants, -1)
+            const r = rollups(nextV)
+            updatePayload.variant_quantities_remaining = nextV
+            updatePayload.size_quantities_remaining = Object.keys(r.sizeQuantities).length ? r.sizeQuantities : null
+            updatePayload.color_quantities_remaining = Object.keys(r.colorQuantities).length ? r.colorQuantities : null
+          }
+        }
+
+        const { error: updErr } = await supabaseAdmin
+          .from(TABLES.STORE_INVENTORY)
+          .update(updatePayload)
+          .eq('id', rowId)
+        if (updErr) console.error('stock decrement error:', updErr)
+
+        remaining -= rowDeduct
+        committedQty += rowDeduct
+        remainingVariants = null
       }
 
       if (committedQty < totalDispatch) {

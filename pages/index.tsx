@@ -1174,7 +1174,7 @@ function OrdersSection({ orders, overallOrders = [], inventory = [], storeInvent
             const refundedQty = Math.min(Number(o.refundQuantity) || 0, soldQty - returnedQty);
             const fullyReturned = returnedQty > 0 ? returnedQty >= soldQty : Boolean(o.orderReturned);
             const fullyRefunded = refundedQty > 0 && refundedQty >= (soldQty - returnedQty);
-            const hasAnyAction = returnedQty > 0 || refundedQty > 0;
+            const hasAnyAction = returnedQty > 0 || refundedQty > 0 || Boolean(o.orderReturned && (o as any).restockedFromOrderId != null);
             const remainingQty = soldQty - returnedQty - refundedQty;
             const effectiveQ = soldQty - returnedQty - refundedQty;
             const gross = o.sellingPrice * effectiveQ;
@@ -1236,64 +1236,72 @@ function OrdersSection({ orders, overallOrders = [], inventory = [], storeInvent
                 )}
                 <td onClick={(e) => e.stopPropagation()} style={{ textAlign: 'center' }}>
                   <div style={{ display: 'flex', gap: 6, justifyContent: 'center', flexWrap: 'wrap' }}>
-                    <button
-                      type="button"
-                      className="btn btn-sm"
-                      style={{ fontSize: 11, padding: '4px 10px', background: 'rgba(99,102,241,0.1)', color: '#4f46e5', border: '1.5px solid rgba(99,102,241,0.25)' }}
-                      onClick={(e) => { e.stopPropagation(); openEdit(o); }}
-                    >
-                      Edit
-                    </button>
-                    {canDelete && (
-                      <button
-                        type="button"
-                        className="btn btn-sm"
-                        style={{ fontSize: 11, padding: '4px 10px', background: 'rgba(239,68,68,0.09)', color: '#dc2626', border: '1.5px solid rgba(239,68,68,0.22)' }}
-                        onClick={async (e) => { e.stopPropagation(); if (await confirmDialog('Delete this sale? Inventory will be restored, returns/refunds reversed, and the record permanently removed.')) { onDelete(o.id); } }}
-                      >
-                        Delete
-                      </button>
-                    )}
-                    {returnedQty > 0 && (
-                      <button
-                        type="button"
-                        className="btn btn-sm"
-                        style={{ fontSize: 11, padding: '4px 10px', background: 'rgba(107,114,128,0.1)', color: '#4b5563', border: '1.5px solid rgba(107,114,128,0.22)' }}
-                        onClick={async (e) => { e.stopPropagation(); if (await confirmDialog('Undo this return? The sale will be restored and stock will be deducted again.')) { onUndoReturn(o.id); } }}
-                      >
-                        Undo Return
-                      </button>
-                    )}
-                    {refundedQty > 0 && (
-                      <button
-                        type="button"
-                        className="btn btn-sm"
-                        style={{ fontSize: 11, padding: '4px 10px', background: 'rgba(107,114,128,0.1)', color: '#4b5563', border: '1.5px solid rgba(107,114,128,0.22)' }}
-                        onClick={async (e) => { e.stopPropagation(); if (await confirmDialog('Undo this refund? The sale financials will be restored to their pre-refund state.')) { onUndoRefund(o.id); } }}
-                      >
-                        Undo Refund
-                      </button>
-                    )}
-                    {!fullyReturned && !fullyRefunded && remainingQty > 0 && (
-                      <>
-                        <button
-                          type="button"
-                          className="btn btn-sm"
-                          style={{ fontSize: 11, padding: '4px 10px', background: 'rgba(245,158,11,0.1)', color: '#b45309', border: '1.5px solid rgba(245,158,11,0.28)' }}
-                          onClick={(e) => { e.stopPropagation(); setReturningOrder(o); }}
-                        >
-                          Return
-                        </button>
-                        <button
-                          type="button"
-                          className="btn btn-sm"
-                          style={{ fontSize: 11, padding: '4px 10px', background: 'rgba(220,38,38,0.09)', color: '#b91c1c', border: '1.5px solid rgba(220,38,38,0.22)' }}
-                          onClick={(e) => { e.stopPropagation(); setRefundingOrder(o); }}
-                        >
-                          Refund
-                        </button>
-                      </>
-                    )}
+                    {(() => {
+                      const isRestockedLocked = Boolean(o.orderReturned && (o as any).restockedFromOrderId != null)
+                      if (isRestockedLocked) return <span className="badge badge-pending" style={{ fontSize: 9, opacity: 0.75 }}>Locked (re-stocked)</span>
+                      return (
+                        <>
+                          <button
+                            type="button"
+                            className="btn btn-sm"
+                            style={{ fontSize: 11, padding: '4px 10px', background: 'rgba(99,102,241,0.1)', color: '#4f46e5', border: '1.5px solid rgba(99,102,241,0.25)' }}
+                            onClick={(e) => { e.stopPropagation(); openEdit(o); }}
+                          >
+                            Edit
+                          </button>
+                          {canDelete && (
+                            <button
+                              type="button"
+                              className="btn btn-sm"
+                              style={{ fontSize: 11, padding: '4px 10px', background: 'rgba(239,68,68,0.09)', color: '#dc2626', border: '1.5px solid rgba(239,68,68,0.22)' }}
+                              onClick={async (e) => { e.stopPropagation(); if (await confirmDialog('Delete this sale? Inventory will be restored, returns/refunds reversed, and the record permanently removed.')) { onDelete(o.id); } }}
+                            >
+                              Delete
+                            </button>
+                          )}
+                          {returnedQty > 0 && (
+                            <button
+                              type="button"
+                              className="btn btn-sm"
+                              style={{ fontSize: 11, padding: '4px 10px', background: 'rgba(107,114,128,0.1)', color: '#4b5563', border: '1.5px solid rgba(107,114,128,0.22)' }}
+                              onClick={async (e) => { e.stopPropagation(); if (await confirmDialog('Undo this return? The sale will be restored and stock will be deducted again.')) { onUndoReturn(o.id); } }}
+                            >
+                              Undo Return
+                            </button>
+                          )}
+                          {refundedQty > 0 && (
+                            <button
+                              type="button"
+                              className="btn btn-sm"
+                              style={{ fontSize: 11, padding: '4px 10px', background: 'rgba(107,114,128,0.1)', color: '#4b5563', border: '1.5px solid rgba(107,114,128,0.22)' }}
+                              onClick={async (e) => { e.stopPropagation(); if (await confirmDialog('Undo this refund? The sale financials will be restored to their pre-refund state.')) { onUndoRefund(o.id); } }}
+                            >
+                              Undo Refund
+                            </button>
+                          )}
+                          {!fullyReturned && !fullyRefunded && remainingQty > 0 && (
+                            <>
+                              <button
+                                type="button"
+                                className="btn btn-sm"
+                                style={{ fontSize: 11, padding: '4px 10px', background: 'rgba(245,158,11,0.1)', color: '#b45309', border: '1.5px solid rgba(245,158,11,0.28)' }}
+                                onClick={(e) => { e.stopPropagation(); setReturningOrder(o); }}
+                              >
+                                Return
+                              </button>
+                              <button
+                                type="button"
+                                className="btn btn-sm"
+                                style={{ fontSize: 11, padding: '4px 10px', background: 'rgba(220,38,38,0.09)', color: '#b91c1c', border: '1.5px solid rgba(220,38,38,0.22)' }}
+                                onClick={(e) => { e.stopPropagation(); setRefundingOrder(o); }}
+                              >
+                                Refund
+                              </button>
+                            </>
+                          )}
+                        </>
+                      )
+                    })()}
                   </div>
                 </td>
                 </tr>
@@ -1370,67 +1378,79 @@ function OrdersSection({ orders, overallOrders = [], inventory = [], storeInvent
                   gap: 5,
                   minWidth: 160,
                 }}>
-                  {/* Row 1: Edit + Delete */}
-                  <button
-                    className="btn btn-sm"
-                    style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 5, padding: '6px 10px', fontSize: 11, fontWeight: 700, background: 'rgba(99,102,241,0.1)', color: '#4f46e5', border: '1.5px solid rgba(99,102,241,0.25)', borderRadius: 8 }}
-                    onClick={(e) => { e.stopPropagation(); openEdit(o); }}
-                  >
-                    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4Z"/></svg>
-                    Edit
-                  </button>
-                  {canDelete ? (
-                    <button
-                      className="btn btn-sm"
-                      style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 5, padding: '6px 10px', fontSize: 11, fontWeight: 700, background: 'rgba(239,68,68,0.09)', color: '#dc2626', border: '1.5px solid rgba(239,68,68,0.22)', borderRadius: 8 }}
-                      onClick={async (e) => { e.stopPropagation(); if (await confirmDialog('Delete this sale? Inventory will be restored, returns/refunds reversed, and the record permanently removed.')) { onDelete(o.id); } }}
-                    >
-                      <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="M3 6h18"/><path d="M8 6V4a1 1 0 0 1 1-1h6a1 1 0 0 1 1 1v2"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/></svg>
-                      Delete
-                    </button>
-                  ) : <div />}
-
-                  {/* Row 2: Return/Undo + Refund/Undo */}
-                  {returnedQty > 0 && (
-                    <button
-                      className="btn btn-sm"
-                      style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 5, padding: '6px 10px', fontSize: 11, fontWeight: 700, background: 'rgba(107,114,128,0.1)', color: '#4b5563', border: '1.5px solid rgba(107,114,128,0.22)', borderRadius: 8, gridColumn: '1 / -1' }}
-                      onClick={async (e) => { e.stopPropagation(); if (await confirmDialog('Undo this return? The sale will be restored and stock will be deducted again.')) { onUndoReturn(o.id); } }}
-                    >
-                      <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="M9 14l-4-4 4-4"/><path d="M5 10h9a6 6 0 0 1 0 12H8"/></svg>
-                      Undo Return
-                    </button>
-                  )}
-                  {refundedQty > 0 && (
-                    <button
-                      className="btn btn-sm"
-                      style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 5, padding: '6px 10px', fontSize: 11, fontWeight: 700, background: 'rgba(107,114,128,0.1)', color: '#4b5563', border: '1.5px solid rgba(107,114,128,0.22)', borderRadius: 8, gridColumn: '1 / -1' }}
-                      onClick={async (e) => { e.stopPropagation(); if (await confirmDialog('Undo this refund? The sale financials will be restored to their pre-refund state.')) { onUndoRefund(o.id); } }}
-                    >
-                      <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="M9 14l-4-4 4-4"/><path d="M5 10h9a6 6 0 0 1 0 12H8"/></svg>
-                      Undo Refund
-                    </button>
-                  )}
-                  {!fullyReturned && !fullyRefunded && remainingQty > 0 && (
-                    <>
-                      <button
-                        className="btn btn-sm"
-                        style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 5, padding: '6px 10px', fontSize: 11, fontWeight: 700, background: 'rgba(245,158,11,0.1)', color: '#b45309', border: '1.5px solid rgba(245,158,11,0.28)', borderRadius: 8 }}
-                        onClick={(e) => { e.stopPropagation(); setReturningOrder(o); }}
-                      >
-                        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><polyline points="9 14 4 9 9 4"/><path d="M20 20v-7a4 4 0 0 0-4-4H4"/></svg>
-                        Return
-                      </button>
-                      <button
-                        className="btn btn-sm"
-                        style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 5, padding: '6px 10px', fontSize: 11, fontWeight: 700, background: 'rgba(220,38,38,0.09)', color: '#b91c1c', border: '1.5px solid rgba(220,38,38,0.22)', borderRadius: 8 }}
-                        onClick={(e) => { e.stopPropagation(); setRefundingOrder(o); }}
-                      >
-                        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><line x1="12" y1="1" x2="12" y2="23"/><path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/></svg>
-                        Refund
-                      </button>
-                    </>
-                  )}
+                  {(() => {
+                    const isRestockedLocked = Boolean(o.orderReturned && (o as any).restockedFromOrderId != null)
+                    if (isRestockedLocked) {
+                      return <span className="badge badge-pending" style={{ fontSize: 9, gridColumn: '1 / -1', justifySelf: 'center', opacity: 0.75 }}>Locked (re-stocked)</span>
+                    }
+                    return null
+                  })()}
+                  {(() => {
+                    const isRestockedLocked = Boolean(o.orderReturned && (o as any).restockedFromOrderId != null)
+                    if (isRestockedLocked) return <span className="badge badge-pending" style={{ fontSize: 9, gridColumn: '1 / -1', justifySelf: 'center', opacity: 0.75 }}>Locked (re-stocked)</span>
+                    return (
+                      <>
+                        <button
+                          className="btn btn-sm"
+                          style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 5, padding: '6px 10px', fontSize: 11, fontWeight: 700, background: 'rgba(99,102,241,0.1)', color: '#4f46e5', border: '1.5px solid rgba(99,102,241,0.25)', borderRadius: 8 }}
+                          onClick={(e) => { e.stopPropagation(); openEdit(o); }}
+                        >
+                          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4Z"/></svg>
+                          Edit
+                        </button>
+                        {canDelete ? (
+                          <button
+                            className="btn btn-sm"
+                            style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 5, padding: '6px 10px', fontSize: 11, fontWeight: 700, background: 'rgba(239,68,68,0.09)', color: '#dc2626', border: '1.5px solid rgba(239,68,68,0.22)', borderRadius: 8 }}
+                            onClick={async (e) => { e.stopPropagation(); if (await confirmDialog('Delete this sale? Inventory will be restored, returns/refunds reversed, and the record permanently removed.')) { onDelete(o.id); } }}
+                          >
+                            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="M3 6h18"/><path d="M8 6V4a1 1 0 0 1 1-1h6a1 1 0 0 1 1 1v2"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/></svg>
+                            Delete
+                          </button>
+                        ) : <div />}
+                        {returnedQty > 0 && (
+                          <button
+                            className="btn btn-sm"
+                            style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 5, padding: '6px 10px', fontSize: 11, fontWeight: 700, background: 'rgba(107,114,128,0.1)', color: '#4b5563', border: '1.5px solid rgba(107,114,128,0.22)', borderRadius: 8, gridColumn: '1 / -1' }}
+                            onClick={async (e) => { e.stopPropagation(); if (await confirmDialog('Undo this return? The sale will be restored and stock will be deducted again.')) { onUndoReturn(o.id); } }}
+                          >
+                            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="M9 14l-4-4 4-4"/><path d="M5 10h9a6 6 0 0 1 0 12H8"/></svg>
+                            Undo Return
+                          </button>
+                        )}
+                        {refundedQty > 0 && (
+                          <button
+                            className="btn btn-sm"
+                            style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 5, padding: '6px 10px', fontSize: 11, fontWeight: 700, background: 'rgba(107,114,128,0.1)', color: '#4b5563', border: '1.5px solid rgba(107,114,128,0.22)', borderRadius: 8, gridColumn: '1 / -1' }}
+                            onClick={async (e) => { e.stopPropagation(); if (await confirmDialog('Undo this refund? The sale financials will be restored to their pre-refund state.')) { onUndoRefund(o.id); } }}
+                          >
+                            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="M9 14l-4-4 4-4"/><path d="M5 10h9a6 6 0 0 1 0 12H8"/></svg>
+                            Undo Refund
+                          </button>
+                        )}
+                        {!fullyReturned && !fullyRefunded && remainingQty > 0 && (
+                          <>
+                            <button
+                              className="btn btn-sm"
+                              style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 5, padding: '6px 10px', fontSize: 11, fontWeight: 700, background: 'rgba(245,158,11,0.1)', color: '#b45309', border: '1.5px solid rgba(245,158,11,0.28)', borderRadius: 8 }}
+                              onClick={(e) => { e.stopPropagation(); setReturningOrder(o); }}
+                            >
+                              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><polyline points="9 14 4 9 9 4"/><path d="M20 20v-7a4 4 0 0 0-4-4H4"/></svg>
+                              Return
+                            </button>
+                            <button
+                              className="btn btn-sm"
+                              style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 5, padding: '6px 10px', fontSize: 11, fontWeight: 700, background: 'rgba(220,38,38,0.09)', color: '#b91c1c', border: '1.5px solid rgba(220,38,38,0.22)', borderRadius: 8 }}
+                              onClick={(e) => { e.stopPropagation(); setRefundingOrder(o); }}
+                            >
+                              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><line x1="12" y1="1" x2="12" y2="23"/><path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/></svg>
+                              Refund
+                            </button>
+                          </>
+                        )}
+                      </>
+                    )
+                  })()}
                 </div>
               </div>
             </div>
@@ -2490,8 +2510,8 @@ export default function Home({ user, onLogin }: PageProps) {
             storeName={user.storeName}
             isAdmin={isAdmin}
             storeNames={isAdmin && user.scope === 'all' ? Object.keys(data.stores) : (isAdmin ? (user.managedStores || []) : [user.storeName])}
-            onAdd={(result: any) => {
-              handleAddOrder({ success: true, orderCode: result?.orderCode })
+            onAdd={() => {
+              refresh();
             }}
             onClose={() => setShowSaleModal(false)}
           />

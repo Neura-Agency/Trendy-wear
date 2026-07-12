@@ -212,18 +212,30 @@ export default function OrdersTable({ orders, onRefresh }: { orders: any[]; onRe
                                         }
                                       </td>
                                       <td style={{ textAlign: 'center' }}>
-                                        {!itemRet && !itemRef && itemRemaining > 0 && (
-                                          <div style={{ display: 'flex', gap: 4, justifyContent: 'center', flexWrap: 'wrap' }}>
-                                            <button className="btn btn-sm" style={{ fontSize: 10, padding: '2px 8px', background: '#fef3c7', borderColor: '#fde68a', color: '#92400e' }} onClick={() => setReturningItem({ order: o, item })}>Return</button>
-                                            <button className="btn btn-sm" style={{ fontSize: 10, padding: '2px 8px', background: '#fee2e2', borderColor: '#fecaca', color: '#991b2b' }} onClick={() => setRefundingItem({ order: o, item })}>Refund</button>
-                                          </div>
-                                        )}
-                                        {itemRet > 0 && (
-                                          <button className="btn btn-sm" style={{ fontSize: 10, padding: '2px 8px', background: '#e0e7ff', borderColor: '#c7d2fe', color: '#3730a3' }} onClick={() => handleUndoReturn(item.id)}>Undo Return</button>
-                                        )}
-                                        {itemRef > 0 && (
-                                          <button className="btn btn-sm" style={{ fontSize: 10, padding: '2px 8px', background: '#fce7f3', borderColor: '#fbcfe8', color: '#831843' }} onClick={() => handleUndoRefund(item.id)}>Undo Refund</button>
-                                        )}
+                                        {(() => {
+                                          // If this returned order's inventory has already been sold on to a
+                                          // new order, all mutating actions are locked — we cannot undo return
+                                          // because the stock is no longer here.
+                                          const isRestockedLocked = (o.orderReturned && o.restockedFromOrderId != null)
+                                          if (isRestockedLocked) {
+                                            return <span className="badge badge-pending" style={{ fontSize: 10, opacity: 0.7 }}>Locked (re-stocked)</span>
+                                          }
+                                          if (!itemRet && !itemRef && itemRemaining > 0) {
+                                            return (
+                                              <div style={{ display: 'flex', gap: 4, justifyContent: 'center', flexWrap: 'wrap' }}>
+                                                <button className="btn btn-sm" style={{ fontSize: 10, padding: '2px 8px', background: '#fef3c7', borderColor: '#fde68a', color: '#92400e' }} onClick={() => setReturningItem({ order: o, item })}>Return</button>
+                                                <button className="btn btn-sm" style={{ fontSize: 10, padding: '2px 8px', background: '#fee2e2', borderColor: '#fecaca', color: '#991b2b' }} onClick={() => setRefundingItem({ order: o, item })}>Refund</button>
+                                              </div>
+                                            )
+                                          }
+                                          if (itemRet > 0) {
+                                            return <button className="btn btn-sm" style={{ fontSize: 10, padding: '2px 8px', background: '#e0e7ff', borderColor: '#c7d2fe', color: '#3730a3' }} onClick={() => handleUndoReturn(item.id)}>Undo Return</button>
+                                          }
+                                          if (itemRef > 0) {
+                                            return <button className="btn btn-sm" style={{ fontSize: 10, padding: '2px 8px', background: '#fce7f3', borderColor: '#fbcfe8', color: '#831843' }} onClick={() => handleUndoRefund(item.id)}>Undo Refund</button>
+                                          }
+                                          return null
+                                        })()}
                                       </td>
                                     </tr>
                                   );

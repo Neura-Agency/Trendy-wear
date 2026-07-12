@@ -66,6 +66,58 @@ export function rollupVariantQuantities(value: unknown): {
   }
 }
 
+export function scaleVariantQuantitiesToTotal(value: unknown, targetTotal: unknown): VariantQuantities | null {
+  const variants = normalizeVariantQuantities(value)
+  if (!variants) return null
+
+  const total = Math.max(0, Math.floor(toNumber(targetTotal)))
+  const rollups = rollupVariantQuantities(variants)
+  if (!rollups.total || total <= 0) return null
+  if (total >= rollups.total) return variants
+
+  const entries: Array<{
+    color: string
+    size: string
+    qty: number
+    scaled: number
+    remainder: number
+  }> = []
+
+  Object.entries(variants).forEach(([color, sizes]) => {
+    Object.entries(sizes).forEach(([size, qty]) => {
+      const normalizedQty = Math.max(0, toNumber(qty))
+      if (!normalizedQty) return
+      const exact = (normalizedQty / rollups.total) * total
+      const scaled = Math.floor(exact)
+      entries.push({
+        color,
+        size,
+        qty: normalizedQty,
+        scaled,
+        remainder: exact - scaled,
+      })
+    })
+  })
+
+  if (!entries.length) return null
+
+  let remaining = total - entries.reduce((sum, entry) => sum + entry.scaled, 0)
+  entries.sort((left, right) => right.remainder - left.remainder || right.qty - left.qty)
+  for (const entry of entries) {
+    if (remaining <= 0) break
+    entry.scaled += 1
+    remaining -= 1
+  }
+
+  const next: VariantQuantities = {}
+  entries.forEach(({ color, size, scaled }) => {
+    if (!next[color]) next[color] = {}
+    next[color][size] = scaled
+  })
+
+  return Object.keys(next).length ? next : null
+}
+
 export function mergeVariantQuantities(existingValue: unknown, incomingValue: unknown): VariantQuantities | null {
   const existing = normalizeVariantQuantities(existingValue) || {}
   const incoming = normalizeVariantQuantities(incomingValue) || {}

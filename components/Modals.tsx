@@ -3,7 +3,7 @@ import { usePopup } from './Popup';
 import Badge from './Badge';
 import { SaleModalProps, CreateStoreModalProps, ReportModalProps, AddInventoryModalProps, AllotToStoreModalProps, InventoryItem, Order, Product, Store, Expense } from '../types';
 import { buildDeterministicProductId, findMatchingProduct, formatItemCodeFromUuid, resolveCanonicalBrand } from '../lib/catalog';
-import { adjustVariantQuantities, rollupVariantQuantities, VariantQuantities } from '../lib/variantQuantities';
+import { adjustVariantQuantities, rollupVariantQuantities, scaleVariantQuantitiesToTotal, VariantQuantities } from '../lib/variantQuantities';
 
 type SaleInventoryItem = Pick<InventoryItem, 'productName' | 'quantityAvailable' | 'sellingPrice'> & {
     productId?: string;
@@ -2784,7 +2784,8 @@ export function CartModal({ inventory, storeName, isAdmin, storeNames, onAdd, on
     }, {} as VariantQuantities);
 
     const baseVariantQuantitiesRemaining = selectedItem?.variantQuantitiesRemaining ?? selectedItem?.variantQuantities ?? buildLegacyMaxVariantGrid(selectedItem?.colorQuantitiesRemaining ?? selectedItem?.colorQuantities, selectedItem?.sizeQuantitiesRemaining ?? selectedItem?.sizeQuantities);
-    const variantQuantitiesRemaining = adjustVariantQuantities(baseVariantQuantitiesRemaining, cartVariantQuantities, -1);
+    const reconciledVariantQuantitiesRemaining = scaleVariantQuantitiesToTotal(baseVariantQuantitiesRemaining, selectedItem?.quantityAvailable ?? 0) ?? baseVariantQuantitiesRemaining;
+    const variantQuantitiesRemaining = adjustVariantQuantities(reconciledVariantQuantitiesRemaining, cartVariantQuantities, -1);
     const variantColors = Object.keys(variantQuantitiesRemaining || {});
     const variantSizes = Array.from(new Set(Object.values(variantQuantitiesRemaining || {}).flatMap(sizes => Object.keys(sizes || {}))));
     const hasVariantGrid = variantColors.length > 0 && variantSizes.length > 0;
@@ -2967,6 +2968,7 @@ export function CartModal({ inventory, storeName, isAdmin, storeNames, onAdd, on
             }));
             toast.success(orderCodes.length > 1 ? `${orderCodes.length} items saved!` : `Order saved! Code: ${sharedCode}`);
             onAdd?.({ success: true, orderCode: sharedCode });
+            onClose();
         } catch (e: any) {
             toast.error(e?.message || 'Failed to save order');
         }
