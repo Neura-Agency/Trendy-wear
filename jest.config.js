@@ -26,6 +26,7 @@ const customJestConfig = {
     '/node_modules/(?!(.*\\.mjs$|@?react.*|@?next.*|@?recharts.*|@?supabase.*)/)',
   ],
   testTimeout: 60000,
+  maxWorkers: 1,
 }
 
 module.exports = createJestConfig(customJestConfig)

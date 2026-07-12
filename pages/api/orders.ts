@@ -15,10 +15,25 @@ function num(v: any): number {
   return Number.isFinite(n) ? n : 0
 }
 
-function generateOrderCode(): string {
-  const ts = Date.now().toString(36).toUpperCase()
-  const rand = Math.random().toString(36).substr(2, 4).toUpperCase()
-  return `ORD-${ts}-${rand}`
+async function generateOrderCode(
+  existingCode?: string,
+): Promise<string> {
+  let code = existingCode ? existingCode.trim() : ''
+  for (let attempt = 0; attempt < 5; attempt++) {
+    if (!code) {
+      const ts = Date.now().toString(36).toUpperCase()
+      const extra = Math.random().toString(36).substr(2, 8).toUpperCase()
+      code = `ORD-${ts}-${extra}`
+    }
+    const { data, error } = await supabaseAdmin
+      .from(TABLES.ORDERS)
+      .select('id')
+      .eq('order_code', code)
+      .maybeSingle()
+    if (!error && !data) break
+    code = ''
+  }
+  return code
 }
 
 export default async function handler(req: NextApiRequest, res: NextApiResponse) {
@@ -303,9 +318,9 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
         const { data: order, error: orderErr } = await supabaseAdmin
           .from(TABLES.ORDERS)
           .insert({
-            order_code: generateOrderCode(),
-            store_id: storeId,
-            product_id: resolvedProductId,
+            order_code: await generateOrderCode(),
+             store_id: storeId,
+             product_id: resolvedProductId,
             product_name: productName,
             color: req.body?.color || null,
             size_quantities: effectiveSizeQuantities,
@@ -409,7 +424,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       const profit = adminTake - costPrice * qty
 
       // ── Insert order ─────────────────────────────────────────────────────
-      const finalOrderCode = String(orderCode || '').trim() || generateOrderCode()
+      const finalOrderCode = String(orderCode || '').trim() || (await generateOrderCode())
       const { data: order, error: orderErr } = await supabaseAdmin
         .from(TABLES.ORDERS)
         .insert({
@@ -451,29 +466,44 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       // ── Decrement quantity_remaining across rows FIFO (sold + bonus) ────
       let remaining = totalDispatch
       let remainingVariants = normalizedOrderVariants
+      let committedQty = 0
       for (const row of rows) {
         if (remaining <= 0) break
         const rowQty = num((row as any).quantity_remaining)
         const deduct = Math.min(rowQty, remaining)
-        
-        const updatePayload: Record<string, any> = { quantity_remaining: rowQty - deduct }
+
         if (remainingVariants) {
           const validationError = validateVariantRequest(remainingVariants, (row as any).variant_quantities_remaining)
-          if (!validationError) {
-            const nextVariants = adjustVariantQuantities((row as any).variant_quantities_remaining, remainingVariants, -1)
-            const rollups = rollupVariantQuantities(nextVariants)
-            updatePayload.variant_quantities_remaining = nextVariants
-            updatePayload.size_quantities_remaining = rollups.sizeQuantities
-            updatePayload.color_quantities_remaining = rollups.colorQuantities
-            remainingVariants = null
+          if (validationError) {
+            continue
           }
+          const nextVariants = adjustVariantQuantities((row as any).variant_quantities_remaining, remainingVariants, -1)
+          const rollups = rollupVariantQuantities(nextVariants)
+          const { error: updErr } = await supabaseAdmin
+            .from(TABLES.STORE_INVENTORY)
+            .update({
+              quantity_remaining: rowQty - deduct,
+              variant_quantities_remaining: nextVariants,
+              size_quantities_remaining: rollups.sizeQuantities,
+              color_quantities_remaining: rollups.colorQuantities,
+            })
+            .eq('id', (row as any).id)
+          if (updErr) console.error('stock decrement error:', updErr)
+          remainingVariants = null
+        } else {
+          const { error: updErr } = await supabaseAdmin
+            .from(TABLES.STORE_INVENTORY)
+            .update({ quantity_remaining: rowQty - deduct })
+            .eq('id', (row as any).id)
+          if (updErr) console.error('stock decrement error:', updErr)
         }
-        const { error: updErr } = await supabaseAdmin
-          .from(TABLES.STORE_INVENTORY)
-          .update(updatePayload)
-          .eq('id', (row as any).id)
-        if (updErr) console.error('stock decrement error:', updErr)
         remaining -= deduct
+        committedQty += deduct
+      }
+
+      if (committedQty < totalDispatch) {
+        await supabaseAdmin.from(TABLES.ORDERS).delete().eq('id', savedOrder.id)
+        return res.status(500).json({ error: 'Failed to update store inventory during order creation' })
       }
 
       return res.status(201).json({
@@ -667,7 +697,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 
         const { data: order, error: fetchErr } = await supabaseAdmin
           .from(TABLES.ORDERS)
-          .select('id, quantity, size_quantities, color_quantities, variant_quantities, return_quantity, return_variant_quantities, refund_quantity, refund_size_quantities, refund_color_quantities, refund_variant_quantities, commission_percent, selling_price, shipment_cost, cost_price')
+          .select('id, quantity, size_quantities, color_quantities, variant_quantities, return_quantity, return_variant_quantities, refund_quantity, refund_size_quantities, refund_color_quantities, refund_variant_quantities, commission_percent, selling_price, shipment_cost, cost_price, store_inventory_id')
           .eq('id', id)
           .single();
 
@@ -710,18 +740,18 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
         const mergedRefundVariantQuantities = mergeVariantQuantities(order.refund_variant_quantities, normalizedRefundVariants);
         const newRefundQty = alreadyRefundedQty + refQty;
 
-        // Refund amount = selling_price x refunded units
-        const refundAmount = num(order.selling_price) * refQty;
+        // Refund amount = selling_price x total refunded units
+        const refundAmount = num(order.selling_price) * newRefundQty;
 
         // Remaining revenue = non-returned, non-refunded units only
-        // Cost stays for ALL original units (refunded items still cost us money)
+        // Cost absorbed for remaining originals only; already-returned units are not double-charged.
         const remainingUnits = Math.max(0, originalQty - alreadyReturnedQty - newRefundQty);
         const remainingGross = num(order.selling_price) * remainingUnits - num(order.shipment_cost);
         // Commission clawed back on refunded units (Option A)
         const remainingCommission = Math.round(remainingGross * num(order.commission_percent)) / 100;
         const remainingAdminTake = remainingGross - remainingCommission;
-        // Full original cost absorbed
-        const remainingProfit = remainingAdminTake - (num(order.cost_price) * originalQty);
+        // Absorb cost only for units that were actually lost (not returned)
+        const remainingProfit = remainingAdminTake - (num(order.cost_price) * (originalQty - alreadyReturnedQty));
 
         const { error: updErr } = await supabaseAdmin
           .from(TABLES.ORDERS)
@@ -967,9 +997,10 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       const newPct = num(commissionPercent)
 
       // Fetch the existing order to recalculate from source values
+      // Must include return/refund state so we don't overwrite those adjustments.
       const { data: existing, error: fetchErr } = await supabaseAdmin
         .from(TABLES.ORDERS)
-        .select('selling_price, quantity, shipment_cost, cost_price, stores:store_id(name)')
+        .select('selling_price, quantity, shipment_cost, cost_price, return_quantity, refund_quantity, stores:store_id(name)')
         .eq('id', id)
         .single()
 
@@ -977,9 +1008,14 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
         return res.status(404).json({ error: 'Order not found' })
       }
 
-      const grossAmount     = num(existing.selling_price) * num(existing.quantity)
+      const originalQty        = num(existing.quantity)
+      const alreadyReturnedQty = Math.max(0, num(existing.return_quantity))
+      const alreadyRefundedQty = Math.max(0, num(existing.refund_quantity))
+      const effectiveQty       = Math.max(0, originalQty - alreadyReturnedQty - alreadyRefundedQty)
+
+      const grossAmount     = num(existing.selling_price) * effectiveQty
       const totalDeductions = num(existing.shipment_cost)
-      const costPrice       = num(existing.cost_price) * num(existing.quantity)
+      const costPrice       = num(existing.cost_price) * Math.max(0, originalQty - alreadyReturnedQty)
       const amountReceived   = grossAmount - totalDeductions
       const commissionAmount = Math.round(amountReceived * newPct) / 100
       const adminTake        = amountReceived - commissionAmount
@@ -988,16 +1024,16 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       const { error: updateErr } = await supabaseAdmin
         .from(TABLES.ORDERS)
         .update({
-          commission_percent: newPct,
-          commission_amount:  commissionAmount,
-          admin_take:         adminTake,
-          profit:             profit,
+          commission_percent:  newPct,
+          commission_amount:   commissionAmount,
+          admin_take:          adminTake,
+          profit:              profit,
         })
         .eq('id', id)
 
       if (updateErr) {
         console.error('orders PATCH error:', updateErr)
-        return res.status(500).json({ error: 'Failed to update order' })
+        return res.status(500).json({ error: 'Failed to update order commission' })
       }
 
       return res.json({ success: true, commissionAmount, adminTake, profit })
@@ -1236,7 +1272,6 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
         const effectiveSizeQty = variantRollups.sizeQuantities ?? normalizeFlatQuantities(order.size_quantities)
         const effectiveColorQty = variantRollups.colorQuantities ?? normalizeFlatQuantities(order.color_quantities)
 
-        // Find warehouse inventory rows for this product (FIFO — same order as sale creation)
         let invQuery = supabaseAdmin
           .from(TABLES.INVENTORY)
           .select('id, quantity_available, size_quantities, color_quantities, variant_quantities')
@@ -1254,20 +1289,6 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
           return res.status(500).json({ error: 'Failed to lookup warehouse inventory for delete' })
         }
 
-        // Distribute restored qty back across rows FIFO
-        let remaining = soldQty
-        for (const row of invRows) {
-          if (remaining <= 0) break
-          const rowQty = num(row.quantity_available)
-          const add = Math.min(rowQty + remaining, remaining)  // Hmm, this isn't right
-
-          // Actually for restoration, each row just gets its share added back
-          // We distribute evenly across all matching rows proportionally?
-          // No — the simplest correct approach: add the full qty to the first row
-          // That's fine for deletion because we're just putting items back
-        }
-
-        // Simpler: just add to the first matching warehouse row
         if (invRows && invRows.length > 0) {
           const firstRow = invRows[0]
           const newInvSizes = mergeFlat(firstRow.size_quantities, effectiveSizeQty)

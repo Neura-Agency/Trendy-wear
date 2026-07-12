@@ -26,7 +26,7 @@ let lastRes: any
 function makeReq(method: string, body: any): NextApiRequest {
   return { method, body, headers: {} } as any
 }
-function makeRes(): NextApiResponse {
+function makeRes(): NextApiResponse & { data: any } {
   lastRes = {
     statusCode: 200,
     data: null as any,

@@ -2941,7 +2941,6 @@ export function CartModal({ inventory, storeName, isAdmin, storeNames, onAdd, on
                         sizeQuantities: item.sizeQuantities,
                         colorQuantities: item.colorQuantities,
                         variantQuantities: item.variantQuantities,
-                        orderCode: cartOrderCode,
                     }),
                 });
                 const result = await res.json();
@@ -2956,7 +2955,7 @@ export function CartModal({ inventory, storeName, isAdmin, storeNames, onAdd, on
                 }
             }
             // Use the first returned order code as the shared code for the entire batch
-            const sharedCode = orderCodes[0] || cartOrderCode;
+            const sharedCode = orderCodes[0] || '';
             setCartOrderCode(sharedCode);
             // Update all saved cart items to show the shared order code
             setCartItems(prev => prev.map((it, idx) => {
