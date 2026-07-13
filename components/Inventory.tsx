@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { usePopup } from './Popup';
 import SearchBar from './SearchBar';
+import { formatItemCode } from '../lib/catalog';
 
 export default function Inventory({ items }){
   const { toast } = usePopup();
@@ -28,9 +29,9 @@ export default function Inventory({ items }){
         <table className="table">
           <thead>
             <tr>
-              <th>Product Name</th>
+              <th>Item Name</th>
               <th>Category</th>
-              <th>Batch</th>
+              <th>Item ID</th>
               <th>Cost Price</th>
               <th>Sale Price</th>
               <th>Available</th>
@@ -44,7 +45,7 @@ export default function Inventory({ items }){
               <tr key={idx}>
                 <td style={{fontWeight:600}}>{it.productName}</td>
                 <td><span className="badge" style={{background:'#f1f5f9'}}>{it.category}</span></td>
-                <td className="muted">{it.batchNumber}</td>
+                <td className="muted">{formatItemCode(it.batchNumber)}</td>
                 <td>${Number(it.costPrice).toLocaleString()}</td>
                 <td>${Number(it.sellingPrice).toLocaleString()}</td>
                 <td style={{fontWeight:700}}>{it.quantityAvailable}</td>

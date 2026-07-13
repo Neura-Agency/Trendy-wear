@@ -4,6 +4,7 @@ import Badge from '../components/Badge';
 import Login from '../components/Login';
 import SearchBar from '../components/SearchBar';
 import { InventoryItem, PageProps } from '../types';
+import { formatItemCode } from '../lib/catalog';
 
 const IC = {
   warehouse: <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d="M6 22V4a2 2 0 0 1 2-2h8a2 2 0 0 1 2 2v18Z"/><path d="M6 12H4a2 2 0 0 0-2 2v6a2 2 0 0 0 2 2h2"/><path d="M18 9h2a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2h-2"/><path d="M10 6h4"/><path d="M10 10h4"/><path d="M10 14h4"/><path d="M10 18h4"/></svg>
@@ -66,7 +67,7 @@ export default function AllInventoryPage({ user, onLogin }: PageProps) {
           <table>
             <thead>
               <tr>
-                <th>Item</th>
+                <th>Item Name</th>
                 <th>Type</th>
                 <th>Item ID</th>
                 <th>Cost/pc</th>
@@ -117,7 +118,7 @@ export default function AllInventoryPage({ user, onLogin }: PageProps) {
                         </div>
                       </td>
                       <td><Badge type="gray">{item.category}</Badge></td>
-                      <td className="text-muted font-mono batch-number">{item.batchNumber}</td>
+                      <td className="text-muted font-mono batch-number">{formatItemCode(item.batchNumber)}</td>
                       <td>{Rs(item.costPrice)}</td>
                       <td className="font-bold qty-cell">{availableQty}</td>
                       <td>

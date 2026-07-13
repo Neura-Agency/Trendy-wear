@@ -4,6 +4,7 @@ import SectionCard from "../components/SectionCard";
 import Badge from "../components/Badge";
 import Login from "../components/Login";
 import SearchBar from "../components/SearchBar";
+import { formatItemCode } from "../lib/catalog";
 import { 
   PageProps, 
   InventoryItem, 
@@ -477,7 +478,7 @@ export default function InventoryPage({ user, onLogin }: PageProps) {
                             <table>
                                 <thead>
                                     <tr>
-                                        <th>Item</th>
+                                        <th>Item Name</th>
                                         <th>Type</th>
                                         <th>Item ID</th>
                                         <th>Cost/pc</th>
@@ -554,7 +555,7 @@ export default function InventoryPage({ user, onLogin }: PageProps) {
                                                     </div>
                                                 </td>
                                                 <td><Badge type="gray">{item.category}</Badge></td>
-                                                <td className="text-muted font-mono" style={{ fontWeight: 700 }}>{item.batchNumber}</td>
+                                                <td className="text-muted font-mono" style={{ fontWeight: 700 }}>{formatItemCode(item.batchNumber)}</td>
                                                 <td>{Rs(item.costPrice)}</td>
                                                 <td className="font-bold" style={{ fontSize: '1.05rem' }}>{availableQty}</td>
                                                 <td className="font-bold">{allotedQty}</td>
@@ -816,7 +817,7 @@ export default function InventoryPage({ user, onLogin }: PageProps) {
                                         <tr>
                                             <th>Date</th>
                                             <th>Store</th>
-                                            <th>Product</th>
+                                            <th>Item Name</th>
                                             <th>Extra Qty</th>
                                             <th>Cost/PC</th>
                                             <th>Total Cost</th>

@@ -688,7 +688,7 @@ function StoresOverviewSection({ stores, orders, storeInventory, filter, getFilt
         <table>
           <thead>
             <tr>
-              <th>Product</th>
+              <th>Item Name</th>
               <th>Payout</th>
               <th>Items Sold</th>
               <th>Leftover Inventory</th>
@@ -1151,7 +1151,7 @@ function OrdersSection({ orders, overallOrders = [], inventory = [], storeInvent
             <th>Order ID</th>
             <th>Date</th>
             <th>Store Name</th>
-            <th>Product</th>
+            <th>Item Name</th>
             <th>Quantity</th>
             <th>Total Price</th>
             <th>Delivery Fee</th>

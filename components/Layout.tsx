@@ -150,6 +150,12 @@ export default function Layout({ children, user, onLogout }: LayoutProps) {
       <path d="M5 7c0 7.73 6 11 7 11s7-3.27 7-11"/>
     </svg>
   );
+  const iconProfit = (
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+      <polyline points="22 7 13.5 15.5 8.5 10.5 2 17" />
+      <polyline points="16 7 22 7 22 13" />
+    </svg>
+  );
 
   const navItems: NavItem[] = [
     {
@@ -218,6 +224,13 @@ export default function Layout({ children, user, onLogout }: LayoutProps) {
       icon: iconRefunds as any,
       label: "Refunds",
       path: "/refunds",
+      superAdminOnly: true,
+    },
+    {
+      id: "profit",
+      icon: iconProfit as any,
+      label: "Profit",
+      path: "/profit",
       superAdminOnly: true,
     },
   ];

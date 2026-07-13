@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 import { usePopup } from './Popup';
 import Badge from './Badge';
 import { SaleModalProps, CreateStoreModalProps, ReportModalProps, AddInventoryModalProps, AllotToStoreModalProps, InventoryItem, Order, Product, Store, Expense } from '../types';
-import { buildDeterministicProductId, findMatchingProduct, formatItemCodeFromUuid, resolveCanonicalBrand } from '../lib/catalog';
+import { buildDeterministicProductId, findMatchingProduct, formatItemCode, formatItemCodeFromUuid, resolveCanonicalBrand } from '../lib/catalog';
 import { adjustVariantQuantities, rollupVariantQuantities, scaleVariantQuantitiesToTotal, VariantQuantities } from '../lib/variantQuantities';
 
 type SaleInventoryItem = Pick<InventoryItem, 'productName' | 'quantityAvailable' | 'sellingPrice'> & {
@@ -1033,7 +1033,7 @@ export function AddInventoryModal({ onSave, onClose, stores, products, inventory
                                                             }}
                                                         >
                                                             <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
-                                                                <span style={{ fontFamily: 'monospace', fontWeight: 800, fontSize: 12, color: isSelected ? '#7c3aed' : '#92400e' }}>{batch.batchNumber}</span>
+                                                                <span style={{ fontFamily: 'monospace', fontWeight: 800, fontSize: 12, color: isSelected ? '#7c3aed' : '#92400e' }}>{formatItemCode(batch.batchNumber)}</span>
                                                                 <span style={{ fontSize: 11, color: '#78350f' }}>Cost: Rs {Number(batch.costPrice).toLocaleString()} &nbsp;·&nbsp; Qty: {batch.quantityAvailable}</span>
                                                             </div>
                                                             <div style={{ width: 18, height: 18, borderRadius: '50%', border: `2px solid ${isSelected ? '#7c3aed' : '#d97706'}`, background: isSelected ? '#7c3aed' : 'transparent', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
@@ -3110,7 +3110,7 @@ export function CartModal({ inventory, storeName, isAdmin, storeNames, onAdd, on
                                         <table className="table" style={{ fontSize: 12 }}>
                                             <thead>
                                                 <tr>
-                                                    <th>Product</th>
+                                                    <th>Item Name</th>
                                                     <th style={{ textAlign: 'center' }}>Qty</th>
                                                     <th style={{ textAlign: 'right' }}>Price</th>
                                                     <th style={{ textAlign: 'right' }}>Subtotal</th>
@@ -3120,7 +3120,7 @@ export function CartModal({ inventory, storeName, isAdmin, storeNames, onAdd, on
                                             <tbody>
                                                 {cartItems.map((it, idx) => (
                                                     <tr key={idx}>
-                                                        <td>{it.productName} - {it.productId || it.productName}</td>
+                                                        <td>{it.productName} - {formatItemCode(it.productId || it.productName)}</td>
                                                         <td style={{ textAlign: 'center' }}>{it.quantity}{it.extraQty ? ` +${it.extraQty}` : ''}</td>
                                                         <td style={{ textAlign: 'right' }}>Rs {Number(it.sellingPrice).toLocaleString()}</td>
                                                         <td style={{ textAlign: 'right', fontWeight: 700 }}>Rs {(Number(it.sellingPrice) * Number(it.quantity)).toLocaleString()}</td>
@@ -3407,7 +3407,7 @@ export function ReportModal({ data, onClose }: ReportModalProps) {
             if (isStoreView) {
                 bodyHtml = `<h2>Product Performance</h2>
                 <table><thead><tr>
-                    <th>#</th><th>Product</th><th>Orders</th><th>Units Sold</th>
+                    <th>#</th><th>Item Name</th><th>Orders</th><th>Units Sold</th>
                     <th>Revenue</th><th>My Profit</th>
                 </tr></thead><tbody>
                 ${rows.map((r, i) => `<tr>
@@ -3423,7 +3423,7 @@ export function ReportModal({ data, onClose }: ReportModalProps) {
             } else {
             bodyHtml = `<h2>Product Performance</h2>
             <table><thead><tr>
-                <th>#</th><th>Product</th><th>Orders</th><th>Units Sold</th>
+                <th>#</th><th>Item Name</th><th>Orders</th><th>Units Sold</th>
                 <th>Revenue</th><th>COGS</th><th>Partner's Share</th><th>Gross Profit</th><th>Margin %</th>
             </tr></thead><tbody>
             ${rows.map((r, i) => `<tr>

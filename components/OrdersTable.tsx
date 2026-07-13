@@ -110,8 +110,7 @@ export default function OrdersTable({ orders, onRefresh }: { orders: any[]; onRe
               <th>Order ID</th>
               <th>Date</th>
               <th>Store Name</th>
-              <th>Product</th>
-              <th>Qty</th>
+              <th>Item Name</th>
               <th>Total Price</th>
               <th>Profit</th>
               <th>Type</th>
@@ -178,7 +177,7 @@ export default function OrdersTable({ orders, onRefresh }: { orders: any[]; onRe
                             <table className="table" style={{ fontSize: 12 }}>
                               <thead>
                                 <tr>
-                                  <th>Product</th>
+                                  <th>Item Name</th>
                                   <th>Qty</th>
                                   <th>Price</th>
                                   <th>Profit</th>
