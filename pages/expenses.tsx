@@ -1,5 +1,6 @@
 import { useEffect, useState, useCallback } from "react";
 import Login from "../components/Login";
+import DetailModal from "../components/DetailModal";
 import { PageProps, Expense } from "../types";
 
 const Rs = (n: number) => "Rs " + (Number(n) || 0).toLocaleString();
@@ -57,6 +58,7 @@ export default function ExpensesPage({ user, onLogin }: PageProps) {
   const [storeFilter, setStoreFilter] = useState("All");
   const [sortKey, setSortKey] = useState<keyof ExpenseRow>("date");
   const [sortDir, setSortDir] = useState<"asc" | "desc">("desc");
+  const [detailRow, setDetailRow] = useState<any | null>(null);
 
   const fetchData = useCallback(async () => {
     setLoading(true);
@@ -337,6 +339,7 @@ export default function ExpensesPage({ user, onLogin }: PageProps) {
                     { label: "Returned",    key: "returnedQty" },
                     { label: "Chargeable",  key: "quantity"    },
                     { label: "Amount",      key: "total"       },
+                    { label: "",            key: null          },
                   ] as { label: string; key: keyof ExpenseRow | null }[]).map(col => (
                     <th key={col.label} style={TH} onClick={() => col.key && toggleSort(col.key)}>
                       {col.label}
@@ -366,12 +369,15 @@ export default function ExpensesPage({ user, onLogin }: PageProps) {
                     </td>
                     <td style={{ ...TD, textAlign: "center", fontWeight: 700 }}>{r.quantity}</td>
                     <td style={{ ...TD, fontWeight: 800, color: "var(--danger)", whiteSpace: "nowrap" }}>-{Rs(r.total)}</td>
+                    <td style={{ textAlign: 'center' }}>
+                      <button type="button" className="btn btn-sm" style={{ fontSize: 10, padding: '3px 10px', background: 'rgba(16,185,129,0.1)', color: '#059669', border: '1.5px solid rgba(16,185,129,0.25)' }} onClick={() => setDetailRow(r)}>Detail</button>
+                    </td>
                   </tr>
                 ))}
               </tbody>
               <tfoot>
                 <tr style={{ background: "var(--surface-2)", borderTop: "2px solid var(--border-2)" }}>
-                  <td colSpan={9} style={{ ...TD, fontWeight: 700, fontSize: 13, color: "var(--text-head)", borderBottom: "none" }}>
+                  <td colSpan={10} style={{ ...TD, fontWeight: 700, fontSize: 13, color: "var(--text-head)", borderBottom: "none" }}>
                     Total ({sorted.length} row{sorted.length !== 1 ? "s" : ""}{tab !== "all" ? ` · ${TAB_LABELS[tab]}` : ""}{storeFilter !== "All" ? ` · ${storeFilter}` : ""})
                   </td>
                   <td style={{ ...TD, fontWeight: 800, fontSize: 15, color: "var(--danger)", whiteSpace: "nowrap", borderBottom: "none" }}>
@@ -383,6 +389,13 @@ export default function ExpensesPage({ user, onLogin }: PageProps) {
           </div>
         )}
       </div>
+
+      <DetailModal
+        open={!!detailRow}
+        onClose={() => setDetailRow(null)}
+        title={detailRow ? `Expense Details — ${detailRow.productName || detailRow.id}` : undefined}
+        data={detailRow || {}}
+      />
     </div>
   );
 }

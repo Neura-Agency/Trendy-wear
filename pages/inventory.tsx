@@ -4,6 +4,7 @@ import SectionCard from "../components/SectionCard";
 import Badge from "../components/Badge";
 import Login from "../components/Login";
 import SearchBar from "../components/SearchBar";
+import DetailModal from "../components/DetailModal";
 import { formatItemCode } from "../lib/catalog";
 import { 
   PageProps, 
@@ -60,6 +61,8 @@ export default function InventoryPage({ user, onLogin }: PageProps) {
     const [showAlerts, setShowAlerts] = useState(false);
     const [inventorySearch, setInventorySearch] = useState('');
     const [storeSearch, setStoreSearch] = useState('');
+    const [detailInventoryItem, setDetailInventoryItem] = useState<any | null>(null);
+    const [detailStoreInventoryItem, setDetailStoreInventoryItem] = useState<any | null>(null);
     // Persisted across modal open/close — tracks product types hidden/replaced by the user
     const [hiddenProductTypes, setHiddenProductTypes] = useState<string[]>([]);
     const handleHideProductType = (typeName: string) => {
@@ -583,6 +586,14 @@ export default function InventoryPage({ user, onLogin }: PageProps) {
                                                     <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8 }}>
                                                         <button
                                                             type="button"
+                                                            className="btn btn-sm"
+                                                            style={{ fontSize: 10, padding: '3px 10px', background: 'rgba(16,185,129,0.1)', color: '#059669', border: '1.5px solid rgba(16,185,129,0.25)' }}
+                                                            onClick={() => setDetailInventoryItem(item)}
+                                                        >
+                                                            Detail
+                                                        </button>
+                                                        <button
+                                                            type="button"
                                                             className="btn btn-sm btn-glass"
                                                             style={{
                                                                 fontWeight: 800,
@@ -685,63 +696,59 @@ export default function InventoryPage({ user, onLogin }: PageProps) {
                                             <td>
                                                 <Badge type="purple">{item.owner || '—'}</Badge>
                                             </td>
-                                            <td style={{ textAlign: 'center' }}>
+                                                <td style={{ textAlign: 'center' }}>
                                                     <div style={{ display: 'flex', gap: 8, justifyContent: 'center', alignItems: 'center', flexWrap: 'wrap' }}>
+                                                        <button
+                                                            type="button"
+                                                            className="btn btn-sm"
+                                                            style={{ fontSize: 10, padding: '3px 10px', background: 'rgba(16,185,129,0.1)', color: '#059669', border: '1.5px solid rgba(16,185,129,0.25)' }}
+                                                            onClick={() => setDetailStoreInventoryItem(item)}
+                                                        >
+                                                            Detail
+                                                        </button>
                                                         {isAdmin && (
                                                             <button
                                                                 type="button"
                                                                 className="btn btn-sm"
+                                                                style={{ fontWeight: 800, color: 'var(--pri-700)', borderColor: 'rgba(99, 102, 241, 0.22)', background: 'rgba(99, 102, 241, 0.07)', boxShadow: '0 8px 18px rgba(99, 102, 241, 0.08)' }}
                                                                 onClick={() => {
-                                                                const warehouseItem = data.inventory.find((i: any) => i.id === item.inventoryId);
-                                                                // Compute per-variant warehouse remaining = warehouse total - OTHER stores' allotments.
-                                                                // This is used as the cap in Edit Allotment so "X left" shows the correct number.
-                                                                const warehouseVariants = warehouseItem?.variantQuantities || {};
-                                                                const warehouseVariantRemaining: Record<string, Record<string, number>> = {};
-                                                                if (warehouseItem && Object.keys(warehouseVariants).length > 0) {
-                                                                    Object.entries(warehouseVariants).forEach(([color, sizes]: [string, any]) => {
-                                                                        warehouseVariantRemaining[color] = {};
-                                                                        Object.entries(sizes || {}).forEach(([size, total]: [string, any]) => {
-                                                                            let otherStoresAllotted = 0;
-                                                                            Object.values(data.storeInventory || {}).forEach((storeItems: any) => {
-                                                                                Object.values(storeItems || {}).forEach((si: any) => {
-                                                                                    if (si.inventoryId === item.inventoryId && si.id !== item.id) {
-                                                                                        otherStoresAllotted += Number((si.variantQuantitiesAssigned?.[color])?.[size] || 0);
-                                                                                    }
+                                                                    const warehouseItem = data.inventory.find((i: any) => i.id === item.inventoryId);
+                                                                    const warehouseVariants = warehouseItem?.variantQuantities || {};
+                                                                    const warehouseVariantRemaining: Record<string, Record<string, number>> = {};
+                                                                    if (warehouseItem && Object.keys(warehouseVariants).length > 0) {
+                                                                        Object.entries(warehouseVariants).forEach(([color, sizes]: [string, any]) => {
+                                                                            warehouseVariantRemaining[color] = {};
+                                                                            Object.entries(sizes || {}).forEach(([size, total]: [string, any]) => {
+                                                                                let otherStoresAllotted = 0;
+                                                                                Object.values(data.storeInventory || {}).forEach((storeItems: any) => {
+                                                                                    Object.values(storeItems || {}).forEach((si: any) => {
+                                                                                        if (si.inventoryId === item.inventoryId && si.id !== item.id) {
+                                                                                            otherStoresAllotted += Number((si.variantQuantitiesAssigned?.[color])?.[size] || 0);
+                                                                                        }
+                                                                                    });
                                                                                 });
+                                                                                warehouseVariantRemaining[color][size] = Math.max(0, Number(total) - otherStoresAllotted);
                                                                             });
-                                                                            warehouseVariantRemaining[color][size] = Math.max(0, Number(total) - otherStoresAllotted);
                                                                         });
+                                                                    }
+                                                                    setEditingRow({
+                                                                        ...item,
+                                                                        sizeQuantities: warehouseItem?.sizeQuantities || {},
+                                                                        colorQuantities: warehouseItem?.colorQuantities || {},
+                                                                        variantQuantities: warehouseItem?.variantQuantities || {},
+                                                                        totalQty: warehouseItem?.quantityAvailable || 0,
+                                                                        allotedQty: allotedQtyByProduct[item.inventoryId] || 0,
+                                                                        sizeQuantitiesRemaining: item.sizeQuantitiesRemaining ?? warehouseItem?.sizeQuantitiesRemaining ?? {},
+                                                                        colorQuantitiesRemaining: item.colorQuantitiesRemaining ?? warehouseItem?.colorQuantitiesRemaining ?? {},
+                                                                        variantQuantitiesRemaining: item.variantQuantitiesRemaining ?? warehouseItem?.variantQuantitiesRemaining ?? {},
+                                                                        warehouseVariantQuantitiesRemaining: warehouseVariantRemaining,
                                                                     });
-                                                                }
-                                                                setEditingRow({
-                                                                    ...item,
-                                                                    // warehouse totals (fallbacks)
-                                                                    sizeQuantities: warehouseItem?.sizeQuantities || {},
-                                                                    colorQuantities: warehouseItem?.colorQuantities || {},
-                                                                    variantQuantities: warehouseItem?.variantQuantities || {},
-                                                                    totalQty: warehouseItem?.quantityAvailable || 0,
-                                                                    allotedQty: allotedQtyByProduct[item.inventoryId] || 0,
-                                                                    // authoritative remaining sources (prefer store row's remaining fields)
-                                                                    sizeQuantitiesRemaining: item.sizeQuantitiesRemaining ?? warehouseItem?.sizeQuantitiesRemaining ?? {},
-                                                                    colorQuantitiesRemaining: item.colorQuantitiesRemaining ?? warehouseItem?.colorQuantitiesRemaining ?? {},
-                                                                    variantQuantitiesRemaining: item.variantQuantitiesRemaining ?? warehouseItem?.variantQuantitiesRemaining ?? {},
-                                                                    // per-variant warehouse remaining for correct Edit Allotment caps
-                                                                    warehouseVariantQuantitiesRemaining: warehouseVariantRemaining,
-                                                                });
-                                                                setShowEditModalUI(true);
-                                                            }}
-                                                                style={{
-                                                                    fontWeight: 800,
-                                                                    color: 'var(--pri-700)',
-                                                                    borderColor: 'rgba(99, 102, 241, 0.22)',
-                                                                    background: 'rgba(99, 102, 241, 0.07)',
-                                                                    boxShadow: '0 8px 18px rgba(99, 102, 241, 0.08)',
-                                                                }}
-                                                            >
-                                                                Edit
-                                                            </button>
+                                                                     setShowEditModalUI(true);
+                                                                 }}
+                                                             >
+                                                                 Edit
+                                                                 </button>
                                                         )}
-                                                        {/* Return to Main Store — always visible to shop managers */}
                                                         <button
                                                             type="button"
                                                             className="btn btn-sm"
@@ -1315,6 +1322,19 @@ export default function InventoryPage({ user, onLogin }: PageProps) {
                     box-shadow: 0 10px 20px rgba(239, 68, 68, 0.18);
                 }
             `}</style>
-        </>
-    );
+
+        <DetailModal
+          open={!!detailInventoryItem}
+          onClose={() => setDetailInventoryItem(null)}
+          title={detailInventoryItem ? `Inventory Details — ${detailInventoryItem.productName}` : undefined}
+          data={detailInventoryItem || {}}
+        />
+        <DetailModal
+          open={!!detailStoreInventoryItem}
+          onClose={() => setDetailStoreInventoryItem(null)}
+          title={detailStoreInventoryItem ? `Store Inventory Details — ${detailStoreInventoryItem.productName}` : undefined}
+          data={detailStoreInventoryItem || {}}
+        />
+    </>
+);
 }

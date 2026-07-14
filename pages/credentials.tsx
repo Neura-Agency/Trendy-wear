@@ -3,6 +3,7 @@ import SectionCard from '../components/SectionCard';
 import Badge from '../components/Badge';
 import Login from '../components/Login';
 import SearchBar from '../components/SearchBar';
+import DetailModal from '../components/DetailModal';
 import { PageProps, Account, Store } from '../types';
 
 interface EditingAccount {
@@ -23,6 +24,7 @@ export default function ShopCredentials({ user, onLogin }: PageProps) {
     const [saving, setSaving] = useState<boolean>(false);
     const [accountStatuses, setAccountStatuses] = useState<Record<string, boolean>>({});
     const [search, setSearch] = useState('');
+    const [detailAccount, setDetailAccount] = useState<{ username: string; account: Account } | null>(null);
 
     const refresh = useCallback(async () => {
         try {
@@ -207,12 +209,20 @@ export default function ShopCredentials({ user, onLogin }: PageProps) {
                                                 </Badge>
                                             </td>
                                             <td>
-                                                <button 
-                                                    className="btn btn-sm btn-secondary"
-                                                    onClick={() => handleEdit(username, acc)}
-                                                >
-                                                    Edit
-                                                </button>
+                                                <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
+                                                    <button 
+                                                        type="button"
+                                                        className="btn btn-sm"
+                                                        style={{ fontSize: 10, padding: '3px 10px', background: 'rgba(16,185,129,0.1)', color: '#059669', border: '1.5px solid rgba(16,185,129,0.25)' }}
+                                                        onClick={() => setDetailAccount({ username, account: acc })}
+                                                    >Detail</button>
+                                                    <button 
+                                                        className="btn btn-sm btn-secondary"
+                                                        onClick={() => handleEdit(username, acc)}
+                                                    >
+                                                        Edit
+                                                    </button>
+                                                </div>
                                             </td>
                                         </tr>
                                     ))
@@ -400,6 +410,13 @@ export default function ShopCredentials({ user, onLogin }: PageProps) {
                     height: 42px;
                 }
             `}</style>
+
+            <DetailModal
+              open={!!detailAccount}
+              onClose={() => setDetailAccount(null)}
+              title={detailAccount ? `Account Details — ${detailAccount.username}` : undefined}
+              data={detailAccount?.account || {}}
+            />
         </>
     );
 }

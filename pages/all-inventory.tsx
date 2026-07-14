@@ -3,6 +3,7 @@ import SectionCard from '../components/SectionCard';
 import Badge from '../components/Badge';
 import Login from '../components/Login';
 import SearchBar from '../components/SearchBar';
+import DetailModal from '../components/DetailModal';
 import { InventoryItem, PageProps } from '../types';
 import { formatItemCode } from '../lib/catalog';
 
@@ -16,6 +17,7 @@ export default function AllInventoryPage({ user, onLogin }: PageProps) {
   const [loading, setLoading] = useState(true);
   const [inventory, setInventory] = useState<InventoryItem[]>([]);
   const [search, setSearch] = useState('');
+  const [detailItem, setDetailItem] = useState<any | null>(null);
 
   useEffect(() => {
     if (!user) return;
@@ -73,12 +75,13 @@ export default function AllInventoryPage({ user, onLogin }: PageProps) {
                 <th>Cost/pc</th>
                 <th>Qty</th>
                 <th>Status</th>
+                <th style={{ textAlign: 'center' }}>Actions</th>
               </tr>
             </thead>
             <tbody>
               {filtered.length === 0 ? (
                 <tr>
-                  <td colSpan={6} className="text-muted empty-cell">
+                  <td colSpan={7} className="text-muted empty-cell">
                     {search ? 'No warehouse inventory matches your search.' : 'No warehouse inventory found.'}
                   </td>
                 </tr>
@@ -129,6 +132,9 @@ export default function AllInventoryPage({ user, onLogin }: PageProps) {
                         ) : (
                           <Badge type="green">Good</Badge>
                         )}
+                      </td>
+                      <td style={{ textAlign: 'center' }}>
+                        <button type="button" className="btn btn-sm" style={{ fontSize: 10, padding: '3px 10px', background: 'rgba(16,185,129,0.1)', color: '#059669', border: '1.5px solid rgba(16,185,129,0.25)' }} onClick={() => setDetailItem(item)}>Detail</button>
                       </td>
                     </tr>
                   );
@@ -186,6 +192,13 @@ export default function AllInventoryPage({ user, onLogin }: PageProps) {
           font-size: 1.05rem;
         }
       `}</style>
+
+      <DetailModal
+        open={!!detailItem}
+        onClose={() => setDetailItem(null)}
+        title={detailItem ? `Inventory Details — ${detailItem.productName}` : undefined}
+        data={detailItem || {}}
+      />
     </div>
   );
 }

@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { SaleReturnModal, SaleRefundModal } from './Modals';
 import { usePopup } from './Popup';
 import SearchBar from './SearchBar';
+import DetailModal from './DetailModal';
 import { formatItemCode } from '../lib/catalog';
 
 export default function OrdersTable({ orders, onRefresh }: { orders: any[]; onRefresh?: () => void }) {
@@ -10,6 +11,7 @@ export default function OrdersTable({ orders, onRefresh }: { orders: any[]; onRe
   const [refundingItem, setRefundingItem] = useState<{ order: any; item: any } | null>(null);
   const [expandedOrderId, setExpandedOrderId] = useState<string | null>(null);
   const [search, setSearch] = useState('');
+  const [detailOrder, setDetailOrder] = useState<any | null>(null);
 
   const filtered = orders.filter((o: any) => {
     if (!search) return true;
@@ -165,6 +167,9 @@ export default function OrdersTable({ orders, onRefresh }: { orders: any[]; onRe
                         <button className="btn btn-sm" style={{ fontSize: 10, padding: '2px 8px' }} onClick={(e) => { e.stopPropagation(); toggleExpand(o.id); }}>
                           {isExpanded ? 'Collapse' : 'Expand'}
                         </button>
+                        <button className="btn btn-sm" style={{ fontSize: 10, padding: '2px 8px', background: 'rgba(16,185,129,0.1)', color: '#059669', border: '1.5px solid rgba(16,185,129,0.25)' }} onClick={(e) => { e.stopPropagation(); setDetailOrder(o); }}>
+                          Detail
+                        </button>
                       </div>
                     </td>
                   </tr>
@@ -304,6 +309,13 @@ export default function OrdersTable({ orders, onRefresh }: { orders: any[]; onRe
         onClose={() => setRefundingItem(null)}
       />
     )}
+
+    <DetailModal
+      open={!!detailOrder}
+      onClose={() => setDetailOrder(null)}
+      title={detailOrder ? `Order Details — ${detailOrder.orderCode || detailOrder.id}` : undefined}
+      data={detailOrder || {}}
+    />
     </>
   );
 }

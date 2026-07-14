@@ -1,5 +1,6 @@
 import { useEffect, useState, useCallback } from "react";
 import Login from "../components/Login";
+import DetailModal from "../components/DetailModal";
 import { PageProps, Order } from "../types";
 import { formatItemCode } from "../lib/catalog";
 
@@ -63,6 +64,7 @@ export default function ProfitPage({ user, onLogin }: PageProps) {
   const [storeFilter, setStoreFilter] = useState("All");
   const [sortKey, setSortKey] = useState<keyof ProfitRow>("date");
   const [sortDir, setSortDir] = useState<"asc" | "desc">("desc");
+  const [detailRow, setDetailRow] = useState<any | null>(null);
 
   const fetchData = useCallback(async () => {
     setLoading(true);
@@ -321,6 +323,7 @@ export default function ProfitPage({ user, onLogin }: PageProps) {
                     { label: "COGS",        key: "costOfGoods"     },
                     { label: "Net Profit",  key: "netProfit"       },
                     { label: "Margin",      key: "profitMargin"    },
+                    { label: "",            key: null              },
                   ] as { label: string; key: keyof ProfitRow | null }[]).map(col => (
                     <th key={col.label} style={TH} onClick={() => col.key && toggleSort(col.key)}>
                       {col.label}
@@ -361,12 +364,15 @@ export default function ProfitPage({ user, onLogin }: PageProps) {
                     <td style={{ ...TDNum, color: "#1d4ed8" }}>{`-${Rs(r.costOfGoods)}`}</td>
                     <td style={{ ...TDNum, fontWeight: 800, color: r.netProfit >= 0 ? "var(--success)" : "var(--danger)" }}>{r.netProfit >= 0 ? Rs(r.netProfit) : `-${Rs(Math.abs(r.netProfit))}`}</td>
                     <td style={{ ...TD, textAlign: "right" }}><ProfitBadge margin={r.profitMargin} /></td>
+                    <td style={{ textAlign: 'center' }}>
+                      <button type="button" className="btn btn-sm" style={{ fontSize: 10, padding: '3px 10px', background: 'rgba(16,185,129,0.1)', color: '#059669', border: '1.5px solid rgba(16,185,129,0.25)' }} onClick={() => setDetailRow(r)}>Detail</button>
+                    </td>
                   </tr>
                 ))}
               </tbody>
               <tfoot>
                 <tr style={{ background: "var(--surface-2)", borderTop: "2px solid var(--border-2)" }}>
-                  <td colSpan={3} style={{ ...TD, fontWeight: 700, fontSize: 13, color: "var(--text-head)", borderBottom: "none" }}>
+                  <td colSpan={4} style={{ ...TD, fontWeight: 700, fontSize: 13, color: "var(--text-head)", borderBottom: "none" }}>
                     Total ({sorted.length} row{sorted.length !== 1 ? "s" : ""}{tab !== "all" ? ` · ${TAB_LABELS[tab]}` : ""}{storeFilter !== "All" ? ` · ${storeFilter}` : ""})
                   </td>
                   <td style={{ ...TD, borderBottom: "none" }} />
@@ -384,12 +390,20 @@ export default function ProfitPage({ user, onLogin }: PageProps) {
                   <td style={{ ...TD, textAlign: "right", borderBottom: "none" }}>
                     <ProfitBadge margin={filteredRevenue > 0 ? (filteredProfit / filteredRevenue) * 100 : 0} />
                   </td>
+                  <td style={{ ...TD, borderBottom: "none" }} />
                 </tr>
               </tfoot>
             </table>
           </div>
         )}
       </div>
+
+      <DetailModal
+        open={!!detailRow}
+        onClose={() => setDetailRow(null)}
+        title={detailRow ? `Profit Details — ${detailRow.productName || detailRow.id}` : undefined}
+        data={detailRow || {}}
+      />
     </div>
   );
 }

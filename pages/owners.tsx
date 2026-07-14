@@ -3,6 +3,7 @@ import SectionCard from '../components/SectionCard';
 import Badge from '../components/Badge';
 import Login from '../components/Login';
 import SearchBar from '../components/SearchBar';
+import DetailModal from '../components/DetailModal';
 import { usePopup } from '../components/Popup';
 import { PageProps, Owner, OwnerPayout } from '../types';
 
@@ -348,6 +349,8 @@ export default function OwnersPage({ user, onLogin }: PageProps) {
   const [stores, setStores] = useState<Record<string, any>>({});
   const [orders, setOrders] = useState<any[]>([]);
   const [expenses, setExpenses] = useState<any[]>([]);
+  const [detailPayout, setDetailPayout] = useState<any | null>(null);
+  const [detailTransfer, setDetailTransfer] = useState<any | null>(null);
 
   // ── Fetch everything in parallel ─────────────────────────────────────
   const refresh = useCallback(async () => {
@@ -942,11 +945,19 @@ export default function OwnersPage({ user, onLogin }: PageProps) {
                         <td style={{ fontSize: 12 }}>{new Date(p.paidAt).toLocaleDateString('en-PK', { day: '2-digit', month: 'short', year: 'numeric' })}</td>
                         <td style={{ fontSize: 12, color: 'var(--text-muted)' }}>{p.notes || '—'}</td>
                         <td>
-                          <button
-                            className="btn btn-secondary btn-sm"
-                            style={{ color: 'var(--red-500, #ef4444)', padding: '3px 8px' }}
-                            onClick={() => handleDeletePayout(p)}
-                          >Delete</button>
+                          <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
+                            <button
+                              type="button"
+                              className="btn btn-sm"
+                              style={{ fontSize: 10, padding: '3px 10px', background: 'rgba(16,185,129,0.1)', color: '#059669', border: '1.5px solid rgba(16,185,129,0.25)' }}
+                              onClick={() => setDetailPayout(p)}
+                            >Detail</button>
+                            <button
+                              className="btn btn-secondary btn-sm"
+                              style={{ color: 'var(--red-500, #ef4444)', padding: '3px 8px' }}
+                              onClick={() => handleDeletePayout(p)}
+                            >Delete</button>
+                          </div>
                         </td>
                       </tr>
                     );
@@ -1071,7 +1082,13 @@ export default function OwnersPage({ user, onLogin }: PageProps) {
                           )}
 
                           {/* Delete button */}
-                          <div style={{ marginTop: 10, textAlign: 'right' }}>
+                          <div style={{ marginTop: 10, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                            <button
+                              type="button"
+                              className="btn btn-sm"
+                              style={{ fontSize: 10, padding: '3px 10px', background: 'rgba(16,185,129,0.1)', color: '#059669', border: '1.5px solid rgba(16,185,129,0.25)' }}
+                              onClick={() => setDetailTransfer(t)}
+                            >Detail</button>
                             <button
                               className="btn btn-secondary btn-sm"
                               style={{ color: 'var(--red-500, #ef4444)', padding: '4px 12px', fontSize: 12 }}
@@ -1087,6 +1104,19 @@ export default function OwnersPage({ user, onLogin }: PageProps) {
           )}
         </SectionCard>
       </div>
+
+      <DetailModal
+        open={!!detailPayout}
+        onClose={() => setDetailPayout(null)}
+        title={detailPayout ? `Payout Details — ${detailPayout.ownerName || detailPayout.id}` : undefined}
+        data={detailPayout || {}}
+      />
+      <DetailModal
+        open={!!detailTransfer}
+        onClose={() => setDetailTransfer(null)}
+        title={detailTransfer ? `Transfer Details — ${detailTransfer.ownerName || detailTransfer.id}` : undefined}
+        data={detailTransfer || {}}
+      />
     </>
   );
 }

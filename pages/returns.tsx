@@ -1,5 +1,6 @@
 import { useEffect, useState, useCallback } from "react";
 import Login from "../components/Login";
+import DetailModal from "../components/DetailModal";
 import { PageProps } from "../types";
 
 const Rs = (n: number) => "Rs " + (Number(n) || 0).toLocaleString();
@@ -79,6 +80,7 @@ export default function ReturnsPage({ user, onLogin, onLogout }: PageProps) {
   const [storeFilter, setStoreFilter] = useState("All");
   const [sortKey, setSortKey] = useState<"returnedAt" | "productName" | "returnQuantity" | "storeName">("returnedAt");
   const [sortDir, setSortDir] = useState<"asc" | "desc">("desc");
+  const [detailRow, setDetailRow] = useState<any | null>(null);
 
   const fetchOrders = useCallback(async () => {
     setLoading(true);
@@ -216,6 +218,7 @@ export default function ReturnsPage({ user, onLogin, onLogout }: PageProps) {
                     { label: "Value Recovered", key: null },
                     { label: "Return Reason", key: null },
                     { label: "Proof", key: null },
+                    { label: "", key: null },
                   ].map(col => (
                     <th key={col.label} style={TH} onClick={() => col.key && toggleSort(col.key as any)}>
                       {col.label}{col.key && <SortIcon k={col.key as any} />}
@@ -266,18 +269,22 @@ export default function ReturnsPage({ user, onLogin, onLogout }: PageProps) {
                           <ProofImage src={o.returnProofUrl} />
                         ) : <span style={{ color: "var(--text-faint)", fontStyle: "italic", fontSize: 12 }}>—</span>}
                       </td>
+                      <td style={{ textAlign: 'center' }}>
+                        <button type="button" className="btn btn-sm" style={{ fontSize: 10, padding: '3px 10px', background: 'rgba(16,185,129,0.1)', color: '#059669', border: '1.5px solid rgba(16,185,129,0.25)' }} onClick={() => setDetailRow(o)}>Detail</button>
+                      </td>
                     </tr>
                   );
                 })}
               </tbody>
               <tfoot>
                 <tr style={{ background: "var(--surface-2)", borderTop: "2px solid var(--border-2)" }}>
-                  <td colSpan={6} style={{ ...TD, fontWeight: 700, fontSize: 13, color: "var(--text-head)", borderBottom: "none" }}>Totals ({sorted.length} order{sorted.length !== 1 ? "s" : ""})</td>
+                  <td colSpan={7} style={{ ...TD, fontWeight: 700, fontSize: 13, color: "var(--text-head)", borderBottom: "none" }}>Totals ({sorted.length} order{sorted.length !== 1 ? "s" : ""})</td>
                   <td style={{ ...TD, textAlign: "center", fontWeight: 700, borderBottom: "none" }}>{sorted.reduce((s, o) => s + o.quantity, 0)}</td>
                   <td style={{ ...TD, textAlign: "center", fontWeight: 800, color: "var(--danger)", borderBottom: "none" }}>{totalReturned}</td>
                   <td style={{ ...TD, borderBottom: "none" }} />
                   <td style={{ ...TD, borderBottom: "none" }} />
                   <td style={{ ...TD, fontWeight: 800, color: "var(--success)", borderBottom: "none" }}>{Rs(totalValue)}</td>
+                  <td style={{ ...TD, borderBottom: "none" }} />
                   <td style={{ ...TD, borderBottom: "none" }} />
                   <td style={{ ...TD, borderBottom: "none" }} />
                 </tr>
@@ -286,6 +293,13 @@ export default function ReturnsPage({ user, onLogin, onLogout }: PageProps) {
           </div>
         )}
       </div>
+
+      <DetailModal
+        open={!!detailRow}
+        onClose={() => setDetailRow(null)}
+        title={detailRow ? `Return Details — ${detailRow.productName || detailRow.id}` : undefined}
+        data={detailRow || {}}
+      />
     </div>
   );
 }
