@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { SaleReturnModal, SaleRefundModal } from './Modals';
 import { usePopup } from './Popup';
 import SearchBar from './SearchBar';
+import { formatItemCode } from '../lib/catalog';
 
 export default function OrdersTable({ orders, onRefresh }: { orders: any[]; onRefresh?: () => void }) {
   const { toast } = usePopup();
@@ -111,6 +112,7 @@ export default function OrdersTable({ orders, onRefresh }: { orders: any[]; onRe
               <th>Date</th>
               <th>Store Name</th>
               <th>Item Name</th>
+              <th>Item ID</th>
               <th>Total Price</th>
               <th>Profit</th>
               <th>Type</th>
@@ -121,7 +123,7 @@ export default function OrdersTable({ orders, onRefresh }: { orders: any[]; onRe
           </thead>
           <tbody>
             {filtered.length === 0 ? (
-              <tr><td colSpan={11} style={{textAlign:'center', padding:'2rem'}} className="muted">{search ? 'No orders match your search.' : 'No orders found.'}</td></tr>
+              <tr><td colSpan={12} style={{textAlign:'center', padding:'2rem'}} className="muted">{search ? 'No orders match your search.' : 'No orders found.'}</td></tr>
             ) : filtered.map(o => {
               const isLegacy = !hasItems(o);
               const items = o.items || [];
@@ -141,6 +143,7 @@ export default function OrdersTable({ orders, onRefresh }: { orders: any[]; onRe
                       {o.productName}
                       {!isLegacy && <span style={{ marginLeft: 6, fontSize: 10, background: 'var(--pri-600)', color: '#fff', padding: '1px 6px', borderRadius: 4 }}>{items.length} item{items.length !== 1 ? 's' : ''}</span>}
                     </td>
+                    <td className="muted" style={{fontWeight:600, fontFamily:'monospace', fontSize:11}}>{formatItemCode(o.batchNumber || o.id)}</td>
                     <td>{totalQty}</td>
                     <td>Rs {(Number(o.sellingPrice || 0) * totalQty).toLocaleString()}</td>
                     <td style={{color: (o.profit || 0) > 0 ? 'var(--success)' : (o.profit || 0) < 0 ? 'var(--danger)' : 'inherit', fontWeight:600}}>
@@ -167,7 +170,7 @@ export default function OrdersTable({ orders, onRefresh }: { orders: any[]; onRe
                   </tr>
                   {isExpanded && (
                     <tr key={`${o.id}-items`}>
-                      <td colSpan={11} style={{ padding: 0, background: 'var(--surface-1)' }}>
+                      <td colSpan={12} style={{ padding: 0, background: 'var(--surface-1)' }}>
                         <div style={{ padding: '8px 12px' }}>
                           {isLegacy ? (
                             <div style={{ fontSize: 12, color: 'var(--text-muted)', padding: 8 }}>Legacy order (no line items). Use the original order record for returns/refunds.</div>
@@ -177,8 +180,9 @@ export default function OrdersTable({ orders, onRefresh }: { orders: any[]; onRe
                             <table className="table" style={{ fontSize: 12 }}>
                               <thead>
                                 <tr>
-                                  <th>Item Name</th>
-                                  <th>Qty</th>
+                              <th>Item Name</th>
+                              <th>Item ID</th>
+                              <th>Qty</th>
                                   <th>Price</th>
                                   <th>Profit</th>
                                   <th>Status</th>
@@ -195,6 +199,7 @@ export default function OrdersTable({ orders, onRefresh }: { orders: any[]; onRe
                                   return (
                                     <tr key={item.id} style={{ opacity: (itemRet > 0 || itemRef > 0) ? 0.7 : 1 }}>
                                       <td style={{ fontWeight: 500 }}>{item.productName}</td>
+                                      <td className="muted" style={{fontWeight:600, fontFamily:'monospace', fontSize:11}}>{formatItemCode(item.batchNumber || item.id)}</td>
                                       <td>{item.quantity}</td>
                                       <td>Rs {(Number(item.sellingPrice) * itemSold).toLocaleString()}</td>
                                       <td style={{ color: (item.profit || 0) > 0 ? 'var(--success)' : 'var(--danger)', fontWeight: 600 }}>Rs {Number(item.profit || 0).toLocaleString()}</td>

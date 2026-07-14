@@ -1,6 +1,7 @@
 import { useEffect, useState, useCallback } from "react";
 import Login from "../components/Login";
 import { PageProps, Order } from "../types";
+import { formatItemCode } from "../lib/catalog";
 
 const Rs = (n: number) => "Rs " + (Number(n) || 0).toLocaleString();
 const fmtDate = (d: string) => d ? new Date(d).toLocaleDateString("en-PK", { day: "2-digit", month: "short", year: "numeric" }) : "—";
@@ -306,6 +307,7 @@ export default function ProfitPage({ user, onLogin }: PageProps) {
                     { label: "Date",        key: "date"            },
                     { label: "Code",        key: "orderCode"       },
                     { label: "Product",     key: "productName"     },
+                    { label: "Item ID",     key: null              },
                     { label: "Store",       key: "storeName"       },
                     { label: "Sold",        key: "rawQuantity"     },
                     { label: "Ret",         key: "returnedQty"     },
@@ -337,6 +339,7 @@ export default function ProfitPage({ user, onLogin }: PageProps) {
                     <td style={TD}><span style={{ color: "var(--text-muted)", fontSize: 12, whiteSpace: "nowrap" }}>{fmtDate(r.date)}</span></td>
                     <td style={TD}><span style={{ fontFamily: "JetBrains Mono, monospace", fontSize: 11, color: "var(--text-muted)" }}>{r.orderCode}</span></td>
                     <td style={TD}><span style={{ fontWeight: 600, color: "var(--text-head)" }}>{r.productName}</span></td>
+                    <td style={TD}><span className="muted" style={{fontWeight:600, fontFamily:'monospace', fontSize:11}}>{formatItemCode((r as any).batchNumber || (r as any).id)}</span></td>
                     <td style={TD}><span style={{ color: "var(--acc)", fontWeight: 600 }}>{r.storeName}</span></td>
                     <td style={{ ...TD, textAlign: "center", fontWeight: 600 }}>{r.rawQuantity}</td>
                     <td style={{ ...TD, textAlign: "center" }}>

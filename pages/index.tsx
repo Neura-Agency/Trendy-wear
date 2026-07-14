@@ -11,6 +11,7 @@ import CustomSelect from "../components/CustomSelect";
 import { User, Order, Store, InventoryItem, Expense, Client, StoreInventoryItem, AppData, PageProps } from "../types";
 import { usePopup } from "../components/Popup";
 import SearchBar from "../components/SearchBar";
+import { formatItemCode } from "../lib/catalog";
 
 // ── SVG Icon Components (mono-color, inherits currentColor) ──
 const IC = {
@@ -1152,6 +1153,7 @@ function OrdersSection({ orders, overallOrders = [], inventory = [], storeInvent
             <th>Date</th>
             <th>Store Name</th>
             <th>Item Name</th>
+            <th>Item ID</th>
             <th>Quantity</th>
             <th>Total Price</th>
             <th>Delivery Fee</th>
@@ -1203,6 +1205,7 @@ function OrdersSection({ orders, overallOrders = [], inventory = [], storeInvent
                 </td>
                 <td className="font-bold" style={{ color: 'var(--pri-700)' }}>{o.storeName}</td>
                 <td className="font-bold">{o.productName}</td>
+                <td className="muted" style={{fontWeight:600, fontFamily:'monospace', fontSize:11}}>{formatItemCode((o as any).batchNumber || (o as any).id)}</td>
                 <td>
                   {hasAnyAction
                     ? <>

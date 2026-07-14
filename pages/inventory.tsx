@@ -644,6 +644,7 @@ export default function InventoryPage({ user, onLogin }: PageProps) {
                                 <tr>
                                     {isAdmin && <th>Shop Name</th>}
                                     <th>Item Name</th>
+                                    <th>Item ID</th>
                                     <th>Owner Supply Price</th>
                                     <th>Total Sent</th>
                                     <th>In Shop Stock</th>
@@ -662,11 +663,12 @@ export default function InventoryPage({ user, onLogin }: PageProps) {
                                             return (s.storeName || '').toLowerCase().includes(q) || (s.productName || '').toLowerCase().includes(q);
                                         });
                                         return rows.length === 0 ? (
-                                            <tr><td colSpan={isAdmin ? 9 : 7} style={{ textAlign: 'center', padding: 40 }} className="text-muted">{storeSearch ? 'No stock matches your search.' : 'No stock available currently.'}</td></tr>
+                                            <tr><td colSpan={isAdmin ? 10 : 8} style={{ textAlign: 'center', padding: 40 }} className="text-muted">{storeSearch ? 'No stock matches your search.' : 'No stock available currently.'}</td></tr>
                                         ) : rows.map((item, idx) => (
                                         <tr key={item.id || idx} id={`store-inv-row-${item.id || idx}`}>
                                             {isAdmin && <td className="font-bold" style={{ color: 'var(--pri-900)' }}>{item.storeName}</td>}
                                             <td className="font-bold">{item.productName}</td>
+                                            <td className="muted" style={{fontWeight:600, fontFamily:'monospace', fontSize:11}}>{formatItemCode(item.batchNumber || item.inventoryId)}</td>
                                             <td className="text-muted font-mono" style={{ fontWeight: 600 }}>
                                                 {item.ownerSupplyPrice ? `Rs ${Number(item.ownerSupplyPrice).toLocaleString()}` : '-'}
                                             </td>
@@ -789,7 +791,7 @@ export default function InventoryPage({ user, onLogin }: PageProps) {
                 </SectionCard>
 
                 {isSuperAdmin && (() => {
-                    const extras: Array<{ storeName: string; productName: string; extraQty: number; date: string; costPerPc: number }> = [];
+                    const extras: Array<{ storeName: string; productName: string; extraQty: number; date: string; costPerPc: number; batchNumber: string }> = [];
                     Object.entries(data.storeInventory || {}).forEach(([sName, items]) => {
                         Object.values(items).forEach((si: any) => {
                             if ((si.extraQty || 0) > 0) {
@@ -800,6 +802,7 @@ export default function InventoryPage({ user, onLogin }: PageProps) {
                                     extraQty: si.extraQty,
                                     date: si.created_at ? new Date(si.created_at).toLocaleDateString() : '—',
                                     costPerPc: inv?.costPrice || 0,
+                                    batchNumber: inv?.batchNumber || si.batchNumber || '',
                                 });
                             }
                         });
@@ -818,6 +821,7 @@ export default function InventoryPage({ user, onLogin }: PageProps) {
                                             <th>Date</th>
                                             <th>Store</th>
                                             <th>Item Name</th>
+                                            <th>Item ID</th>
                                             <th>Extra Qty</th>
                                             <th>Cost/PC</th>
                                             <th>Total Cost</th>
@@ -829,6 +833,7 @@ export default function InventoryPage({ user, onLogin }: PageProps) {
                                                 <td className="text-muted" style={{ fontSize: '0.75rem' }}>{e.date}</td>
                                                 <td className="font-bold" style={{ color: 'var(--pri-700)' }}>{e.storeName}</td>
                                                 <td className="font-bold">{e.productName}</td>
+                                                <td className="muted" style={{fontWeight:600, fontFamily:'monospace', fontSize:11}}>{formatItemCode(e.batchNumber)}</td>
                                                 <td><Badge type="orange">{e.extraQty}</Badge></td>
                                                 <td className="text-muted">{e.costPerPc ? `Rs ${e.costPerPc.toLocaleString()}` : '—'}</td>
                                                 <td className="font-bold" style={{ color: 'var(--danger)' }}>
