@@ -2524,7 +2524,7 @@ export function SaleModal({ inventory, storeName, isAdmin, storeNames, onAdd, on
                                     <option value="">Choose...</option>
                                     {inventory.map(i => (
                                         <option key={i.productId || i.productName} value={i.productId || i.productName}>
-                                            {i.productName} - {i.productId || i.productName}
+                                            {i.productName} - {formatItemCode(i.productId || i.productName)}
                                         </option>
                                     ))}
                                 </select>
@@ -3003,7 +3003,7 @@ export function CartModal({ inventory, storeName, isAdmin, storeNames, onAdd, on
                                         <option value="">Choose...</option>
                                         {inventory.map(i => (
                                         <option key={i.productId || i.productName} value={i.productId || i.productName}>
-                                            {i.productName} - {i.productId || i.productName}
+                                            {i.productName} - {formatItemCode(i.productId || i.productName)}
                                         </option>
                                         ))}
                                     </select>
