@@ -690,6 +690,7 @@ function StoresOverviewSection({ stores, orders, storeInventory, filter, getFilt
           <thead>
             <tr>
               <th>Item Name</th>
+              <th>Item ID</th>
               <th>Payout</th>
               <th>Items Sold</th>
               <th>Leftover Inventory</th>
@@ -701,7 +702,7 @@ function StoresOverviewSection({ stores, orders, storeInventory, filter, getFilt
           </thead>
           <tbody>
             {products.filter(p => !search || p.toLowerCase().includes(search.toLowerCase())).length === 0 ? (
-              <tr><td colSpan={8} style={{ textAlign: 'center', padding: 30 }}>{search ? 'No products match your search.' : 'No inventory or sales for this partner.'}</td></tr>
+              <tr><td colSpan={9} style={{ textAlign: 'center', padding: 30 }}>{search ? 'No products match your search.' : 'No inventory or sales for this partner.'}</td></tr>
             ) : (
               products.filter(p => !search || p.toLowerCase().includes(search.toLowerCase())).map(productName => {
                 const catOrders = sOrders.filter(o => o.productName === productName);
@@ -724,6 +725,12 @@ function StoresOverviewSection({ stores, orders, storeInventory, filter, getFilt
                 return (
                   <tr key={productName}>
                     <td className="font-bold">{productName}</td>
+                    <td className="muted" style={{fontWeight:600, fontFamily:'monospace', fontSize:11}}>
+                      {(() => {
+                        const batchNumbers = [...new Set(catInventory.map((si: any) => si.batchNumber).filter(Boolean))];
+                        return batchNumbers.length > 0 ? batchNumbers.map((b: string) => formatItemCode(b)).join(', ') : '—';
+                      })()}
+                    </td>
                     <td>
                       <div className="font-bold" style={{ color: 'var(--success)' }}>{Rs(unpaidAmount)}</div>
                       {paidAmount > 0 && (
@@ -764,7 +771,7 @@ function StoresOverviewSection({ stores, orders, storeInventory, filter, getFilt
                 <td colSpan={2} style={{ padding: '10px 12px', fontWeight: 800, fontSize: 13 }}>
                   Total Unpaid: <span style={{ color: 'var(--success)' }}>{Rs(totalUnpaid)}</span>
                 </td>
-                <td colSpan={6} />
+                <td colSpan={7} />
               </tr>
             </tfoot>
           )}

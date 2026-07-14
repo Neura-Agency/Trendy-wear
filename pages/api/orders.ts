@@ -92,7 +92,8 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
           stores:store_id ( name ),
           store_inventory:store_inventory_id (
             inventory:inventory_id (
-              cost_price
+              cost_price,
+              batch_number
             )
           )
         `)
@@ -137,6 +138,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
           includedInPayout: row.included_in_payout ?? false,
           commissionPercent: num(row.commission_percent),
           costPrice,
+          batchNumber: row.store_inventory?.inventory?.batch_number ?? null,
           commissionAmount: num(row.commission_amount),
           adminTake: num(row.admin_take),
           profit: num(row.profit),
