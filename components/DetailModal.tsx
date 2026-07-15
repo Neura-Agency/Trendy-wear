@@ -6,7 +6,25 @@ function DetailValue({ value, mono }: { value: any; mono?: boolean }) {
   if (typeof value === 'object') {
     try {
       const text = JSON.stringify(value, null, 2);
-      return <pre style={{ margin: 0, whiteSpace: 'pre-wrap', wordBreak: 'break-word', fontFamily: 'JetBrains Mono, monospace', fontSize: 11, background: 'var(--surface-2)', padding: 8, borderRadius: 6, maxHeight: 300, overflow: 'auto' }}>{text}</pre>;
+      return (
+        <pre
+          style={{
+            margin: 0,
+            whiteSpace: 'pre-wrap',
+            wordBreak: 'break-word',
+            overflowX: 'auto',
+            overflowY: 'hidden',
+            maxHeight: 260,
+            fontFamily: 'JetBrains Mono, monospace',
+            fontSize: 11,
+            background: 'var(--surface-2)',
+            padding: 8,
+            borderRadius: 6,
+          }}
+        >
+          {text}
+        </pre>
+      );
     } catch {
       return <span>{String(value)}</span>;
     }
@@ -15,14 +33,14 @@ function DetailValue({ value, mono }: { value: any; mono?: boolean }) {
     if (Number.isInteger(value)) return <span style={{ fontVariantNumeric: 'tabular-nums' }}>{value.toLocaleString()}</span>;
     return <span style={{ fontVariantNumeric: 'tabular-nums' }}>{value.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>;
   }
-  return <span style={mono ? { fontFamily: 'JetBrains Mono, monospace', fontSize: 12 } : undefined}>{String(value)}</span>;
+  return <span style={mono ? { fontFamily: 'JetBrains Mono, monospace', fontSize: 12, wordBreak: 'break-word' } : undefined}>{String(value)}</span>;
 }
 
 function DetailSection({ title, children }: { title: string; children: React.ReactNode }) {
   return (
-    <div style={{ marginBottom: 16 }}>
+    <div className="detail-section" style={{ marginBottom: 16 }}>
       <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: 8, paddingBottom: 4, borderBottom: '1px solid var(--border)' }}>{title}</div>
-      <div style={{ display: 'grid', gridTemplateColumns: '120px 1fr', gap: '6px 12px' }}>
+      <div className="detail-section-grid">
         {children}
       </div>
     </div>
@@ -32,15 +50,15 @@ function DetailSection({ title, children }: { title: string; children: React.Rea
 function DetailRow({ label, children, span }: { label: string; children: React.ReactNode; span?: number }) {
   if (span && span > 1) {
     return (
-      <div style={{ gridColumn: `1 / -1`, display: 'flex', gap: 8, alignItems: 'flex-start' }}>
-        <span style={{ fontSize: 12, color: 'var(--text-muted)', fontWeight: 600, minWidth: 120, flexShrink: 0 }}>{label}</span>
+      <div style={{ gridColumn: '1 / -1', display: 'flex', gap: 8, alignItems: 'flex-start' }}>
+        <span className="detail-row-label" style={{ fontSize: 12, color: 'var(--text-muted)', fontWeight: 600, flexShrink: 0 }}>{label}</span>
         <div style={{ flex: 1 }}>{children}</div>
       </div>
     );
   }
   return (
     <>
-      <span style={{ fontSize: 12, color: 'var(--text-muted)', fontWeight: 600, alignSelf: 'flex-start' }}>{label}</span>
+      <span className="detail-row-label" style={{ fontSize: 12, color: 'var(--text-muted)', fontWeight: 600, alignSelf: 'flex-start' }}>{label}</span>
       <span style={{ fontSize: 13, color: 'var(--text-body)' }}>{children}</span>
     </>
   );
@@ -100,12 +118,12 @@ export default function DetailModal({ open, onClose, title, data, fields }: { op
 
   return (
     <div className="modal-overlay" onClick={onClose}>
-      <div className="modal-box" style={{ maxWidth: 680, width: 'min(92vw, 680px)', maxHeight: '85vh', overflow: 'hidden', display: 'flex', flexDirection: 'column' }} onClick={e => e.stopPropagation()}>
+      <div className="modal-box detail-modal-box" onClick={e => e.stopPropagation()}>
         <div className="modal-head" style={{ padding: '14px 20px', borderBottom: '1px solid var(--border)', background: 'var(--surface)', flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12 }}>
           <h3 style={{ fontSize: 16, margin: 0, fontWeight: 700 }}>{title || 'Details'}</h3>
           <button className="btn btn-sm" onClick={onClose} style={{ border: 'none', fontSize: 18, lineHeight: 1 }}>✕</button>
         </div>
-        <div className="modal-body" style={{ padding: '16px 20px', overflowY: 'auto', flex: 1 }}>
+        <div className="modal-body" style={{ padding: '16px 20px', overflowY: 'auto', flex: 1, minHeight: 0, paddingBottom: 'calc(16px + env(safe-area-inset-bottom, 0px))' }}>
           {groups.map((group, gi) => (
             <DetailSection key={gi} title={group.title || 'DETAILS'}>
               {group.items.map((item, idx) => (

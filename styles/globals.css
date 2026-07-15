@@ -1,7 +1,360 @@
-/* ─────────────────────────────────────────────────────
-   Trendy Wears – Premium Enterprise Design System
-   Clean, Classic SaaS Aesthetic (Indigo Mono-Theme)
-   ───────────────────────────────────────────────────── */
+/* ── Mobile Bottom Navigation ─────────────────────────── */
+.mobile-bottom-nav {
+  display: none;
+  position: fixed;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  height: 56px;
+  background: var(--pri-900);
+  border-top: 1px solid rgba(255, 255, 255, 0.08);
+  z-index: 1100;
+  padding: 0 8px;
+  padding-bottom: env(safe-area-inset-bottom, 0px);
+}
+
+.mobile-bottom-nav-items {
+  display: flex;
+  align-items: center;
+  justify-content: space-around;
+  height: 100%;
+  max-width: 500px;
+  margin: 0 auto;
+}
+
+.mobile-bottom-nav-item {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 3px;
+  color: rgba(255, 255, 255, 0.55);
+  text-decoration: none;
+  font-size: 10px;
+  font-weight: 500;
+  padding: 4px 8px;
+  border-radius: 8px;
+  transition: var(--trans);
+  flex: 1;
+  min-width: 0;
+}
+
+.mobile-bottom-nav-item:hover,
+.mobile-bottom-nav-item.active {
+  color: #fff;
+  background: rgba(255, 255, 255, 0.08);
+}
+
+.mobile-bottom-nav-item svg {
+  width: 20px;
+  height: 20px;
+}
+
+@media (max-width: 768px) {
+  .mobile-bottom-nav {
+    display: block;
+  }
+
+  .main-area {
+    padding-bottom: 72px;
+  }
+}
+
+/* ── Typography Scaling ───────────────────────────────── */
+@media (max-width: 768px) {
+  h1 { font-size: 20px !important; }
+  h2 { font-size: 18px !important; }
+  h3 { font-size: 16px !important; }
+  h4 { font-size: 15px !important; }
+
+  .main-title { font-size: 20px !important; }
+  .section-title { font-size: 13px !important; }
+  .subtitle { font-size: 12px !important; }
+}
+
+@media (max-width: 576px) {
+  h1 { font-size: 18px !important; }
+  h2 { font-size: 16px !important; }
+  h3 { font-size: 15px !important; }
+
+  .main-title { font-size: 18px !important; }
+  .section-title { font-size: 12px !important; }
+}
+
+/* ── Responsive Utility Classes ───────────────────────── */
+.hide-tablet { display: block; }
+.show-tablet { display: none; }
+.hide-desktop { display: block; }
+.show-desktop { display: none; }
+.stack-mobile { }
+.full-mobile { }
+.text-center-mobile { }
+.gap-sm-mobile { gap: 24px; }
+
+@media (max-width: 992px) {
+  .hide-tablet { display: none !important; }
+  .show-tablet { display: block !important; }
+  .show-desktop { display: none !important; }
+  .hide-desktop { display: block !important; }
+}
+
+@media (max-width: 768px) {
+  .stack-mobile {
+    flex-direction: column !important;
+  }
+
+  .full-mobile {
+    width: 100% !important;
+    flex: 1 1 100% !important;
+  }
+
+  .text-center-mobile {
+    text-align: center !important;
+  }
+
+  .gap-sm-mobile {
+    gap: 12px !important;
+  }
+}
+
+/* ── Inline Style Overflow Fixes ─────────────────────── */
+@media (max-width: 768px) {
+  /* Force common fixed-width inline styles to be fluid */
+  [style*="width: 140px"],
+  [style*="width:140px"],
+  [style*="width: 120px"],
+  [style*="width:120px"],
+  [style*="width: 160px"],
+  [style*="width:160px"],
+  [style*="width: 200px"],
+  [style*="width:200px"],
+  [style*="minWidth: 120px"],
+  [style*="minWidth:120px"],
+  [style*="minWidth: 140px"],
+  [style*="minWidth:140px"],
+  [style*="minWidth: 160px"],
+  [style*="minWidth:160px"],
+  [style*="minWidth: 200px"],
+  [style*="minWidth:200px"],
+  [style*="flex: '0 0 160px'"],
+  [style*="flex:0 0 160px"],
+  [style*="flex: '0 0 120px'"],
+  [style*="flex:0 0 120px"],
+  [style*="flex: '0 0 200px'"],
+  [style*="flex:0 0 200px"] {
+    width: 100% !important;
+    min-width: 0 !important;
+    flex: 1 1 100% !important;
+  }
+
+  /* Ensure no horizontal overflow from inline flex */
+  .section-body > div[style*="display: flex"],
+  .section-body > div[style*="display:flex"],
+  .section-head > div[style*="display: flex"],
+  .section-head > div[style*="display:flex"] {
+    flex-wrap: wrap !important;
+  }
+
+  /* Ensure images don't overflow */
+  img {
+    max-width: 100%;
+    height: auto;
+  }
+}
+
+/* ── Reusable Mobile Card Pattern ────────────────────── */
+.mobile-card-view {
+  display: none;
+}
+
+.mobile-card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 14px;
+  margin-bottom: 10px;
+  transition: var(--trans);
+}
+
+.mobile-card:last-child {
+  margin-bottom: 0;
+}
+
+.mobile-card-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 8px;
+  padding: 7px 0;
+  border-bottom: 1px solid var(--border);
+}
+
+.mobile-card-row:last-child {
+  border-bottom: none;
+  padding-bottom: 0;
+}
+
+.mobile-card-label {
+  font-size: 11px;
+  color: var(--text-muted);
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  flex-shrink: 0;
+  line-height: 1.3;
+}
+
+.mobile-card-value {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-head);
+  text-align: right;
+  word-break: break-word;
+  line-height: 1.3;
+}
+
+.mobile-card-value.text-muted {
+  font-weight: 400;
+  color: var(--text-muted);
+}
+
+.mobile-card-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 10px;
+  padding-top: 10px;
+  border-top: 1px solid var(--border);
+}
+
+.mobile-card-actions .btn {
+  flex: 1;
+  min-width: 0;
+}
+
+.mobile-card-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 8px;
+  padding-bottom: 8px;
+  border-bottom: 1px solid var(--border);
+}
+
+.mobile-card-title {
+  font-weight: 700;
+  font-size: 14px;
+  color: var(--text-head);
+  flex: 1;
+  min-width: 0;
+  word-break: break-word;
+}
+
+.mobile-card-badge {
+  flex-shrink: 0;
+  margin-left: 8px;
+}
+
+@media (max-width: 768px) {
+  .mobile-card-view {
+    display: block;
+  }
+
+  .mobile-card {
+    padding: 12px;
+  }
+
+  .mobile-card-value {
+    font-size: 12px;
+  }
+
+  .mobile-card-label {
+    font-size: 10px;
+  }
+}
+
+@media (max-width: 576px) {
+  .mobile-card {
+    padding: 10px;
+    margin-bottom: 8px;
+  }
+
+  .mobile-card-title {
+    font-size: 13px;
+  }
+
+  .mobile-card-value {
+    font-size: 11px;
+  }
+
+  .mobile-card-label {
+    font-size: 9px;
+  }
+}
+
+@media (max-width: 400px) {
+  .mobile-card {
+    padding: 8px;
+    border-radius: 8px;
+  }
+
+  .mobile-card-title {
+    font-size: 12px;
+  }
+
+  .mobile-card-value {
+    font-size: 11px;
+  }
+}
+
+/* ── Ensure charts don't overflow on mobile ──────────── */
+@media (max-width: 768px) {
+  .tw-chart-block,
+  .recharts-wrapper,
+  .recharts-responsive-container {
+    max-width: 100% !important;
+    overflow-x: auto !important;
+  }
+
+  svg[viewBox] {
+    max-width: 100%;
+    height: auto !important;
+  }
+}
+
+/* ── Table wrap: ensure no overflow bleed ────────────── */
+@media (max-width: 768px) {
+  .table-wrap {
+    margin-left: -14px;
+    margin-right: -14px;
+    width: calc(100% + 28px);
+    border-radius: 0;
+  }
+
+  .section-body .table-wrap:first-child {
+    margin-top: -14px;
+  }
+
+  .section-body .table-wrap:last-child {
+    margin-bottom: -14px;
+  }
+}
+
+@media (max-width: 576px) {
+  .table-wrap {
+    margin-left: -8px;
+    margin-right: -8px;
+    width: calc(100% + 16px);
+  }
+
+  .section-body .table-wrap:first-child {
+    margin-top: -8px;
+  }
+
+  .section-body .table-wrap:last-child {
+    margin-bottom: -8px;
+  }
+}
 @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&family=JetBrains+Mono:wght@400;500;600&display=swap');
 
 :root {
@@ -1578,6 +1931,12 @@ input[type="number"] {
   margin: 20px;
 }
 
+/* Prevent horizontal overflow in modals */
+.modal-body {
+  overflow-x: hidden;
+  word-break: break-word;
+}
+
 .modal-head {
   padding: 16px 20px;
   border-bottom: 1px solid var(--border);
@@ -1613,7 +1972,9 @@ input[type="number"] {
   .modal-box {
     margin: 0;
     max-height: 90vh;
+    max-height: 85dvh; /* dynamic viewport height for mobile browsers */
     max-width: 100% !important;
+    overflow-y: auto;
   }
 
   .modal-head {
@@ -1636,6 +1997,401 @@ input[type="number"] {
   .modal-body .btn-full {
     height: 44px;
     font-size: 13px;
+  }
+
+  /* ── Full-width buttons on mobile modals ── */
+  .modal-body .btn,
+  .modal-body .btn-sm,
+  .modal-body .btn-lg {
+    width: 100%;
+    justify-content: center;
+  }
+
+  .modal-body .form-grid-2 {
+    grid-template-columns: 1fr;
+    gap: 10px;
+  }
+
+  .modal-body .input-group {
+    margin-bottom: 12px;
+  }
+
+  .modal-body .btn-full {
+    height: 44px;
+    font-size: 13px;
+  }
+
+  /* ── Modal action rows: stack vertically ── */
+  .modal-head-right,
+  .modal-actions-row {
+    flex-direction: column !important;
+    gap: 8px !important;
+    width: 100% !important;
+  }
+
+  .modal-head-right .btn,
+  .modal-actions-row .btn {
+    width: 100% !important;
+    flex: 1 1 auto !important;
+  }
+}
+
+/* ── Tablet: moderate modal adjustments ── */
+@media (max-width: 992px) {
+  .modal-box {
+    max-width: 600px;
+    margin: 16px;
+  }
+
+  .modal-body {
+    padding: 16px;
+  }
+}
+
+/* ── Mobile: confirm dialog buttons stack ── */
+@media (max-width: 768px) {
+  .popup-confirm-box {
+    max-width: 340px;
+    width: calc(100% - 32px);
+    padding: 24px 20px 20px;
+    border-radius: 14px;
+    margin: 0 16px;
+  }
+
+  .popup-confirm-actions {
+    flex-direction: column !important;
+    gap: 8px !important;
+  }
+
+  .popup-confirm-actions .btn {
+    width: 100% !important;
+    min-width: 0 !important;
+    height: 44px !important;
+    font-size: 13px !important;
+  }
+
+  .popup-confirm-msg {
+    font-size: 14px !important;
+    margin-bottom: 18px !important;
+  }
+
+  .popup-confirm-icon {
+    width: 48px !important;
+    height: 48px !important;
+    margin-bottom: 12px !important;
+  }
+}
+
+@media (max-width: 576px) {
+  .popup-confirm-box {
+    max-width: 300px;
+    width: calc(100% - 24px);
+    padding: 20px 16px 16px;
+    border-radius: 12px;
+  }
+
+  .popup-confirm-icon {
+    width: 44px !important;
+    height: 44px !important;
+  }
+
+  .popup-confirm-icon svg {
+    width: 22px !important;
+    height: 22px !important;
+  }
+
+  .popup-confirm-msg {
+    font-size: 13px !important;
+    margin-bottom: 14px !important;
+  }
+}
+
+/* ── Toast notifications: mobile positioning ── */
+@media (max-width: 768px) {
+  .popup-toast-stack {
+    top: 8px;
+    right: 8px;
+    left: 8px;
+    max-width: none;
+    width: auto;
+    gap: 8px;
+  }
+
+  .popup-toast {
+    font-size: 12px;
+    padding: 10px 12px;
+    border-radius: 10px;
+    gap: 8px;
+  }
+
+  .popup-toast-icon svg {
+    width: 16px;
+    height: 16px;
+  }
+
+  .popup-toast-close {
+    font-size: 12px;
+    padding: 2px;
+  }
+}
+
+@media (max-width: 576px) {
+  .popup-toast-stack {
+    top: 4px;
+    right: 4px;
+    left: 4px;
+    gap: 6px;
+  }
+
+  .popup-toast {
+    font-size: 11px;
+    padding: 8px 10px;
+    border-radius: 8px;
+    gap: 6px;
+  }
+}
+
+/* ── Ensure modal body inputs are full-width on mobile ── */
+@media (max-width: 768px) {
+  .modal-body input[type="text"],
+  .modal-body input[type="number"],
+  .modal-body input[type="email"],
+  .modal-body input[type="password"],
+  .modal-body input[type="date"],
+  .modal-body select,
+  .modal-body textarea {
+    width: 100% !important;
+    min-width: 0 !important;
+    box-sizing: border-box;
+  }
+
+  .modal-body .input-group {
+    margin-bottom: 14px;
+  }
+
+  .modal-body label {
+    font-size: 12px;
+    margin-bottom: 4px;
+    display: block;
+  }
+
+  .modal-body .form-grid-2 {
+    grid-template-columns: 1fr !important;
+    gap: 10px !important;
+  }
+
+  .modal-body .full-width {
+    grid-column: span 1 !important;
+  }
+
+  .modal-body .responsive-grid-2,
+  .modal-body .responsive-grid-3 {
+    grid-template-columns: 1fr !important;
+    gap: 12px !important;
+  }
+}
+
+/* ── Modal close button: ensure touch target ── */
+@media (max-width: 768px) {
+  .modal-head .btn-sm,
+  .modal-head button[style*="font-size: 16px"] {
+    min-width: 36px !important;
+    min-height: 36px !important;
+    display: inline-flex !important;
+    align-items: center !important;
+    justify-content: center !important;
+  }
+}
+
+/* ── Delete modal / destructive action modal mobile ── */
+@media (max-width: 768px) {
+  .delete-modal {
+    max-width: calc(100% - 32px) !important;
+    margin: 16px !important;
+  }
+
+  .delete-modal__confirm,
+  .delete-modal__cancel {
+    width: 100% !important;
+    min-width: 0 !important;
+  }
+}
+
+/* ── Tab buttons in modals/pages: full width on mobile ── */
+@media (max-width: 768px) {
+  .modal-body > div[style*="display: flex"][style*="background: var(--surface-2)"],
+  .section-action-wrap[style*="display: flex"][style*="background: var(--surface-2)"] {
+    flex-wrap: wrap !important;
+    gap: 4px !important;
+  }
+
+  .modal-body > div[style*="display: flex"][style*="background: var(--surface-2)"],
+  .section-action-wrap[style*="display: flex"][style*="background: var(--surface-2)"] {
+    flex-wrap: wrap !important;
+    gap: 4px !important;
+  }
+
+  .modal-body > div[style*="display: flex"][style*="background: var(--surface-2)"] button,
+  .section-action-wrap button {
+    flex: 1 1 auto !important;
+    min-width: 0 !important;
+    font-size: 11px !important;
+    padding: 6px 10px !important;
+  }
+}
+
+/* ── DetailModal: responsive grid ── */
+.detail-section-grid {
+  display: grid;
+  grid-template-columns: 120px 1fr;
+  gap: 6px 12px;
+}
+
+.detail-modal-box {
+  max-width: 680px;
+  width: min(92vw, 680px);
+  max-height: 85vh;
+}
+
+.detail-row-label {
+  min-width: 0;
+}
+
+@media (max-width: 768px) {
+  .detail-section-grid {
+    grid-template-columns: 1fr !important;
+    gap: 4px !important;
+  }
+
+  .modal-body .detail-section {
+    margin-bottom: 12px !important;
+  }
+
+  .modal-body .detail-section > div:first-child {
+    font-size: 10px !important;
+    margin-bottom: 6px !important;
+  }
+
+  /* Ensure modal body content is visible and scrollable on mobile */
+  .modal-body {
+    overflow-y: auto !important;
+    overflow-x: hidden !important;
+    flex: 1 1 auto !important;
+    min-height: 0 !important;
+  }
+
+  .modal-box {
+    overflow-y: auto !important;
+    max-height: 85dvh !important;
+  }
+
+  .detail-modal-box {
+    max-width: 100% !important;
+    width: calc(100% - 24px) !important;
+    max-height: 80dvh !important;
+  }
+}
+
+/* ── Toast notifications: mobile positioning ── */
+@media (max-width: 768px) {
+  .popup-toast-stack {
+    top: 8px !important;
+    right: 8px !important;
+    left: 8px !important;
+    max-width: none !important;
+    width: auto !important;
+    gap: 8px !important;
+  }
+
+  .popup-toast {
+    font-size: 12px !important;
+    padding: 10px 12px !important;
+    border-radius: 10px !important;
+    gap: 8px !important;
+  }
+
+  .popup-toast-icon svg {
+    width: 16px !important;
+    height: 16px !important;
+  }
+
+  .popup-toast-close {
+    font-size: 12px !important;
+    padding: 2px !important;
+  }
+}
+
+@media (max-width: 576px) {
+  .popup-toast-stack {
+    top: 4px !important;
+    right: 4px !important;
+    left: 4px !important;
+    gap: 6px !important;
+  }
+
+  .popup-toast {
+    font-size: 11px !important;
+    padding: 8px 10px !important;
+    border-radius: 8px !important;
+    gap: 6px !important;
+  }
+}
+
+/* ── Confirm dialog mobile ── */
+@media (max-width: 768px) {
+  .popup-confirm-box {
+    max-width: 340px !important;
+    width: calc(100% - 32px) !important;
+    padding: 24px 20px 20px !important;
+    border-radius: 14px !important;
+    margin: 0 !important;
+  }
+
+  .popup-confirm-actions {
+    flex-direction: column !important;
+    gap: 8px !important;
+  }
+
+  .popup-confirm-actions .btn {
+    width: 100% !important;
+    min-width: 0 !important;
+    height: 44px !important;
+    font-size: 13px !important;
+  }
+
+  .popup-confirm-msg {
+    font-size: 14px !important;
+    margin-bottom: 18px !important;
+  }
+
+  .popup-confirm-icon {
+    width: 48px !important;
+    height: 48px !important;
+    margin-bottom: 12px !important;
+  }
+}
+
+@media (max-width: 576px) {
+  .popup-confirm-box {
+    max-width: 300px !important;
+    width: calc(100% - 24px) !important;
+    padding: 20px 16px 16px !important;
+    border-radius: 12px !important;
+  }
+
+  .popup-confirm-icon {
+    width: 44px !important;
+    height: 44px !important;
+  }
+
+  .popup-confirm-icon svg {
+    width: 22px !important;
+    height: 22px !important;
+  }
+
+  .popup-confirm-msg {
+    font-size: 13px !important;
+    margin-bottom: 14px !important;
   }
 }
 

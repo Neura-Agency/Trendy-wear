@@ -17,7 +17,7 @@ export default function Payouts({ payouts }){
       </div>
       <SearchBar value={search} onChange={setSearch} placeholder="Search by store name…" resultCount={filtered.length} />
       <div className="table-container">
-        <table className="table">
+        <table className="table desktop-table-view">
           <thead>
             <tr>
               <th>Store Name</th>
@@ -49,6 +49,39 @@ export default function Payouts({ payouts }){
             ))}
           </tbody>
         </table>
+        {/* ── Mobile card view ── */}
+        <div className="mobile-card-view">
+          {filtered.length === 0 ? (
+            <div style={{ textAlign: 'center', padding: '2rem' }} className="muted">{search ? 'No payouts match your search.' : 'No payouts found.'}</div>
+          ) : (
+            filtered.map(p => (
+              <div className="mobile-card" key={p.storeName}>
+                <div className="mobile-card-header">
+                  <span className="mobile-card-title">{p.storeName}</span>
+                  <span className={`badge ${p.paid ? 'badge-success' : 'badge-pending'}`} style={{ fontSize: 10 }}>
+                    {p.paid ? 'Received' : 'Pending'}
+                  </span>
+                </div>
+                <div className="mobile-card-row">
+                  <span className="mobile-card-label">Orders</span>
+                  <span className="mobile-card-value">{p.totalOrders}</span>
+                </div>
+                <div className="mobile-card-row">
+                  <span className="mobile-card-label">Sales</span>
+                  <span className="mobile-card-value">${Number(p.totalSales).toLocaleString()}</span>
+                </div>
+                <div className="mobile-card-row">
+                  <span className="mobile-card-label">Commission</span>
+                  <span className="mobile-card-value">{p.commissionPercent}% · ${Number(p.commissionAmount).toLocaleString()}</span>
+                </div>
+                <div className="mobile-card-row">
+                  <span className="mobile-card-label">Payable</span>
+                  <span className="mobile-card-value" style={{ fontWeight: 700, color: 'var(--primary)' }}>${Number(p.finalPayable).toLocaleString()}</span>
+                </div>
+              </div>
+            ))
+          )}
+        </div>
       </div>
     </div>
   )

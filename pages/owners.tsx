@@ -907,7 +907,7 @@ export default function OwnersPage({ user, onLogin }: PageProps) {
                 return (p.ownerName || '').toLowerCase().includes(q) || (p.notes || '').toLowerCase().includes(q);
               }).length} />
               <div className="table-wrap">
-              <table>
+              <table className="desktop-table-view">
                 <thead>
                   <tr>
                     <th>Owner</th>
@@ -970,8 +970,47 @@ export default function OwnersPage({ user, onLogin }: PageProps) {
                     <td colSpan={4} />
                   </tr>
                 </tfoot>
-              </table>
-            </div>
+                </table>
+                {/* ── Mobile card view ── */}
+                <div className="mobile-card-view">
+                  {payouts.filter(p => {
+                    if (!payoutSearch) return true;
+                    const q = payoutSearch.toLowerCase();
+                    return (p.ownerName || '').toLowerCase().includes(q) || (p.notes || '').toLowerCase().includes(q);
+                  }).map((p, idx) => {
+                    const ownerIdx = owners.findIndex(o => o.id === p.ownerId);
+                    return (
+                      <div className="mobile-card" key={p.id}>
+                        <div className="mobile-card-header">
+                          <span className="mobile-card-title">
+                            <span style={{ display: 'inline-flex', alignItems: 'center', gap: 8 }}>
+                              <span style={{ width: 28, height: 28, borderRadius: '50%', background: ['#ede9fe','#dbeafe','#dcfce7','#ffedd5'][ownerIdx % 4] || '#f3f4f6', color: ['#7c3aed','#2563eb','#16a34a','#ea580c'][ownerIdx % 4] || '#6b7280', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', fontWeight: 700, fontSize: 12 }}>{(p.ownerName || '?').charAt(0).toUpperCase()}</span>
+                              {p.ownerName || '—'}
+                            </span>
+                          </span>
+                          <span className="mobile-card-value" style={{ color: 'var(--green-600)', fontWeight: 800 }}>{Rs(p.amount)}</span>
+                        </div>
+                        <div className="mobile-card-row">
+                          <span className="mobile-card-label">Period</span>
+                          <span className="mobile-card-value">{p.periodFrom} → {p.periodTo}</span>
+                        </div>
+                        <div className="mobile-card-row">
+                          <span className="mobile-card-label">Paid At</span>
+                          <span className="mobile-card-value">{new Date(p.paidAt).toLocaleDateString('en-PK', { day: '2-digit', month: 'short', year: 'numeric' })}</span>
+                        </div>
+                        <div className="mobile-card-row">
+                          <span className="mobile-card-label">Notes</span>
+                          <span className="mobile-card-value text-muted">{p.notes || '—'}</span>
+                        </div>
+                        <div className="mobile-card-actions">
+                          <button className="btn btn-sm" style={{ fontSize: 10, padding: '4px 10px', background: 'rgba(16,185,129,0.1)', color: '#059669', border: '1.5px solid rgba(16,185,129,0.25)' }} onClick={() => setDetailPayout(p)}>Detail</button>
+                          <button className="btn btn-secondary btn-sm" style={{ color: 'var(--red-500, #ef4444)', padding: '4px 8px' }} onClick={() => handleDeletePayout(p)}>Delete</button>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
             </>)}
         </SectionCard>
 

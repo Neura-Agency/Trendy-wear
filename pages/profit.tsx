@@ -302,7 +302,7 @@ export default function ProfitPage({ user, onLogin }: PageProps) {
           </div>
         ) : (
           <div style={{ overflowX: "auto" }}>
-            <table style={{ width: "100%", borderCollapse: "collapse" }}>
+            <table className="desktop-table-view" style={{ width: "100%", borderCollapse: "collapse" }}>
               <thead>
                 <tr>
                   {([
@@ -393,8 +393,48 @@ export default function ProfitPage({ user, onLogin }: PageProps) {
                   <td style={{ ...TD, borderBottom: "none" }} />
                 </tr>
               </tfoot>
-            </table>
-          </div>
+              </table>
+              {/* ── Mobile card view ── */}
+              <div className="mobile-card-view">
+                {sorted.map((r, i) => (
+                  <div className="mobile-card" key={r.id}>
+                    <div className="mobile-card-header">
+                      <span className="mobile-card-title">{r.productName}</span>
+                      <ProfitBadge margin={r.profitMargin} />
+                    </div>
+                    <div className="mobile-card-row">
+                      <span className="mobile-card-label">Date</span>
+                      <span className="mobile-card-value" style={{ fontSize: 12, color: 'var(--text-muted)' }}>{fmtDate(r.date)}</span>
+                    </div>
+                    <div className="mobile-card-row">
+                      <span className="mobile-card-label">Order Code</span>
+                      <span className="mobile-card-value" style={{ fontFamily: 'monospace', fontSize: 11 }}>{r.orderCode}</span>
+                    </div>
+                    <div className="mobile-card-row">
+                      <span className="mobile-card-label">Store</span>
+                      <span className="mobile-card-value" style={{ color: 'var(--acc)' }}>{r.storeName}</span>
+                    </div>
+                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 0, borderTop: '1px solid var(--border)', marginTop: 4, paddingTop: 4 }}>
+                      <div style={{ padding: '4px 0' }}><span style={{ fontSize: 10, color: 'var(--text-muted)', textTransform: 'uppercase', fontWeight: 600 }}>Sold</span><div style={{ fontWeight: 700, fontSize: 13 }}>{r.rawQuantity}</div></div>
+                      <div style={{ padding: '4px 0', borderLeft: '1px solid var(--border)', paddingLeft: 8 }}><span style={{ fontSize: 10, color: 'var(--text-muted)', textTransform: 'uppercase', fontWeight: 600 }}>Chargeable</span><div style={{ fontWeight: 700, fontSize: 13 }}>{r.chargeableQty}</div></div>
+                      <div style={{ padding: '4px 0' }}><span style={{ fontSize: 10, color: 'var(--text-muted)', textTransform: 'uppercase', fontWeight: 600 }}>Revenue</span><div style={{ fontWeight: 700, fontSize: 13, color: '#6366f1' }}>{Rs(r.grossRevenue)}</div></div>
+                      <div style={{ padding: '4px 0', borderLeft: '1px solid var(--border)', paddingLeft: 8 }}><span style={{ fontSize: 10, color: 'var(--text-muted)', textTransform: 'uppercase', fontWeight: 600 }}>Net Profit</span><div style={{ fontWeight: 800, fontSize: 13, color: r.netProfit >= 0 ? 'var(--success)' : 'var(--danger)' }}>{r.netProfit >= 0 ? Rs(r.netProfit) : `-${Rs(Math.abs(r.netProfit))}`}</div></div>
+                    </div>
+                    {(r.returnedQty > 0 || r.refundedQty > 0) && (
+                      <div className="mobile-card-row">
+                        <span className="mobile-card-label">Returns / Refunds</span>
+                        <span className="mobile-card-value" style={{ color: 'var(--warning)' }}>
+                          {r.returnedQty > 0 && `↩ ${r.returnedQty}`}{r.returnedQty > 0 && r.refundedQty > 0 && ' · '}{r.refundedQty > 0 && `💸 ${r.refundedQty}`}
+                        </span>
+                      </div>
+                    )}
+                    <div className="mobile-card-actions">
+                      <button type="button" className="btn btn-sm" style={{ fontSize: 10, padding: '4px 10px', background: 'rgba(16,185,129,0.1)', color: '#059669', border: '1.5px solid rgba(16,185,129,0.25)' }} onClick={() => setDetailRow(r)}>Detail</button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
         )}
       </div>
 

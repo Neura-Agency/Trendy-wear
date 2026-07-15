@@ -26,7 +26,7 @@ export default function Inventory({ items }){
       </div>
       <SearchBar value={search} onChange={setSearch} placeholder="Search by name, category, batch…" resultCount={filtered.length} />
       <div className="table-container">
-        <table className="table">
+        <table className="table desktop-table-view">
           <thead>
             <tr>
               <th>Item Name</th>
@@ -60,6 +60,45 @@ export default function Inventory({ items }){
             ))}
           </tbody>
         </table>
+        {/* ── Mobile card view ── */}
+        <div className="mobile-card-view">
+          {filtered.length === 0 ? (
+            <div style={{ textAlign: 'center', padding: '2rem' }} className="muted">{search ? 'No inventory items match your search.' : 'Inventory is empty.'}</div>
+          ) : (
+            filtered.map((it, idx) => (
+              <div className="mobile-card" key={idx}>
+                <div className="mobile-card-header">
+                  <span className="mobile-card-title">{it.productName}</span>
+                  {it.quantityAvailable <= (it.lowStockWarning || 5) ? (
+                    <span className="badge badge-red" style={{ fontSize: 10 }}>Low Stock ⚠</span>
+                  ) : (
+                    <span className="badge badge-green" style={{ fontSize: 10 }}>In Stock</span>
+                  )}
+                </div>
+                <div className="mobile-card-row">
+                  <span className="mobile-card-label">Category</span>
+                  <span className="mobile-card-value"><span className="badge" style={{ background: '#f1f5f9', fontSize: 10 }}>{it.category}</span></span>
+                </div>
+                <div className="mobile-card-row">
+                  <span className="mobile-card-label">Item ID</span>
+                  <span className="mobile-card-value" style={{ fontFamily: 'monospace', fontSize: 11, fontWeight: 700 }}>{formatItemCode(it.batchNumber)}</span>
+                </div>
+                <div className="mobile-card-row">
+                  <span className="mobile-card-label">Cost Price</span>
+                  <span className="mobile-card-value">${Number(it.costPrice).toLocaleString()}</span>
+                </div>
+                <div className="mobile-card-row">
+                  <span className="mobile-card-label">Sale Price</span>
+                  <span className="mobile-card-value">${Number(it.sellingPrice).toLocaleString()}</span>
+                </div>
+                <div className="mobile-card-row">
+                  <span className="mobile-card-label">Available</span>
+                  <span className="mobile-card-value" style={{ fontSize: '1.05rem' }}>{it.quantityAvailable}</span>
+                </div>
+              </div>
+            ))
+          )}
+        </div>
       </div>
     </div>
   )

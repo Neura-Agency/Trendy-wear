@@ -66,7 +66,7 @@ export default function AllInventoryPage({ user, onLogin }: PageProps) {
       <SectionCard title="Warehouse Inventory" icon={IC.warehouse}>
         <SearchBar value={search} onChange={setSearch} placeholder="Search by name, brand, type, item ID…" resultCount={filtered.length} />
         <div className="table-wrap">
-          <table>
+          <table className="desktop-table-view">
             <thead>
               <tr>
                 <th>Item Name</th>
@@ -141,8 +141,57 @@ export default function AllInventoryPage({ user, onLogin }: PageProps) {
                 })
               )}
             </tbody>
-          </table>
-        </div>
+            </table>
+            {/* ── Mobile card view ── */}
+            <div className="mobile-card-view">
+              {filtered.length === 0 ? (
+                <div className="text-muted empty-cell" style={{ textAlign: 'center', padding: 36 }}>
+                  {search ? 'No warehouse inventory matches your search.' : 'No warehouse inventory found.'}
+                </div>
+              ) : (
+                filtered.map((item, idx) => {
+                  const picture = item.productImage || (item as any)?.otherVariants?.picture as string | undefined;
+                  const pictureSrc = (typeof picture === 'string' && picture.trim().length > 0) ? picture : '/images/size_L.webp';
+                  const availableQty = Number(item.quantityAvailable) || 0;
+                  const warningAt = Number(item.lowStockWarning) || 5;
+
+                  return (
+                    <div className="mobile-card" key={`${item.batchNumber}-${idx}`}>
+                      <div className="mobile-card-header">
+                        <span className="mobile-card-title">{item.productName}</span>
+                        {availableQty <= 0 ? (
+                          <Badge type="red">Out</Badge>
+                        ) : availableQty <= warningAt ? (
+                          <Badge type="orange">Low</Badge>
+                        ) : (
+                          <Badge type="green">Good</Badge>
+                        )}
+                      </div>
+                      <div className="mobile-card-row">
+                        <span className="mobile-card-label">Type</span>
+                        <span className="mobile-card-value"><Badge type="gray">{item.category}</Badge></span>
+                      </div>
+                      <div className="mobile-card-row">
+                        <span className="mobile-card-label">Item ID</span>
+                        <span className="mobile-card-value" style={{ fontFamily: 'monospace', fontSize: 11, fontWeight: 700 }}>{formatItemCode(item.batchNumber)}</span>
+                      </div>
+                      <div className="mobile-card-row">
+                        <span className="mobile-card-label">Cost/pc</span>
+                        <span className="mobile-card-value">{Rs(item.costPrice)}</span>
+                      </div>
+                      <div className="mobile-card-row">
+                        <span className="mobile-card-label">Qty</span>
+                        <span className="mobile-card-value" style={{ fontSize: '1.05rem' }}>{availableQty}</span>
+                      </div>
+                      <div className="mobile-card-actions">
+                        <button type="button" className="btn btn-sm" style={{ fontSize: 10, padding: '4px 10px', background: 'rgba(16,185,129,0.1)', color: '#059669', border: '1.5px solid rgba(16,185,129,0.25)' }} onClick={() => setDetailItem(item)}>Detail</button>
+                      </div>
+                    </div>
+                  );
+                })
+              )}
+            </div>
+          </div>
       </SectionCard>
 
       <style jsx>{`

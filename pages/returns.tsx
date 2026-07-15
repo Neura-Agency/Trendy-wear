@@ -201,7 +201,7 @@ export default function ReturnsPage({ user, onLogin, onLogout }: PageProps) {
           <EmptyState message="No returned orders found." />
         ) : (
           <div style={{ overflowX: "auto" }}>
-            <table style={{ width: "100%", borderCollapse: "collapse" }}>
+            <table className="desktop-table-view" style={{ width: "100%", borderCollapse: "collapse" }}>
               <thead>
                 <tr>
                   {[
@@ -289,8 +289,57 @@ export default function ReturnsPage({ user, onLogin, onLogout }: PageProps) {
                   <td style={{ ...TD, borderBottom: "none" }} />
                 </tr>
               </tfoot>
-            </table>
-          </div>
+              </table>
+              {/* ── Mobile card view ── */}
+              <div className="mobile-card-view">
+                {sorted.map((o, i) => {
+                  const isFullReturn = o.returnQuantity >= o.quantity;
+                  return (
+                    <div className="mobile-card" key={o.id}>
+                      <div className="mobile-card-header">
+                        <span className="mobile-card-title">{o.productName}</span>
+                        <span style={{ display: 'inline-block', background: isFullReturn ? 'var(--danger-soft)' : 'var(--warning-soft)', color: isFullReturn ? 'var(--danger)' : 'var(--warning)', fontWeight: 700, fontSize: 11, padding: '3px 10px', borderRadius: 20 }}>{o.returnQuantity} {isFullReturn ? '• Full' : '• Partial'}</span>
+                      </div>
+                      <div className="mobile-card-row">
+                        <span className="mobile-card-label">Order Code</span>
+                        <span className="mobile-card-value" style={{ fontFamily: 'monospace', fontSize: 11 }}>{o.orderCode || '—'}</span>
+                      </div>
+                      <div className="mobile-card-row">
+                        <span className="mobile-card-label">Store</span>
+                        <span className="mobile-card-value" style={{ color: 'var(--acc)' }}>{o.storeName}</span>
+                      </div>
+                      <div className="mobile-card-row">
+                        <span className="mobile-card-label">Client</span>
+                        <span className="mobile-card-value">{o.clientName || '—'}</span>
+                      </div>
+                      <div className="mobile-card-row">
+                        <span className="mobile-card-label">Sale Date</span>
+                        <span className="mobile-card-value" style={{ fontSize: 12, color: 'var(--text-muted)' }}>{fmtDate(o.date)}</span>
+                      </div>
+                      <div className="mobile-card-row">
+                        <span className="mobile-card-label">Returned On</span>
+                        <span className="mobile-card-value" style={{ fontWeight: 600 }}>{o.returnedAt ? fmtDate(o.returnedAt) : '—'}</span>
+                      </div>
+                      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 0, borderTop: '1px solid var(--border)', marginTop: 4, paddingTop: 4 }}>
+                        <div style={{ padding: '4px 0' }}><span style={{ fontSize: 10, color: 'var(--text-muted)', textTransform: 'uppercase', fontWeight: 600 }}>Qty Sold</span><div style={{ fontWeight: 700, fontSize: 13 }}>{o.quantity}</div></div>
+                        <div style={{ padding: '4px 0', borderLeft: '1px solid var(--border)', paddingLeft: 8 }}><span style={{ fontSize: 10, color: 'var(--text-muted)', textTransform: 'uppercase', fontWeight: 600 }}>Qty Returned</span><div style={{ fontWeight: 700, fontSize: 13, color: 'var(--danger)' }}>{o.returnQuantity}</div></div>
+                        <div style={{ padding: '4px 0' }}><span style={{ fontSize: 10, color: 'var(--text-muted)', textTransform: 'uppercase', fontWeight: 600 }}>Price</span><div style={{ fontWeight: 700, fontSize: 13 }}>{Rs(o.sellingPrice)}</div></div>
+                        <div style={{ padding: '4px 0', borderLeft: '1px solid var(--border)', paddingLeft: 8 }}><span style={{ fontSize: 10, color: 'var(--text-muted)', textTransform: 'uppercase', fontWeight: 600 }}>Value Recovered</span><div style={{ fontWeight: 800, fontSize: 13, color: 'var(--success)' }}>{Rs(o.returnQuantity * o.sellingPrice)}</div></div>
+                      </div>
+                      {o.returnReason && (
+                        <div className="mobile-card-row">
+                          <span className="mobile-card-label">Reason</span>
+                          <span className="mobile-card-value" style={{ fontSize: 12, color: 'var(--danger)', background: 'rgba(220,38,38,0.07)', padding: '4px 8px', borderRadius: 6 }}>{o.returnReason}</span>
+                        </div>
+                      )}
+                      <div className="mobile-card-actions">
+                        <button type="button" className="btn btn-sm" style={{ fontSize: 10, padding: '4px 10px', background: 'rgba(16,185,129,0.1)', color: '#059669', border: '1.5px solid rgba(16,185,129,0.25)' }} onClick={() => setDetailRow(o)}>Detail</button>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
         )}
       </div>
 

@@ -164,7 +164,7 @@ export default function ShopCredentials({ user, onLogin }: PageProps) {
                         ).length;
                     })()} />
                     <div className="table-wrap">
-                        <table>
+                        <table className="desktop-table-view">
                             <thead>
                                 <tr>
                                     <th>Store Name</th>
@@ -228,8 +228,53 @@ export default function ShopCredentials({ user, onLogin }: PageProps) {
                                     ))
                                 )}
                             </tbody>
-                        </table>
-                    </div>
+                            </table>
+                            {/* ── Mobile card view ── */}
+                            <div className="mobile-card-view">
+                                {(() => {
+                                    if (!search) return filteredAccounts;
+                                    const q = search.toLowerCase();
+                                    return filteredAccounts.filter(([username, acc]) =>
+                                        acc.storeName?.toLowerCase().includes(q) || username?.toLowerCase().includes(q)
+                                    );
+                                })().length === 0 ? (
+                                    <div style={{ textAlign: 'center', padding: 40 }} className="text-muted">{search ? 'No accounts match your search.' : 'No managed store accounts found.'}</div>
+                                ) : (
+                                    (() => {
+                                        if (!search) return filteredAccounts;
+                                        const q = search.toLowerCase();
+                                        return filteredAccounts.filter(([username, acc]) =>
+                                            acc.storeName?.toLowerCase().includes(q) || username?.toLowerCase().includes(q)
+                                        );
+                                    })().map(([username, acc]) => (
+                                        <div className="mobile-card" key={username}>
+                                            <div className="mobile-card-header">
+                                                <span className="mobile-card-title">{acc.storeName}</span>
+                                                <Badge type={accountStatuses[username] !== false ? 'green' : 'red'}>
+                                                    {accountStatuses[username] !== false ? 'Active' : 'Inactive'}
+                                                </Badge>
+                                            </div>
+                                            <div className="mobile-card-row">
+                                                <span className="mobile-card-label">Username</span>
+                                                <span className="mobile-card-value" style={{ fontFamily: 'monospace', fontSize: 12 }}>{username}</span>
+                                            </div>
+                                            <div className="mobile-card-row">
+                                                <span className="mobile-card-label">Password</span>
+                                                <span className="mobile-card-value" style={{ fontFamily: 'monospace', fontSize: 12 }}>{acc.password}</span>
+                                            </div>
+                                            <div className="mobile-card-row">
+                                                <span className="mobile-card-label">Role</span>
+                                                <span className="mobile-card-value"><Badge type={acc.role === 'admin' ? 'blue' : 'purple'}>{acc.role}</Badge></span>
+                                            </div>
+                                            <div className="mobile-card-actions">
+                                                <button type="button" className="btn btn-sm" style={{ fontSize: 10, padding: '4px 10px', background: 'rgba(16,185,129,0.1)', color: '#059669', border: '1.5px solid rgba(16,185,129,0.25)' }} onClick={() => setDetailAccount({ username, account: acc })}>Detail</button>
+                                                <button className="btn btn-sm btn-secondary" onClick={() => handleEdit(username, acc)}>Edit</button>
+                                            </div>
+                                        </div>
+                                    ))
+                                )}
+                            </div>
+                        </div>
                 </SectionCard>
             </div>
 

@@ -235,6 +235,17 @@ export default function Layout({ children, user, onLogout }: LayoutProps) {
     },
   ];
 
+  // Bottom nav icons (slightly larger for mobile)
+  const bottomNavItems = [
+    { id: "home", icon: iconDashboard as any, label: "Home", path: "/" },
+    { id: "inventory", icon: iconInventory as any, label: "Stock", path: "/inventory" },
+    { id: "reports", icon: iconReports as any, label: "Reports", path: "/reports", superAdminOnly: true },
+    { id: "owners", icon: iconOwners as any, label: "Partners", path: "/owners", superAdminOnly: true },
+  ].filter(item => {
+    if (item.superAdminOnly) return user?.role === "admin" && user?.scope === "all";
+    return true;
+  });
+
   const filteredNavItems = navItems.filter((item) => {
     if (item.superAdminOnly)
       return user?.role === "admin" && user?.scope === "all";
@@ -398,9 +409,28 @@ export default function Layout({ children, user, onLogout }: LayoutProps) {
           </div>
         </nav>
 
-        {/* ── MAIN CONTENT ── */}
-        <main className="main-area">{children}</main>
-      </div>
-    </div>
-  );
-}
+         {/* ── MAIN CONTENT ── */}
+         <main className="main-area">{children}</main>
+       </div>
+
+       {/* ── MOBILE BOTTOM NAV ── */}
+       <nav className="mobile-bottom-nav">
+         <div className="mobile-bottom-nav-items">
+           {bottomNavItems.map((item) => (
+             <Link
+               href={item.path}
+               key={item.id}
+               className={`mobile-bottom-nav-item ${currentPath === item.path ? "active" : ""}`}
+               style={{ textDecoration: "none" }}
+             >
+               <span style={{ display: "flex", alignItems: "center", justifyContent: "center" }}>
+                 {item.icon}
+               </span>
+               <span>{item.label}</span>
+             </Link>
+           ))}
+         </div>
+       </nav>
+     </div>
+   );
+ }
