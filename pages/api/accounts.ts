@@ -27,9 +27,8 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 
       // Update password if provided
       if (password && password.trim() !== '') {
-        const passwordHash = await bcrypt.hash(password, 10);
-        updates.password_hash = passwordHash;
-        updates.plain_password = password;
+        const passwordHash = await bcrypt.hash(password, 10)
+        updates.password_hash = passwordHash
       }
 
       // Update role if provided

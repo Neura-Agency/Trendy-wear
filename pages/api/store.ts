@@ -53,9 +53,9 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
         .map((s: any) => s.store_owners?.account)
         .filter(Boolean)
 
-      const { data: accounts, error: accountsError } = await supabaseAdmin
+        const { data: accounts, error: accountsError } = await supabaseAdmin
         .from(TABLES.ACCOUNTS)
-        .select('id, username, plain_password, role, scope, managed_stores, is_active')
+        .select('id, username, role, scope, managed_stores, is_active')
         .in('id', accountIds.length > 0 ? accountIds : ['00000000-0000-0000-0000-000000000000']) // Dummy UUID if no accounts
         .order('created_at', { ascending: true })
 
@@ -84,7 +84,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
         if (!account) return
 
         accountsMap[account.username] = {
-          password: account.plain_password || '••••••••',
+          password: '••••••••',
           role: account.role,
           scope: account.scope,
           storeName: store.name,
@@ -96,7 +96,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       // Also include all super-admin accounts under "Trendy Wear Main"
       const { data: adminAccounts } = await supabaseAdmin
         .from(TABLES.ACCOUNTS)
-        .select('id, username, plain_password, role, scope, managed_stores, is_active')
+        .select('id, username, role, scope, managed_stores, is_active')
         .eq('role', 'admin')
         .eq('scope', 'all')
         .order('created_at', { ascending: true })
@@ -104,7 +104,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       ;(adminAccounts || []).forEach((admin: any) => {
         if (accountsMap[admin.username]) return // already included via store_owners
         accountsMap[admin.username] = {
-          password: admin.plain_password || '••••••••',
+          password: '••••••••',
           role: admin.role,
           scope: admin.scope,
           storeName: 'Trendy Wear Main',
@@ -148,7 +148,6 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
         .insert({
           username: username,
           password_hash: passwordHash,
-          plain_password: plainPassword,
           role: 'store',
           managed_stores: [],
           is_active: true

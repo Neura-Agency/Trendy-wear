@@ -3,6 +3,7 @@ import {
   normalizeFlatQuantities,
   normalizeVariantQuantities,
   rollupVariantQuantities,
+  scaleVariantQuantitiesToTotal,
   mergeVariantQuantities,
   adjustVariantQuantities,
   validateVariantRequest,
@@ -103,6 +104,20 @@ describe('rollupVariantQuantities', () => {
   test('should handle empty variant grid', () => {
     const result = rollupVariantQuantities({});
     expect(result.total).toBe(0);
+  });
+});
+
+describe('scaleVariantQuantitiesToTotal', () => {
+  test('should scale down a stale variant grid to match the live total', () => {
+    const input = { Red: { L: 4, M: 4 } };
+    const result = scaleVariantQuantitiesToTotal(input, 4);
+    expect(result).toEqual({ Red: { L: 2, M: 2 } });
+  });
+
+  test('should preserve the original grid when the target total is already higher', () => {
+    const input = { Red: { L: 2, M: 2 } };
+    const result = scaleVariantQuantitiesToTotal(input, 6);
+    expect(result).toEqual({ Red: { L: 2, M: 2 } });
   });
 });
 

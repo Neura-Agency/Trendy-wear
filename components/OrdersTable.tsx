@@ -1,12 +1,29 @@
 import { useState } from 'react';
 import { SaleReturnModal, SaleRefundModal } from './Modals';
 import { usePopup } from './Popup';
+import SearchBar from './SearchBar';
+import DetailModal from './DetailModal';
+import { formatItemCode } from '../lib/catalog';
 
 export default function OrdersTable({ orders, onRefresh }: { orders: any[]; onRefresh?: () => void }) {
   const { toast } = usePopup();
   const [returningItem, setReturningItem] = useState<{ order: any; item: any } | null>(null);
   const [refundingItem, setRefundingItem] = useState<{ order: any; item: any } | null>(null);
   const [expandedOrderId, setExpandedOrderId] = useState<string | null>(null);
+  const [search, setSearch] = useState('');
+  const [detailOrder, setDetailOrder] = useState<any | null>(null);
+
+  const filtered = orders.filter((o: any) => {
+    if (!search) return true;
+    const q = search.toLowerCase();
+    return (
+      (o.orderCode || '').toLowerCase().includes(q) ||
+      (o.id || '').toLowerCase().includes(q) ||
+      (o.productName || '').toLowerCase().includes(q) ||
+      (o.storeName || '').toLowerCase().includes(q) ||
+      (o.type || '').toLowerCase().includes(q)
+    );
+  });
 
   const toggleExpand = (orderId: string) => {
     setExpandedOrderId(prev => prev === orderId ? null : orderId);
@@ -88,14 +105,16 @@ export default function OrdersTable({ orders, onRefresh }: { orders: any[]; onRe
       <div className="section-header">
         <h3>Recent Orders</h3>
       </div>
+      <SearchBar value={search} onChange={setSearch} placeholder="Search by order code, product, store…" resultCount={filtered.length} />
       <div className="table-container">
         <table className="table sticky-actions">
           <thead>
             <tr>
+              <th>Order ID</th>
               <th>Date</th>
               <th>Store Name</th>
-              <th>Product</th>
-              <th>Qty</th>
+              <th>Item Name</th>
+              <th>Item ID</th>
               <th>Total Price</th>
               <th>Profit</th>
               <th>Type</th>
@@ -105,9 +124,9 @@ export default function OrdersTable({ orders, onRefresh }: { orders: any[]; onRe
             </tr>
           </thead>
           <tbody>
-            {orders.length === 0 ? (
-              <tr><td colSpan={10} style={{textAlign:'center', padding:'2rem'}} className="muted">No orders found.</td></tr>
-            ) : orders.map(o => {
+            {filtered.length === 0 ? (
+              <tr><td colSpan={12} style={{textAlign:'center', padding:'2rem'}} className="muted">{search ? 'No orders match your search.' : 'No orders found.'}</td></tr>
+            ) : filtered.map(o => {
               const isLegacy = !hasItems(o);
               const items = o.items || [];
               const totalQty = Number(o.quantity) || 0;
@@ -119,12 +138,14 @@ export default function OrdersTable({ orders, onRefresh }: { orders: any[]; onRe
                 <>
                   <tr key={o.id} style={{ cursor: 'pointer', background: isExpanded ? 'var(--surface-2)' : undefined }}
                       onClick={() => toggleExpand(o.id)}>
+                    <td style={{ fontWeight: 700, fontFamily: 'monospace', fontSize: 12 }}>{o.orderCode || o.id.slice(0, 8)}</td>
                     <td>{new Date(o.date).toLocaleDateString()}</td>
                     <td><span className="badge" style={{background:'#e0f2fe', color:'#0369a1'}}>{o.storeName}</span></td>
                     <td style={{fontWeight:500}}>
                       {o.productName}
                       {!isLegacy && <span style={{ marginLeft: 6, fontSize: 10, background: 'var(--pri-600)', color: '#fff', padding: '1px 6px', borderRadius: 4 }}>{items.length} item{items.length !== 1 ? 's' : ''}</span>}
                     </td>
+                    <td className="muted" style={{fontWeight:600, fontFamily:'monospace', fontSize:11}}>{formatItemCode(o.batchNumber || o.id)}</td>
                     <td>{totalQty}</td>
                     <td>Rs {(Number(o.sellingPrice || 0) * totalQty).toLocaleString()}</td>
                     <td style={{color: (o.profit || 0) > 0 ? 'var(--success)' : (o.profit || 0) < 0 ? 'var(--danger)' : 'inherit', fontWeight:600}}>
@@ -146,12 +167,15 @@ export default function OrdersTable({ orders, onRefresh }: { orders: any[]; onRe
                         <button className="btn btn-sm" style={{ fontSize: 10, padding: '2px 8px' }} onClick={(e) => { e.stopPropagation(); toggleExpand(o.id); }}>
                           {isExpanded ? 'Collapse' : 'Expand'}
                         </button>
+                        <button className="btn btn-sm" style={{ fontSize: 10, padding: '2px 8px', background: 'rgba(16,185,129,0.1)', color: '#059669', border: '1.5px solid rgba(16,185,129,0.25)' }} onClick={(e) => { e.stopPropagation(); setDetailOrder(o); }}>
+                          Detail
+                        </button>
                       </div>
                     </td>
                   </tr>
                   {isExpanded && (
                     <tr key={`${o.id}-items`}>
-                      <td colSpan={10} style={{ padding: 0, background: 'var(--surface-1)' }}>
+                      <td colSpan={12} style={{ padding: 0, background: 'var(--surface-1)' }}>
                         <div style={{ padding: '8px 12px' }}>
                           {isLegacy ? (
                             <div style={{ fontSize: 12, color: 'var(--text-muted)', padding: 8 }}>Legacy order (no line items). Use the original order record for returns/refunds.</div>
@@ -161,8 +185,9 @@ export default function OrdersTable({ orders, onRefresh }: { orders: any[]; onRe
                             <table className="table" style={{ fontSize: 12 }}>
                               <thead>
                                 <tr>
-                                  <th>Product</th>
-                                  <th>Qty</th>
+                              <th>Item Name</th>
+                              <th>Item ID</th>
+                              <th>Qty</th>
                                   <th>Price</th>
                                   <th>Profit</th>
                                   <th>Status</th>
@@ -179,6 +204,7 @@ export default function OrdersTable({ orders, onRefresh }: { orders: any[]; onRe
                                   return (
                                     <tr key={item.id} style={{ opacity: (itemRet > 0 || itemRef > 0) ? 0.7 : 1 }}>
                                       <td style={{ fontWeight: 500 }}>{item.productName}</td>
+                                      <td className="muted" style={{fontWeight:600, fontFamily:'monospace', fontSize:11}}>{formatItemCode(item.batchNumber || item.id)}</td>
                                       <td>{item.quantity}</td>
                                       <td>Rs {(Number(item.sellingPrice) * itemSold).toLocaleString()}</td>
                                       <td style={{ color: (item.profit || 0) > 0 ? 'var(--success)' : 'var(--danger)', fontWeight: 600 }}>Rs {Number(item.profit || 0).toLocaleString()}</td>
@@ -195,18 +221,30 @@ export default function OrdersTable({ orders, onRefresh }: { orders: any[]; onRe
                                         }
                                       </td>
                                       <td style={{ textAlign: 'center' }}>
-                                        {!itemRet && !itemRef && itemRemaining > 0 && (
-                                          <div style={{ display: 'flex', gap: 4, justifyContent: 'center', flexWrap: 'wrap' }}>
-                                            <button className="btn btn-sm" style={{ fontSize: 10, padding: '2px 8px', background: '#fef3c7', borderColor: '#fde68a', color: '#92400e' }} onClick={() => setReturningItem({ order: o, item })}>Return</button>
-                                            <button className="btn btn-sm" style={{ fontSize: 10, padding: '2px 8px', background: '#fee2e2', borderColor: '#fecaca', color: '#991b2b' }} onClick={() => setRefundingItem({ order: o, item })}>Refund</button>
-                                          </div>
-                                        )}
-                                        {itemRet > 0 && (
-                                          <button className="btn btn-sm" style={{ fontSize: 10, padding: '2px 8px', background: '#e0e7ff', borderColor: '#c7d2fe', color: '#3730a3' }} onClick={() => handleUndoReturn(item.id)}>Undo Return</button>
-                                        )}
-                                        {itemRef > 0 && (
-                                          <button className="btn btn-sm" style={{ fontSize: 10, padding: '2px 8px', background: '#fce7f3', borderColor: '#fbcfe8', color: '#831843' }} onClick={() => handleUndoRefund(item.id)}>Undo Refund</button>
-                                        )}
+                                        {(() => {
+                                          // If this returned order's inventory has already been sold on to a
+                                          // new order, all mutating actions are locked — we cannot undo return
+                                          // because the stock is no longer here.
+                                          const isRestockedLocked = (o.orderReturned && o.restockedFromOrderId != null)
+                                          if (isRestockedLocked) {
+                                            return <span className="badge badge-pending" style={{ fontSize: 10, opacity: 0.7 }}>Locked (re-stocked)</span>
+                                          }
+                                          if (!itemRet && !itemRef && itemRemaining > 0) {
+                                            return (
+                                              <div style={{ display: 'flex', gap: 4, justifyContent: 'center', flexWrap: 'wrap' }}>
+                                                <button className="btn btn-sm" style={{ fontSize: 10, padding: '2px 8px', background: '#fef3c7', borderColor: '#fde68a', color: '#92400e' }} onClick={() => setReturningItem({ order: o, item })}>Return</button>
+                                                <button className="btn btn-sm" style={{ fontSize: 10, padding: '2px 8px', background: '#fee2e2', borderColor: '#fecaca', color: '#991b2b' }} onClick={() => setRefundingItem({ order: o, item })}>Refund</button>
+                                              </div>
+                                            )
+                                          }
+                                          if (itemRet > 0) {
+                                            return <button className="btn btn-sm" style={{ fontSize: 10, padding: '2px 8px', background: '#e0e7ff', borderColor: '#c7d2fe', color: '#3730a3' }} onClick={() => handleUndoReturn(item.id)}>Undo Return</button>
+                                          }
+                                          if (itemRef > 0) {
+                                            return <button className="btn btn-sm" style={{ fontSize: 10, padding: '2px 8px', background: '#fce7f3', borderColor: '#fbcfe8', color: '#831843' }} onClick={() => handleUndoRefund(item.id)}>Undo Refund</button>
+                                          }
+                                          return null
+                                        })()}
                                       </td>
                                     </tr>
                                   );
@@ -271,6 +309,13 @@ export default function OrdersTable({ orders, onRefresh }: { orders: any[]; onRe
         onClose={() => setRefundingItem(null)}
       />
     )}
+
+    <DetailModal
+      open={!!detailOrder}
+      onClose={() => setDetailOrder(null)}
+      title={detailOrder ? `Order Details — ${detailOrder.orderCode || detailOrder.id}` : undefined}
+      data={detailOrder || {}}
+    />
     </>
   );
 }

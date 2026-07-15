@@ -83,3 +83,13 @@ export const formatItemCodeFromUuid = (id?: string | null) => {
   if (!id) return '';
   return `ITEM-${String(id).replace(/-/g, '').slice(0, 8).toUpperCase()}`;
 };
+
+export const formatItemCode = (value?: string | null) => {
+  if (!value) return '';
+  const trimmed = String(value).trim();
+  const alreadyFormatted = trimmed.match(/^ITEM-([0-9A-F]{8})$/i);
+  if (alreadyFormatted) {
+    return `ITEM-${alreadyFormatted[1].toUpperCase()}`;
+  }
+  return formatItemCodeFromUuid(trimmed);
+};

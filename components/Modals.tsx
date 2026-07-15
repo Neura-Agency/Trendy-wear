@@ -2,8 +2,8 @@ import React, { useState } from 'react';
 import { usePopup } from './Popup';
 import Badge from './Badge';
 import { SaleModalProps, CreateStoreModalProps, ReportModalProps, AddInventoryModalProps, AllotToStoreModalProps, InventoryItem, Order, Product, Store, Expense } from '../types';
-import { buildDeterministicProductId, findMatchingProduct, formatItemCodeFromUuid, resolveCanonicalBrand } from '../lib/catalog';
-import { adjustVariantQuantities, rollupVariantQuantities, VariantQuantities } from '../lib/variantQuantities';
+import { buildDeterministicProductId, findMatchingProduct, formatItemCode, formatItemCodeFromUuid, resolveCanonicalBrand } from '../lib/catalog';
+import { adjustVariantQuantities, rollupVariantQuantities, scaleVariantQuantitiesToTotal, VariantQuantities } from '../lib/variantQuantities';
 
 type SaleInventoryItem = Pick<InventoryItem, 'productName' | 'quantityAvailable' | 'sellingPrice'> & {
     productId?: string;
@@ -119,9 +119,9 @@ export function VariantQuantityGrid({
     };
 
     return (
-        <div style={{ marginBottom: 16, padding: 16, background: 'var(--surface-2)', borderRadius: 10, border: '1px solid var(--border)' }}>
-            <div style={{ fontSize: 13, fontWeight: 800, marginBottom: 12, color: 'var(--text)' }}>{title}</div>
-            <table style={{ width: '100%', borderCollapse: 'separate', borderSpacing: 0 }}>
+        <div style={{ marginBottom: 16, padding: 16, background: 'var(--surface-2)', borderRadius: 10, border: '1px solid var(--border)', overflowX: 'auto', WebkitOverflowScrolling: 'touch' }}>
+            <div style={{ fontSize: 13, fontWeight: 800, marginBottom: 12, color: 'var(--text)', minWidth: 0 }}>{title}</div>
+            <table style={{ width: '100%', borderCollapse: 'separate', borderSpacing: 0, minWidth: 240 }}>
                 <thead>
                     <tr>
                         <th style={{ textAlign: 'left', padding: 8, fontSize: 11, color: 'var(--text-muted)' }}>Color</th>
@@ -1033,7 +1033,7 @@ export function AddInventoryModal({ onSave, onClose, stores, products, inventory
                                                             }}
                                                         >
                                                             <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
-                                                                <span style={{ fontFamily: 'monospace', fontWeight: 800, fontSize: 12, color: isSelected ? '#7c3aed' : '#92400e' }}>{batch.batchNumber}</span>
+                                                                <span style={{ fontFamily: 'monospace', fontWeight: 800, fontSize: 12, color: isSelected ? '#7c3aed' : '#92400e' }}>{formatItemCode(batch.batchNumber)}</span>
                                                                 <span style={{ fontSize: 11, color: '#78350f' }}>Cost: Rs {Number(batch.costPrice).toLocaleString()} &nbsp;·&nbsp; Qty: {batch.quantityAvailable}</span>
                                                             </div>
                                                             <div style={{ width: 18, height: 18, borderRadius: '50%', border: `2px solid ${isSelected ? '#7c3aed' : '#d97706'}`, background: isSelected ? '#7c3aed' : 'transparent', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
@@ -2524,7 +2524,7 @@ export function SaleModal({ inventory, storeName, isAdmin, storeNames, onAdd, on
                                     <option value="">Choose...</option>
                                     {inventory.map(i => (
                                         <option key={i.productId || i.productName} value={i.productId || i.productName}>
-                                            {i.productName} - {i.productId || i.productName}
+                                            {i.productName} ({formatItemCode(i.productId || i.productName)})
                                         </option>
                                     ))}
                                 </select>
@@ -2726,6 +2726,7 @@ export function CartModal({ inventory, storeName, isAdmin, storeNames, onAdd, on
     const [occurredAt, setOccurredAt] = useState(todayIso);
     const [orderType, setOrderType] = useState('Sale');
     const [cartItems, setCartItems] = useState<any[]>([]);
+    const [cartOrderCode, setCartOrderCode] = useState<string>('');
     const [currency, setCurrency] = useState<string>('PKR');
     const gbpRate = 360;
 
@@ -2741,6 +2742,13 @@ export function CartModal({ inventory, storeName, isAdmin, storeNames, onAdd, on
     const [itemColor, setItemColor] = useState('');
 
     const buildEmptyQuantities = (keys: string[]) => keys.reduce((acc, key) => { acc[key] = 0; return acc; }, {} as Record<string, number>);
+
+    // Client-side preview order code (matches server format: ORD-{timestamp}-{random})
+    const generatePreviewOrderCode = () => {
+        const ts = Date.now().toString(36).toUpperCase();
+        const rand = Math.random().toString(36).substr(2, 4).toUpperCase();
+        return `ORD-${ts}-${rand}`;
+    };
 
     const currentSelected = inventory.find(i => (selectedProductId && i.productId === selectedProductId) || (!selectedProductId && i.productName === selectedProductId));
 
@@ -2776,7 +2784,8 @@ export function CartModal({ inventory, storeName, isAdmin, storeNames, onAdd, on
     }, {} as VariantQuantities);
 
     const baseVariantQuantitiesRemaining = selectedItem?.variantQuantitiesRemaining ?? selectedItem?.variantQuantities ?? buildLegacyMaxVariantGrid(selectedItem?.colorQuantitiesRemaining ?? selectedItem?.colorQuantities, selectedItem?.sizeQuantitiesRemaining ?? selectedItem?.sizeQuantities);
-    const variantQuantitiesRemaining = adjustVariantQuantities(baseVariantQuantitiesRemaining, cartVariantQuantities, -1);
+    const reconciledVariantQuantitiesRemaining = scaleVariantQuantitiesToTotal(baseVariantQuantitiesRemaining, selectedItem?.quantityAvailable ?? 0) ?? baseVariantQuantitiesRemaining;
+    const variantQuantitiesRemaining = adjustVariantQuantities(reconciledVariantQuantitiesRemaining, cartVariantQuantities, -1);
     const variantColors = Object.keys(variantQuantitiesRemaining || {});
     const variantSizes = Array.from(new Set(Object.values(variantQuantitiesRemaining || {}).flatMap(sizes => Object.keys(sizes || {}))));
     const hasVariantGrid = variantColors.length > 0 && variantSizes.length > 0;
@@ -2850,6 +2859,10 @@ export function CartModal({ inventory, storeName, isAdmin, storeNames, onAdd, on
             toast.error('Selected product not found. Please reselect from the dropdown.');
             return;
         }
+        // Generate a shared preview order code for this cart if not already set
+        const previewCode = cartOrderCode || generatePreviewOrderCode();
+        if (!cartOrderCode) setCartOrderCode(previewCode);
+
         const finalPrice = currency === 'GBP' ? itemPrice * gbpRate : itemPrice;
         const cartItem: any = {
             productId: selectedItem?.productId || selectedProductId,
@@ -2862,6 +2875,7 @@ export function CartModal({ inventory, storeName, isAdmin, storeNames, onAdd, on
             sizeQuantities: hasSizeTracking ? sizeQuantities : null,
             colorQuantities: hasColorTracking ? colorQuantities : null,
             variantQuantities: hasVariantGrid ? variantQuantities : null,
+            orderCode: previewCode,
         };
         setCartItems(prev => [...prev, cartItem]);
         setSelectedProductId('');
@@ -2878,7 +2892,12 @@ export function CartModal({ inventory, storeName, isAdmin, storeNames, onAdd, on
     };
 
     const handleRemoveFromCart = (index: number) => {
-        setCartItems(prev => prev.filter((_, i) => i !== index));
+        setCartItems(prev => {
+            const next = prev.filter((_, i) => i !== index);
+            // Clear shared order code when cart becomes empty
+            if (next.length === 0) setCartOrderCode('');
+            return next;
+        });
     };
 
     const handleSaveOrder = async () => {
@@ -2900,7 +2919,9 @@ export function CartModal({ inventory, storeName, isAdmin, storeNames, onAdd, on
 
         try {
             const orderCodes: string[] = [];
-            for (const item of cleanItems) {
+            const savedIndices: number[] = [];
+            for (let i = 0; i < cleanItems.length; i++) {
+                const item = cleanItems[i];
                 const res = await fetch('/api/orders', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
@@ -2929,9 +2950,24 @@ export function CartModal({ inventory, storeName, isAdmin, storeNames, onAdd, on
                     return;
                 }
                 orderCodes.push(result.orderCode);
+                const originalIdx = cartItems.findIndex(it => it === item);
+                if (originalIdx >= 0) {
+                    savedIndices.push(originalIdx);
+                }
             }
-            toast.success(orderCodes.length > 1 ? `${orderCodes.length} items saved!` : `Order saved! Code: ${orderCodes[0]}`);
-            onAdd?.({ success: true, orderCode: orderCodes[0] });
+            // Use the first returned order code as the shared code for the entire batch
+            const sharedCode = orderCodes[0] || '';
+            setCartOrderCode(sharedCode);
+            // Update all saved cart items to show the shared order code
+            setCartItems(prev => prev.map((it, idx) => {
+                const codeIdx = savedIndices.indexOf(idx);
+                if (codeIdx >= 0 && sharedCode) {
+                    return { ...it, orderCode: sharedCode };
+                }
+                return it;
+            }));
+            toast.success(orderCodes.length > 1 ? `${orderCodes.length} items saved!` : `Order saved! Code: ${sharedCode}`);
+            onAdd?.({ success: true, orderCode: sharedCode });
             onClose();
         } catch (e: any) {
             toast.error(e?.message || 'Failed to save order');
@@ -2967,7 +3003,7 @@ export function CartModal({ inventory, storeName, isAdmin, storeNames, onAdd, on
                                         <option value="">Choose...</option>
                                         {inventory.map(i => (
                                         <option key={i.productId || i.productName} value={i.productId || i.productName}>
-                                            {i.productName} - {i.productId || i.productName}
+                                            {i.productName} ({formatItemCode(i.productId || i.productName)})
                                         </option>
                                         ))}
                                     </select>
@@ -3061,33 +3097,38 @@ export function CartModal({ inventory, storeName, isAdmin, storeNames, onAdd, on
 
                         {/* RIGHT: Cart */}
                         <div>
-                            <h4 style={{ margin: '0 0 12px 0', fontSize: 14 }}>Cart ({cartItems.length})</h4>
+                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
+                                <h4 style={{ margin: 0, fontSize: 14 }}>Cart ({cartItems.length})</h4>
+                                {cartOrderCode && (
+                                    <span style={{ fontWeight: 700, fontFamily: 'monospace', fontSize: 12, color: 'var(--pri-600)', background: 'var(--surface-2)', padding: '2px 8px', borderRadius: 4 }}>{cartOrderCode}</span>
+                                )}
+                            </div>
                             {cartItems.length === 0 ? (
                                 <div style={{ textAlign: 'center', padding: 32, color: 'var(--text-muted)', fontSize: 13 }}>No items in cart yet.</div>
                             ) : (
                                 <div style={{ maxHeight: 340, overflowY: 'auto', marginBottom: 12 }}>
-                                    <table className="table" style={{ fontSize: 12 }}>
-                                        <thead>
-                                            <tr>
-                                                <th>Product</th>
-                                                <th style={{ textAlign: 'center' }}>Qty</th>
-                                                <th style={{ textAlign: 'right' }}>Price</th>
-                                                <th style={{ textAlign: 'right' }}>Subtotal</th>
-                                                <th></th>
-                                            </tr>
-                                        </thead>
-                                        <tbody>
-                                            {cartItems.map((it, idx) => (
-                                                <tr key={idx}>
-                                                    <td>{it.productName} - {it.productId || it.productName}</td>
-                                                    <td style={{ textAlign: 'center' }}>{it.quantity}{it.extraQty ? ` +${it.extraQty}` : ''}</td>
-                                                    <td style={{ textAlign: 'right' }}>Rs {Number(it.sellingPrice).toLocaleString()}</td>
-                                                    <td style={{ textAlign: 'right', fontWeight: 700 }}>Rs {(Number(it.sellingPrice) * Number(it.quantity)).toLocaleString()}</td>
-                                                    <td><button className="btn btn-sm" style={{ border: 'none', color: 'var(--danger)', background: 'transparent', cursor: 'pointer' }} onClick={() => handleRemoveFromCart(idx)}>✕</button></td>
+                                        <table className="table" style={{ fontSize: 12 }}>
+                                            <thead>
+                                                <tr>
+                                                    <th>Item Name</th>
+                                                    <th style={{ textAlign: 'center' }}>Qty</th>
+                                                    <th style={{ textAlign: 'right' }}>Price</th>
+                                                    <th style={{ textAlign: 'right' }}>Subtotal</th>
+                                                    <th></th>
                                                 </tr>
-                                            ))}
-                                        </tbody>
-                                    </table>
+                                            </thead>
+                                            <tbody>
+                                                {cartItems.map((it, idx) => (
+                                                    <tr key={idx}>
+                                                        <td>{it.productName} - {formatItemCode(it.productId || it.productName)}</td>
+                                                        <td style={{ textAlign: 'center' }}>{it.quantity}{it.extraQty ? ` +${it.extraQty}` : ''}</td>
+                                                        <td style={{ textAlign: 'right' }}>Rs {Number(it.sellingPrice).toLocaleString()}</td>
+                                                        <td style={{ textAlign: 'right', fontWeight: 700 }}>Rs {(Number(it.sellingPrice) * Number(it.quantity)).toLocaleString()}</td>
+                                                        <td><button className="btn btn-sm" style={{ border: 'none', color: 'var(--danger)', background: 'transparent', cursor: 'pointer' }} onClick={() => handleRemoveFromCart(idx)}>✕</button></td>
+                                                    </tr>
+                                                ))}
+                                            </tbody>
+                                        </table>
                                 </div>
                             )}
 
@@ -3366,7 +3407,7 @@ export function ReportModal({ data, onClose }: ReportModalProps) {
             if (isStoreView) {
                 bodyHtml = `<h2>Product Performance</h2>
                 <table><thead><tr>
-                    <th>#</th><th>Product</th><th>Orders</th><th>Units Sold</th>
+                    <th>#</th><th>Item Name</th><th>Orders</th><th>Units Sold</th>
                     <th>Revenue</th><th>My Profit</th>
                 </tr></thead><tbody>
                 ${rows.map((r, i) => `<tr>
@@ -3382,7 +3423,7 @@ export function ReportModal({ data, onClose }: ReportModalProps) {
             } else {
             bodyHtml = `<h2>Product Performance</h2>
             <table><thead><tr>
-                <th>#</th><th>Product</th><th>Orders</th><th>Units Sold</th>
+                <th>#</th><th>Item Name</th><th>Orders</th><th>Units Sold</th>
                 <th>Revenue</th><th>COGS</th><th>Partner's Share</th><th>Gross Profit</th><th>Margin %</th>
             </tr></thead><tbody>
             ${rows.map((r, i) => `<tr>

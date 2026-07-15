@@ -3,6 +3,9 @@ import { usePopup } from '../components/Popup';
 import SectionCard from "../components/SectionCard";
 import Badge from "../components/Badge";
 import Login from "../components/Login";
+import SearchBar from "../components/SearchBar";
+import DetailModal from "../components/DetailModal";
+import { formatItemCode } from "../lib/catalog";
 import { 
   PageProps, 
   InventoryItem, 
@@ -57,6 +60,9 @@ export default function InventoryPage({ user, onLogin }: PageProps) {
     const [returnToWarehouseRow, setReturnToWarehouseRow] = useState<any | null>(null);
     const [showAlerts, setShowAlerts] = useState(false);
     const [inventorySearch, setInventorySearch] = useState('');
+    const [storeSearch, setStoreSearch] = useState('');
+    const [detailInventoryItem, setDetailInventoryItem] = useState<any | null>(null);
+    const [detailStoreInventoryItem, setDetailStoreInventoryItem] = useState<any | null>(null);
     // Persisted across modal open/close — tracks product types hidden/replaced by the user
     const [hiddenProductTypes, setHiddenProductTypes] = useState<string[]>([]);
     const handleHideProductType = (typeName: string) => {
@@ -472,10 +478,10 @@ export default function InventoryPage({ user, onLogin }: PageProps) {
                             })()}
                         </div>
                         <div className="table-wrap">
-                            <table>
+                            <table className="desktop-table-view">
                                 <thead>
                                     <tr>
-                                        <th>Item</th>
+                                        <th>Item Name</th>
                                         <th>Type</th>
                                         <th>Item ID</th>
                                         <th>Cost/pc</th>
@@ -552,7 +558,7 @@ export default function InventoryPage({ user, onLogin }: PageProps) {
                                                     </div>
                                                 </td>
                                                 <td><Badge type="gray">{item.category}</Badge></td>
-                                                <td className="text-muted font-mono" style={{ fontWeight: 700 }}>{item.batchNumber}</td>
+                                                <td className="text-muted font-mono" style={{ fontWeight: 700 }}>{formatItemCode(item.batchNumber)}</td>
                                                 <td>{Rs(item.costPrice)}</td>
                                                 <td className="font-bold" style={{ fontSize: '1.05rem' }}>{availableQty}</td>
                                                 <td className="font-bold">{allotedQty}</td>
@@ -578,6 +584,14 @@ export default function InventoryPage({ user, onLogin }: PageProps) {
                                                 </td>
                                                 <td style={{ textAlign: 'center' }}>
                                                     <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8 }}>
+                                                        <button
+                                                            type="button"
+                                                            className="btn btn-sm"
+                                                            style={{ fontSize: 10, padding: '3px 10px', background: 'rgba(16,185,129,0.1)', color: '#059669', border: '1.5px solid rgba(16,185,129,0.25)' }}
+                                                            onClick={() => setDetailInventoryItem(item)}
+                                                        >
+                                                            Detail
+                                                        </button>
                                                         <button
                                                             type="button"
                                                             className="btn btn-sm btn-glass"
@@ -618,6 +632,79 @@ export default function InventoryPage({ user, onLogin }: PageProps) {
                                     })}
                                 </tbody>
                             </table>
+                            {/* ── Mobile card view ── */}
+                            <div className="mobile-card-view">
+                                {(inventorySearch.trim()
+                                    ? data.inventory.filter(item => {
+                                        const q = inventorySearch.toLowerCase();
+                                        return (
+                                            item.productName?.toLowerCase().includes(q) ||
+                                            (item as any).brand?.toLowerCase().includes(q) ||
+                                            item.category?.toLowerCase().includes(q) ||
+                                            item.batchNumber?.toLowerCase().includes(q)
+                                        );
+                                    })
+                                    : data.inventory
+                                ).map((item, idx) => {
+                                    const picture = item.productImage || (item as any)?.otherVariants?.picture as string | undefined;
+                                    const pictureSrc = (typeof picture === 'string' && picture.trim().length > 0) ? picture : '/images/size_L.webp';
+                                    const allotedStores = Object.entries(data.storeInventory || {})
+                                        .filter(([, items]) => Object.values(items as any).some((si: any) => si.inventoryId === item.id))
+                                        .map(([storeName]) => storeName);
+                                    const allotedQty = allotedQtyByProduct[item.id] || 0;
+                                    const availableQty = Math.max(0, (Number(item.quantityAvailable) || 0) - allotedQty);
+
+                                    return (
+                                        <div className="mobile-card" key={`${item.productName}-${item.batchNumber}-${idx}`} id={`inv-row-${item.batchNumber}`}>
+                                            <div className="mobile-card-header">
+                                                <span className="mobile-card-title">{item.productName}</span>
+                                                {availableQty <= 0 ? (
+                                                    <Badge type="red">Out</Badge>
+                                                ) : availableQty <= (item.lowStockWarning || 5) ? (
+                                                    <Badge type="orange">Low</Badge>
+                                                ) : (
+                                                    <Badge type="green">Good</Badge>
+                                                )}
+                                            </div>
+                                            <div className="mobile-card-row">
+                                                <span className="mobile-card-label">Type</span>
+                                                <span className="mobile-card-value"><Badge type="gray">{item.category}</Badge></span>
+                                            </div>
+                                            <div className="mobile-card-row">
+                                                <span className="mobile-card-label">Item ID</span>
+                                                <span className="mobile-card-value" style={{ fontFamily: 'monospace', fontSize: 11 }}>{formatItemCode(item.batchNumber)}</span>
+                                            </div>
+                                            <div className="mobile-card-row">
+                                                <span className="mobile-card-label">Cost/pc</span>
+                                                <span className="mobile-card-value">{Rs(item.costPrice)}</span>
+                                            </div>
+                                            <div className="mobile-card-row">
+                                                <span className="mobile-card-label">Qty Available</span>
+                                                <span className="mobile-card-value" style={{ fontSize: '1.05rem' }}>{availableQty}</span>
+                                            </div>
+                                            <div className="mobile-card-row">
+                                                <span className="mobile-card-label">Allotted</span>
+                                                <span className="mobile-card-value">{allotedQty}</span>
+                                            </div>
+                                            {Array.isArray(allotedStores) && allotedStores.length > 0 && (
+                                                <div className="mobile-card-row">
+                                                    <span className="mobile-card-label">Stores</span>
+                                                    <span className="mobile-card-value" style={{ display: 'flex', flexWrap: 'wrap', gap: 4, justifyContent: 'flex-end' }}>
+                                                        {allotedStores.map((s) => (
+                                                            <Badge key={s} type="blue" style={{ fontSize: 10 }}>{s}</Badge>
+                                                        ))}
+                                                    </span>
+                                                </div>
+                                            )}
+                                            <div className="mobile-card-actions">
+                                                <button className="btn btn-sm" style={{ fontSize: 10, padding: '4px 10px', background: 'rgba(16,185,129,0.1)', color: '#059669', border: '1.5px solid rgba(16,185,129,0.25)' }} onClick={() => setDetailInventoryItem(item)}>Detail</button>
+                                                <button className="btn btn-sm btn-glass" style={{ fontWeight: 800, color: 'var(--pri-700)', borderColor: 'rgba(99, 102, 241, 0.22)', background: 'rgba(99, 102, 241, 0.07)' }} onClick={() => { setEditingInventoryItem(item); setShowEditInventoryModal(true); }}>Edit</button>
+                                                <button className="btn btn-sm btn-glass" onClick={() => handleDeleteInventory(item)} style={{ color: 'var(--danger)', borderColor: 'rgba(239, 68, 68, 0.25)', background: 'rgba(239, 68, 68, 0.08)', width: 36, padding: 0, display: 'inline-flex', alignItems: 'center', justifyContent: 'center' }}>{IC.trash}</button>
+                                            </div>
+                                        </div>
+                                    );
+                                })}
+                            </div>
                         </div>
                     </SectionCard>
                 )}
@@ -629,12 +716,19 @@ export default function InventoryPage({ user, onLogin }: PageProps) {
                         <button className="btn btn-primary" onClick={() => setShowAllotModal(true)}>+ Alot to Stores</button>
                     ) : undefined}
                 >
+                    <SearchBar value={storeSearch} onChange={setStoreSearch} placeholder="Search by store name, product name…" resultCount={stockProvided.filter(s => {
+                        if (!(isAdmin || storeNameMatches(s.storeName))) return false;
+                        if (!storeSearch) return true;
+                        const q = storeSearch.toLowerCase();
+                        return (s.storeName || '').toLowerCase().includes(q) || (s.productName || '').toLowerCase().includes(q);
+                    }).length} />
                     <div className="table-wrap">
-                        <table>
+                        <table className="desktop-table-view">
                             <thead>
                                 <tr>
                                     {isAdmin && <th>Shop Name</th>}
                                     <th>Item Name</th>
+                                    <th>Item ID</th>
                                     <th>Owner Supply Price</th>
                                     <th>Total Sent</th>
                                     <th>In Shop Stock</th>
@@ -645,13 +739,20 @@ export default function InventoryPage({ user, onLogin }: PageProps) {
                                 </tr>
                             </thead>
                             <tbody>
-                                    {stockProvided.filter(s => isAdmin || storeNameMatches(s.storeName)).length === 0 ? (
-                                    <tr><td colSpan={isAdmin ? 9 : 7} style={{ textAlign: 'center', padding: 40 }} className="text-muted">No stock available currently.</td></tr>
-                                ) : (
-                                    stockProvided.filter(s => isAdmin || storeNameMatches(s.storeName)).map((item, idx) => (
+                                    {(() => {
+                                        const rows = stockProvided.filter(s => {
+                                            if (!(isAdmin || storeNameMatches(s.storeName))) return false;
+                                            if (!storeSearch) return true;
+                                            const q = storeSearch.toLowerCase();
+                                            return (s.storeName || '').toLowerCase().includes(q) || (s.productName || '').toLowerCase().includes(q);
+                                        });
+                                        return rows.length === 0 ? (
+                                            <tr><td colSpan={isAdmin ? 10 : 8} style={{ textAlign: 'center', padding: 40 }} className="text-muted">{storeSearch ? 'No stock matches your search.' : 'No stock available currently.'}</td></tr>
+                                        ) : rows.map((item, idx) => (
                                         <tr key={item.id || idx} id={`store-inv-row-${item.id || idx}`}>
                                             {isAdmin && <td className="font-bold" style={{ color: 'var(--pri-900)' }}>{item.storeName}</td>}
                                             <td className="font-bold">{item.productName}</td>
+                                            <td className="muted" style={{fontWeight:600, fontFamily:'monospace', fontSize:11}}>{formatItemCode(item.batchNumber || item.inventoryId)}</td>
                                             <td className="text-muted font-mono" style={{ fontWeight: 600 }}>
                                                 {item.ownerSupplyPrice ? `Rs ${Number(item.ownerSupplyPrice).toLocaleString()}` : '-'}
                                             </td>
@@ -668,63 +769,59 @@ export default function InventoryPage({ user, onLogin }: PageProps) {
                                             <td>
                                                 <Badge type="purple">{item.owner || '—'}</Badge>
                                             </td>
-                                            <td style={{ textAlign: 'center' }}>
+                                                <td style={{ textAlign: 'center' }}>
                                                     <div style={{ display: 'flex', gap: 8, justifyContent: 'center', alignItems: 'center', flexWrap: 'wrap' }}>
+                                                        <button
+                                                            type="button"
+                                                            className="btn btn-sm"
+                                                            style={{ fontSize: 10, padding: '3px 10px', background: 'rgba(16,185,129,0.1)', color: '#059669', border: '1.5px solid rgba(16,185,129,0.25)' }}
+                                                            onClick={() => setDetailStoreInventoryItem(item)}
+                                                        >
+                                                            Detail
+                                                        </button>
                                                         {isAdmin && (
                                                             <button
                                                                 type="button"
                                                                 className="btn btn-sm"
+                                                                style={{ fontWeight: 800, color: 'var(--pri-700)', borderColor: 'rgba(99, 102, 241, 0.22)', background: 'rgba(99, 102, 241, 0.07)', boxShadow: '0 8px 18px rgba(99, 102, 241, 0.08)' }}
                                                                 onClick={() => {
-                                                                const warehouseItem = data.inventory.find((i: any) => i.id === item.inventoryId);
-                                                                // Compute per-variant warehouse remaining = warehouse total - OTHER stores' allotments.
-                                                                // This is used as the cap in Edit Allotment so "X left" shows the correct number.
-                                                                const warehouseVariants = warehouseItem?.variantQuantities || {};
-                                                                const warehouseVariantRemaining: Record<string, Record<string, number>> = {};
-                                                                if (warehouseItem && Object.keys(warehouseVariants).length > 0) {
-                                                                    Object.entries(warehouseVariants).forEach(([color, sizes]: [string, any]) => {
-                                                                        warehouseVariantRemaining[color] = {};
-                                                                        Object.entries(sizes || {}).forEach(([size, total]: [string, any]) => {
-                                                                            let otherStoresAllotted = 0;
-                                                                            Object.values(data.storeInventory || {}).forEach((storeItems: any) => {
-                                                                                Object.values(storeItems || {}).forEach((si: any) => {
-                                                                                    if (si.inventoryId === item.inventoryId && si.id !== item.id) {
-                                                                                        otherStoresAllotted += Number((si.variantQuantitiesAssigned?.[color])?.[size] || 0);
-                                                                                    }
+                                                                    const warehouseItem = data.inventory.find((i: any) => i.id === item.inventoryId);
+                                                                    const warehouseVariants = warehouseItem?.variantQuantities || {};
+                                                                    const warehouseVariantRemaining: Record<string, Record<string, number>> = {};
+                                                                    if (warehouseItem && Object.keys(warehouseVariants).length > 0) {
+                                                                        Object.entries(warehouseVariants).forEach(([color, sizes]: [string, any]) => {
+                                                                            warehouseVariantRemaining[color] = {};
+                                                                            Object.entries(sizes || {}).forEach(([size, total]: [string, any]) => {
+                                                                                let otherStoresAllotted = 0;
+                                                                                Object.values(data.storeInventory || {}).forEach((storeItems: any) => {
+                                                                                    Object.values(storeItems || {}).forEach((si: any) => {
+                                                                                        if (si.inventoryId === item.inventoryId && si.id !== item.id) {
+                                                                                            otherStoresAllotted += Number((si.variantQuantitiesAssigned?.[color])?.[size] || 0);
+                                                                                        }
+                                                                                    });
                                                                                 });
+                                                                                warehouseVariantRemaining[color][size] = Math.max(0, Number(total) - otherStoresAllotted);
                                                                             });
-                                                                            warehouseVariantRemaining[color][size] = Math.max(0, Number(total) - otherStoresAllotted);
                                                                         });
+                                                                    }
+                                                                    setEditingRow({
+                                                                        ...item,
+                                                                        sizeQuantities: warehouseItem?.sizeQuantities || {},
+                                                                        colorQuantities: warehouseItem?.colorQuantities || {},
+                                                                        variantQuantities: warehouseItem?.variantQuantities || {},
+                                                                        totalQty: warehouseItem?.quantityAvailable || 0,
+                                                                        allotedQty: allotedQtyByProduct[item.inventoryId] || 0,
+                                                                        sizeQuantitiesRemaining: item.sizeQuantitiesRemaining ?? warehouseItem?.sizeQuantitiesRemaining ?? {},
+                                                                        colorQuantitiesRemaining: item.colorQuantitiesRemaining ?? warehouseItem?.colorQuantitiesRemaining ?? {},
+                                                                        variantQuantitiesRemaining: item.variantQuantitiesRemaining ?? warehouseItem?.variantQuantitiesRemaining ?? {},
+                                                                        warehouseVariantQuantitiesRemaining: warehouseVariantRemaining,
                                                                     });
-                                                                }
-                                                                setEditingRow({
-                                                                    ...item,
-                                                                    // warehouse totals (fallbacks)
-                                                                    sizeQuantities: warehouseItem?.sizeQuantities || {},
-                                                                    colorQuantities: warehouseItem?.colorQuantities || {},
-                                                                    variantQuantities: warehouseItem?.variantQuantities || {},
-                                                                    totalQty: warehouseItem?.quantityAvailable || 0,
-                                                                    allotedQty: allotedQtyByProduct[item.inventoryId] || 0,
-                                                                    // authoritative remaining sources (prefer store row's remaining fields)
-                                                                    sizeQuantitiesRemaining: item.sizeQuantitiesRemaining ?? warehouseItem?.sizeQuantitiesRemaining ?? {},
-                                                                    colorQuantitiesRemaining: item.colorQuantitiesRemaining ?? warehouseItem?.colorQuantitiesRemaining ?? {},
-                                                                    variantQuantitiesRemaining: item.variantQuantitiesRemaining ?? warehouseItem?.variantQuantitiesRemaining ?? {},
-                                                                    // per-variant warehouse remaining for correct Edit Allotment caps
-                                                                    warehouseVariantQuantitiesRemaining: warehouseVariantRemaining,
-                                                                });
-                                                                setShowEditModalUI(true);
-                                                            }}
-                                                                style={{
-                                                                    fontWeight: 800,
-                                                                    color: 'var(--pri-700)',
-                                                                    borderColor: 'rgba(99, 102, 241, 0.22)',
-                                                                    background: 'rgba(99, 102, 241, 0.07)',
-                                                                    boxShadow: '0 8px 18px rgba(99, 102, 241, 0.08)',
-                                                                }}
-                                                            >
-                                                                Edit
-                                                            </button>
+                                                                     setShowEditModalUI(true);
+                                                                 }}
+                                                             >
+                                                                 Edit
+                                                                 </button>
                                                         )}
-                                                        {/* Return to Main Store — always visible to shop managers */}
                                                         <button
                                                             type="button"
                                                             className="btn btn-sm"
@@ -766,15 +863,87 @@ export default function InventoryPage({ user, onLogin }: PageProps) {
                                                     </div>
                                                 </td>
                                         </tr>
-                                    ))
-                                )}
+                                    ));
+                                })()}
                             </tbody>
-                        </table>
-                    </div>
+                            </table>
+                            {/* ── Mobile card view ── */}
+                            <div className="mobile-card-view">
+                                {(() => {
+                                    const rows = stockProvided.filter(s => {
+                                        if (!(isAdmin || storeNameMatches(s.storeName))) return false;
+                                        if (!storeSearch) return true;
+                                        const q = storeSearch.toLowerCase();
+                                        return (s.storeName || '').toLowerCase().includes(q) || (s.productName || '').toLowerCase().includes(q);
+                                    });
+                                    return rows.length === 0 ? (
+                                        <div style={{ textAlign: 'center', padding: 40 }} className="text-muted">{storeSearch ? 'No stock matches your search.' : 'No stock available currently.'}</div>
+                                    ) : rows.map((item, idx) => (
+                                        <div className="mobile-card" key={item.id || idx} id={`store-inv-row-${item.id || idx}`}>
+                                            <div className="mobile-card-header">
+                                                <span className="mobile-card-title">{item.productName}</span>
+                                                <span className="mobile-card-badge" style={{ fontSize: 10, fontWeight: 700, color: 'var(--pri-900)' }}>{item.storeName}</span>
+                                            </div>
+                                            <div className="mobile-card-row">
+                                                <span className="mobile-card-label">Item ID</span>
+                                                <span className="mobile-card-value" style={{ fontFamily: 'monospace', fontSize: 11 }}>{formatItemCode(item.batchNumber || item.inventoryId)}</span>
+                                            </div>
+                                            <div className="mobile-card-row">
+                                                <span className="mobile-card-label">Supply Price</span>
+                                                <span className="mobile-card-value text-muted">{item.ownerSupplyPrice ? `Rs ${Number(item.ownerSupplyPrice).toLocaleString()}` : '-'}</span>
+                                            </div>
+                                            <div className="mobile-card-row">
+                                                <span className="mobile-card-label">Total Sent</span>
+                                                <span className="mobile-card-value"><Badge type="gray">{item.quantityAssigned}</Badge></span>
+                                            </div>
+                                            <div className="mobile-card-row">
+                                                <span className="mobile-card-label">In Stock</span>
+                                                <span className="mobile-card-value" style={{ color: Math.max(0, item.quantityRemaining) > 0 ? 'inherit' : 'var(--danger)', fontSize: '1rem' }}>{Math.max(0, item.quantityRemaining)}</span>
+                                            </div>
+                                            {isAdmin && (
+                                                <div className="mobile-card-row">
+                                                    <span className="mobile-card-label">Shop Cut</span>
+                                                    <span className="mobile-card-value"><Badge type="purple">{item.commissionPercent}%</Badge></span>
+                                                </div>
+                                            )}
+                                            <div className="mobile-card-row">
+                                                <span className="mobile-card-label">Items Sold</span>
+                                                <span className="mobile-card-value"><Badge type={Math.max(0, item.quantityAssigned - item.quantityRemaining) > 0 ? 'blue' : 'gray'}>{Math.max(0, item.quantityAssigned - item.quantityRemaining)}</Badge></span>
+                                            </div>
+                                            <div className="mobile-card-row">
+                                                <span className="mobile-card-label">Alloted By</span>
+                                                <span className="mobile-card-value"><Badge type="purple">{item.owner || '—'}</Badge></span>
+                                            </div>
+                                            <div className="mobile-card-actions">
+                                                <button className="btn btn-sm" style={{ fontSize: 10, padding: '4px 10px', background: 'rgba(16,185,129,0.1)', color: '#059669', border: '1.5px solid rgba(16,185,129,0.25)' }} onClick={() => setDetailStoreInventoryItem(item)}>Detail</button>
+                                                {isAdmin && (
+                                                    <button className="btn btn-sm" style={{ fontWeight: 800, color: 'var(--pri-700)', borderColor: 'rgba(99, 102, 241, 0.22)', background: 'rgba(99, 102, 241, 0.07)' }} onClick={() => {
+                                                        const warehouseItem = data.inventory.find((i: any) => i.id === item.inventoryId);
+                                                        setEditingRow({
+                                                            ...item,
+                                                            sizeQuantities: warehouseItem?.sizeQuantities || {},
+                                                            colorQuantities: warehouseItem?.colorQuantities || {},
+                                                            variantQuantities: warehouseItem?.variantQuantities || {},
+                                                            totalQty: warehouseItem?.quantityAvailable || 0,
+                                                            allotedQty: allotedQtyByProduct[item.inventoryId] || 0,
+                                                        });
+                                                        setShowEditModalUI(true);
+                                                    }}>Edit</button>
+                                                )}
+                                                <button className="btn btn-sm" style={{ fontSize: 11, fontWeight: 800, color: '#1e40af', borderColor: 'rgba(59,130,246,0.3)', background: 'rgba(59,130,246,0.08)' }} onClick={() => setReturnToWarehouseRow(item)}>Return</button>
+                                                {isAdmin && (
+                                                    <button className="btn btn-sm btn-glass" onClick={() => setDeletingAllotmentRow(item)} style={{ color: 'var(--danger)', borderColor: 'rgba(239, 68, 68, 0.25)', background: 'rgba(239, 68, 68, 0.08)', width: 36, padding: 0, display: 'inline-flex', alignItems: 'center', justifyContent: 'center' }}>{IC.trash}</button>
+                                                )}
+                                            </div>
+                                        </div>
+                                    ))
+                                })()}
+                            </div>
+                        </div>
                 </SectionCard>
 
                 {isSuperAdmin && (() => {
-                    const extras: Array<{ storeName: string; productName: string; extraQty: number; date: string; costPerPc: number }> = [];
+                    const extras: Array<{ storeName: string; productName: string; extraQty: number; date: string; costPerPc: number; batchNumber: string }> = [];
                     Object.entries(data.storeInventory || {}).forEach(([sName, items]) => {
                         Object.values(items).forEach((si: any) => {
                             if ((si.extraQty || 0) > 0) {
@@ -785,6 +954,7 @@ export default function InventoryPage({ user, onLogin }: PageProps) {
                                     extraQty: si.extraQty,
                                     date: si.created_at ? new Date(si.created_at).toLocaleDateString() : '—',
                                     costPerPc: inv?.costPrice || 0,
+                                    batchNumber: inv?.batchNumber || si.batchNumber || '',
                                 });
                             }
                         });
@@ -797,12 +967,13 @@ export default function InventoryPage({ user, onLogin }: PageProps) {
                             icon={<svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d="M20 12v10H4V12"/><rect x="2" y="7" width="20" height="5"/><path d="M12 22V7"/><path d="M12 7H7.5a2.5 2.5 0 0 1 0-5C11 2 12 7 12 7z"/><path d="M12 7h4.5a2.5 2.5 0 0 0 0-5C13 2 12 7 12 7z"/></svg>}
                         >
                             <div className="table-wrap">
-                                <table>
+                                <table className="desktop-table-view">
                                     <thead>
                                         <tr>
                                             <th>Date</th>
                                             <th>Store</th>
-                                            <th>Product</th>
+                                            <th>Item Name</th>
+                                            <th>Item ID</th>
                                             <th>Extra Qty</th>
                                             <th>Cost/PC</th>
                                             <th>Total Cost</th>
@@ -814,6 +985,7 @@ export default function InventoryPage({ user, onLogin }: PageProps) {
                                                 <td className="text-muted" style={{ fontSize: '0.75rem' }}>{e.date}</td>
                                                 <td className="font-bold" style={{ color: 'var(--pri-700)' }}>{e.storeName}</td>
                                                 <td className="font-bold">{e.productName}</td>
+                                                <td className="muted" style={{fontWeight:600, fontFamily:'monospace', fontSize:11}}>{formatItemCode(e.batchNumber)}</td>
                                                 <td><Badge type="orange">{e.extraQty}</Badge></td>
                                                 <td className="text-muted">{e.costPerPc ? `Rs ${e.costPerPc.toLocaleString()}` : '—'}</td>
                                                 <td className="font-bold" style={{ color: 'var(--danger)' }}>
@@ -823,6 +995,37 @@ export default function InventoryPage({ user, onLogin }: PageProps) {
                                         ))}
                                     </tbody>
                                 </table>
+                                {/* ── Mobile card view ── */}
+                                <div className="mobile-card-view">
+                                    {extras.map((e, i) => (
+                                        <div className="mobile-card" key={i}>
+                                            <div className="mobile-card-header">
+                                                <span className="mobile-card-title">{e.productName}</span>
+                                                <span className="mobile-card-value" style={{ fontSize: 10, color: 'var(--text-muted)' }}>{e.date}</span>
+                                            </div>
+                                            <div className="mobile-card-row">
+                                                <span className="mobile-card-label">Store</span>
+                                                <span className="mobile-card-value" style={{ color: 'var(--pri-700)' }}>{e.storeName}</span>
+                                            </div>
+                                            <div className="mobile-card-row">
+                                                <span className="mobile-card-label">Item ID</span>
+                                                <span className="mobile-card-value" style={{ fontFamily: 'monospace', fontSize: 11 }}>{formatItemCode(e.batchNumber)}</span>
+                                            </div>
+                                            <div className="mobile-card-row">
+                                                <span className="mobile-card-label">Extra Qty</span>
+                                                <span className="mobile-card-value"><Badge type="orange">{e.extraQty}</Badge></span>
+                                            </div>
+                                            <div className="mobile-card-row">
+                                                <span className="mobile-card-label">Cost/PC</span>
+                                                <span className="mobile-card-value text-muted">{e.costPerPc ? `Rs ${e.costPerPc.toLocaleString()}` : '—'}</span>
+                                            </div>
+                                            <div className="mobile-card-row">
+                                                <span className="mobile-card-label">Total Cost</span>
+                                                <span className="mobile-card-value" style={{ color: 'var(--danger)' }}>{e.costPerPc ? `Rs ${(e.extraQty * e.costPerPc).toLocaleString()}` : '—'}</span>
+                                            </div>
+                                        </div>
+                                    ))}
+                                </div>
                             </div>
                             <div style={{ marginTop: 10, padding: '8px 12px', background: 'var(--surface-2)', borderRadius: 8, fontWeight: 700, color: 'var(--danger)' }}>
                                 Total gifted cost: Rs {totalExtraCost.toLocaleString()}
@@ -1295,6 +1498,19 @@ export default function InventoryPage({ user, onLogin }: PageProps) {
                     box-shadow: 0 10px 20px rgba(239, 68, 68, 0.18);
                 }
             `}</style>
-        </>
-    );
+
+        <DetailModal
+          open={!!detailInventoryItem}
+          onClose={() => setDetailInventoryItem(null)}
+          title={detailInventoryItem ? `Inventory Details — ${detailInventoryItem.productName}` : undefined}
+          data={detailInventoryItem || {}}
+        />
+        <DetailModal
+          open={!!detailStoreInventoryItem}
+          onClose={() => setDetailStoreInventoryItem(null)}
+          title={detailStoreInventoryItem ? `Store Inventory Details — ${detailStoreInventoryItem.productName}` : undefined}
+          data={detailStoreInventoryItem || {}}
+        />
+    </>
+);
 }

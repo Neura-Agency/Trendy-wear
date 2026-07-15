@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback, useRef } from 'react';
 import Login from '../components/Login';
 import CustomSelect from '../components/CustomSelect';
 import WeekMonthPicker from '../components/WeekMonthPicker';
+import DetailModal from '../components/DetailModal';
 import { PageProps, Order, Expense } from '../types';
 import { usePopup } from '../components/Popup';
 import {
@@ -138,7 +139,7 @@ function SheetTable<T>({ cols, rows, totalsRow, maxRows = 500 }: SheetTableProps
 
   return (
     <div style={{ overflowX: 'auto', borderRadius: 8, border: '1px solid #d1d5db', boxShadow: '0 1px 3px rgba(0,0,0,0.06)' }}>
-      <table style={{ borderCollapse: 'collapse', width: '100%', minWidth: 600 }}>
+      <table className="desktop-table-view" style={{ borderCollapse: 'collapse', width: '100%', minWidth: 600 }}>
         <thead>
           <tr>
             {visibleCols.map(c => (
@@ -273,6 +274,7 @@ export default function ReportsPage({ user, onLogin }: PageProps) {
   // UI state
   const [activeTab, setActiveTab] = useState<number>(0);
   const [showChart, setShowChart] = useState(true);
+  const [detailRow, setDetailRow] = useState<any | null>(null);
 
   // Check if store owner — force their store filter
   const effectiveStoreFilter = isStoreOwner ? myStoreName! : storeFilter;
@@ -802,6 +804,7 @@ export default function ReportsPage({ user, onLogin }: PageProps) {
                   { key: 'qty',        label: 'Qty Sold',   align: 'right' },
                   { key: 'revenue',    label: 'Revenue',    align: 'right', value: (r: any) => r.revenue,    render: (r: any) => <b>{Rs(r.revenue)}</b> },
                   { key: 'profit',     label: 'Profit',     align: 'right', render: (r: any) => <span style={{ color: r.profit >= 0 ? C.green : C.red, fontWeight: 600 }}>{Rs(r.profit)}</span> },
+                  { key: 'detail',     label: '',           align: 'center', render: (r: any) => <button type="button" className="btn btn-sm" style={{ fontSize: 10, padding: '3px 10px', background: 'rgba(16,185,129,0.1)', color: '#059669', border: '1.5px solid rgba(16,185,129,0.25)' }} onClick={() => setDetailRow(r)}>Detail</button> },
                 ]}
                 rows={prodRows}
                 totalsRow={{
@@ -892,6 +895,7 @@ export default function ReportsPage({ user, onLogin }: PageProps) {
                 { key: 'commission', label: 'Commission',  align: 'right', render: (r: any) => Rs(r.commission) },
                 { key: 'shipment',   label: 'Shipping',    align: 'right', render: (r: any) => Rs(r.shipment) },
                 { key: 'netProfit',  label: 'Net Profit',  align: 'right', render: (r: any) => <span style={{ color: r.netProfit >= 0 ? C.green : C.red, fontWeight: 700 }}>{Rs(r.netProfit)}</span> },
+                { key: 'detail',     label: '',           align: 'center', render: (r: any) => <button type="button" className="btn btn-sm" style={{ fontSize: 10, padding: '3px 10px', background: 'rgba(16,185,129,0.1)', color: '#059669', border: '1.5px solid rgba(16,185,129,0.25)' }} onClick={() => setDetailRow(r)}>Detail</button> },
               ]}
               rows={storeRows}
               totalsRow={{
@@ -908,6 +912,13 @@ export default function ReportsPage({ user, onLogin }: PageProps) {
           </div>
         )}
       </div>
+
+      <DetailModal
+        open={!!detailRow}
+        onClose={() => setDetailRow(null)}
+        title={detailRow ? (detailRow.product ? `Product Details — ${detailRow.product}` : detailRow.store ? `Store Details — ${detailRow.store}` : 'Details') : undefined}
+        data={detailRow || {}}
+      />
     </>
   );
 }

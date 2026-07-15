@@ -2,6 +2,8 @@ import { useState, useEffect, useCallback } from 'react';
 import SectionCard from '../components/SectionCard';
 import Badge from '../components/Badge';
 import Login from '../components/Login';
+import SearchBar from '../components/SearchBar';
+import DetailModal from '../components/DetailModal';
 import { usePopup } from '../components/Popup';
 import { PageProps, Owner, OwnerPayout } from '../types';
 
@@ -343,9 +345,12 @@ export default function OwnersPage({ user, onLogin }: PageProps) {
   const [showTransfer, setShowTransfer] = useState(false);
   const [transferToOwner, setTransferToOwner] = useState<string | undefined>(undefined);
   const [transfers, setTransfers] = useState<any[]>([]);
+  const [payoutSearch, setPayoutSearch] = useState('');
   const [stores, setStores] = useState<Record<string, any>>({});
   const [orders, setOrders] = useState<any[]>([]);
   const [expenses, setExpenses] = useState<any[]>([]);
+  const [detailPayout, setDetailPayout] = useState<any | null>(null);
+  const [detailTransfer, setDetailTransfer] = useState<any | null>(null);
 
   // ── Fetch everything in parallel ─────────────────────────────────────
   const refresh = useCallback(async () => {
@@ -895,8 +900,14 @@ export default function OwnersPage({ user, onLogin }: PageProps) {
           {payouts.length === 0 ? (
             <p style={{ color: 'var(--text-muted)', padding: '16px 0', textAlign: 'center' }}>No payouts recorded yet.</p>
           ) : (
-            <div className="table-wrap">
-              <table>
+            <>
+              <SearchBar value={payoutSearch} onChange={setPayoutSearch} placeholder="Search by owner name, notes…" resultCount={payouts.filter(p => {
+                if (!payoutSearch) return true;
+                const q = payoutSearch.toLowerCase();
+                return (p.ownerName || '').toLowerCase().includes(q) || (p.notes || '').toLowerCase().includes(q);
+              }).length} />
+              <div className="table-wrap">
+              <table className="desktop-table-view">
                 <thead>
                   <tr>
                     <th>Owner</th>
@@ -908,7 +919,11 @@ export default function OwnersPage({ user, onLogin }: PageProps) {
                   </tr>
                 </thead>
                 <tbody>
-                  {payouts.map((p, idx) => {
+                  {payouts.filter(p => {
+                    if (!payoutSearch) return true;
+                    const q = payoutSearch.toLowerCase();
+                    return (p.ownerName || '').toLowerCase().includes(q) || (p.notes || '').toLowerCase().includes(q);
+                  }).map((p, idx) => {
                     const ownerIdx = owners.findIndex(o => o.id === p.ownerId);
                     return (
                       <tr key={p.id}>
@@ -930,11 +945,19 @@ export default function OwnersPage({ user, onLogin }: PageProps) {
                         <td style={{ fontSize: 12 }}>{new Date(p.paidAt).toLocaleDateString('en-PK', { day: '2-digit', month: 'short', year: 'numeric' })}</td>
                         <td style={{ fontSize: 12, color: 'var(--text-muted)' }}>{p.notes || '—'}</td>
                         <td>
-                          <button
-                            className="btn btn-secondary btn-sm"
-                            style={{ color: 'var(--red-500, #ef4444)', padding: '3px 8px' }}
-                            onClick={() => handleDeletePayout(p)}
-                          >Delete</button>
+                          <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
+                            <button
+                              type="button"
+                              className="btn btn-sm"
+                              style={{ fontSize: 10, padding: '3px 10px', background: 'rgba(16,185,129,0.1)', color: '#059669', border: '1.5px solid rgba(16,185,129,0.25)' }}
+                              onClick={() => setDetailPayout(p)}
+                            >Detail</button>
+                            <button
+                              className="btn btn-secondary btn-sm"
+                              style={{ color: 'var(--red-500, #ef4444)', padding: '3px 8px' }}
+                              onClick={() => handleDeletePayout(p)}
+                            >Delete</button>
+                          </div>
                         </td>
                       </tr>
                     );
@@ -947,9 +970,48 @@ export default function OwnersPage({ user, onLogin }: PageProps) {
                     <td colSpan={4} />
                   </tr>
                 </tfoot>
-              </table>
-            </div>
-          )}
+                </table>
+                {/* ── Mobile card view ── */}
+                <div className="mobile-card-view">
+                  {payouts.filter(p => {
+                    if (!payoutSearch) return true;
+                    const q = payoutSearch.toLowerCase();
+                    return (p.ownerName || '').toLowerCase().includes(q) || (p.notes || '').toLowerCase().includes(q);
+                  }).map((p, idx) => {
+                    const ownerIdx = owners.findIndex(o => o.id === p.ownerId);
+                    return (
+                      <div className="mobile-card" key={p.id}>
+                        <div className="mobile-card-header">
+                          <span className="mobile-card-title">
+                            <span style={{ display: 'inline-flex', alignItems: 'center', gap: 8 }}>
+                              <span style={{ width: 28, height: 28, borderRadius: '50%', background: ['#ede9fe','#dbeafe','#dcfce7','#ffedd5'][ownerIdx % 4] || '#f3f4f6', color: ['#7c3aed','#2563eb','#16a34a','#ea580c'][ownerIdx % 4] || '#6b7280', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', fontWeight: 700, fontSize: 12 }}>{(p.ownerName || '?').charAt(0).toUpperCase()}</span>
+                              {p.ownerName || '—'}
+                            </span>
+                          </span>
+                          <span className="mobile-card-value" style={{ color: 'var(--green-600)', fontWeight: 800 }}>{Rs(p.amount)}</span>
+                        </div>
+                        <div className="mobile-card-row">
+                          <span className="mobile-card-label">Period</span>
+                          <span className="mobile-card-value">{p.periodFrom} → {p.periodTo}</span>
+                        </div>
+                        <div className="mobile-card-row">
+                          <span className="mobile-card-label">Paid At</span>
+                          <span className="mobile-card-value">{new Date(p.paidAt).toLocaleDateString('en-PK', { day: '2-digit', month: 'short', year: 'numeric' })}</span>
+                        </div>
+                        <div className="mobile-card-row">
+                          <span className="mobile-card-label">Notes</span>
+                          <span className="mobile-card-value text-muted">{p.notes || '—'}</span>
+                        </div>
+                        <div className="mobile-card-actions">
+                          <button className="btn btn-sm" style={{ fontSize: 10, padding: '4px 10px', background: 'rgba(16,185,129,0.1)', color: '#059669', border: '1.5px solid rgba(16,185,129,0.25)' }} onClick={() => setDetailPayout(p)}>Detail</button>
+                          <button className="btn btn-secondary btn-sm" style={{ color: 'var(--red-500, #ef4444)', padding: '4px 8px' }} onClick={() => handleDeletePayout(p)}>Delete</button>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            </>)}
         </SectionCard>
 
         {/* ── Owner Transfers ── */}
@@ -1059,7 +1121,13 @@ export default function OwnersPage({ user, onLogin }: PageProps) {
                           )}
 
                           {/* Delete button */}
-                          <div style={{ marginTop: 10, textAlign: 'right' }}>
+                          <div style={{ marginTop: 10, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                            <button
+                              type="button"
+                              className="btn btn-sm"
+                              style={{ fontSize: 10, padding: '3px 10px', background: 'rgba(16,185,129,0.1)', color: '#059669', border: '1.5px solid rgba(16,185,129,0.25)' }}
+                              onClick={() => setDetailTransfer(t)}
+                            >Detail</button>
                             <button
                               className="btn btn-secondary btn-sm"
                               style={{ color: 'var(--red-500, #ef4444)', padding: '4px 12px', fontSize: 12 }}
@@ -1075,6 +1143,19 @@ export default function OwnersPage({ user, onLogin }: PageProps) {
           )}
         </SectionCard>
       </div>
+
+      <DetailModal
+        open={!!detailPayout}
+        onClose={() => setDetailPayout(null)}
+        title={detailPayout ? `Payout Details — ${detailPayout.ownerName || detailPayout.id}` : undefined}
+        data={detailPayout || {}}
+      />
+      <DetailModal
+        open={!!detailTransfer}
+        onClose={() => setDetailTransfer(null)}
+        title={detailTransfer ? `Transfer Details — ${detailTransfer.ownerName || detailTransfer.id}` : undefined}
+        data={detailTransfer || {}}
+      />
     </>
   );
 }

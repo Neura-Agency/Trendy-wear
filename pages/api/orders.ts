@@ -15,10 +15,25 @@ function num(v: any): number {
   return Number.isFinite(n) ? n : 0
 }
 
-function generateOrderCode(): string {
-  const ts = Date.now().toString(36).toUpperCase()
-  const rand = Math.random().toString(36).substr(2, 4).toUpperCase()
-  return `ORD-${ts}-${rand}`
+async function generateOrderCode(
+  existingCode?: string,
+): Promise<string> {
+  let code = existingCode ? existingCode.trim() : ''
+  for (let attempt = 0; attempt < 5; attempt++) {
+    if (!code) {
+      const ts = Date.now().toString(36).toUpperCase()
+      const extra = Math.random().toString(36).substr(2, 8).toUpperCase()
+      code = `ORD-${ts}-${extra}`
+    }
+    const { data, error } = await supabaseAdmin
+      .from(TABLES.ORDERS)
+      .select('id')
+      .eq('order_code', code)
+      .maybeSingle()
+    if (!error && !data) break
+    code = ''
+  }
+  return code
 }
 
 export default async function handler(req: NextApiRequest, res: NextApiResponse) {
@@ -77,7 +92,8 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
           stores:store_id ( name ),
           store_inventory:store_inventory_id (
             inventory:inventory_id (
-              cost_price
+              cost_price,
+              batch_number
             )
           )
         `)
@@ -122,6 +138,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
           includedInPayout: row.included_in_payout ?? false,
           commissionPercent: num(row.commission_percent),
           costPrice,
+          batchNumber: row.store_inventory?.inventory?.batch_number ?? null,
           commissionAmount: num(row.commission_amount),
           adminTake: num(row.admin_take),
           profit: num(row.profit),
@@ -143,6 +160,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
           returnProofUrl: row.return_proof_url ?? null,
           refundProofUrl: row.refund_proof_url ?? null,
           storeInventoryId: row.store_inventory_id ?? null,
+          restockedFromOrderId: row.restocked_from_order_id ?? null,
         }
       })
 
@@ -171,6 +189,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
         orderType,
         occurredAt,
         storeName,
+        orderCode,     // optional: reuse an existing order code for batch carts
       } = req.body || {}
 
       if (!productName) return res.status(400).json({ error: 'productName is required' })
@@ -302,9 +321,9 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
         const { data: order, error: orderErr } = await supabaseAdmin
           .from(TABLES.ORDERS)
           .insert({
-            order_code: generateOrderCode(),
-            store_id: storeId,
-            product_id: resolvedProductId,
+            order_code: await generateOrderCode(),
+             store_id: storeId,
+             product_id: resolvedProductId,
             product_name: productName,
             color: req.body?.color || null,
             size_quantities: effectiveSizeQuantities,
@@ -408,10 +427,11 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       const profit = adminTake - costPrice * qty
 
       // ── Insert order ─────────────────────────────────────────────────────
+      const finalOrderCode = String(orderCode || '').trim() || (await generateOrderCode())
       const { data: order, error: orderErr } = await supabaseAdmin
         .from(TABLES.ORDERS)
         .insert({
-          order_code: generateOrderCode(),
+          order_code: finalOrderCode,
           store_id: storeId,
           product_id: resolvedProductId,
           product_name: productName,
@@ -446,32 +466,116 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
         return res.status(500).json({ error: 'Failed to save order' })
       }
 
-      // ── Decrement quantity_remaining across rows FIFO (sold + bonus) ────
+      // ── Decrement quantity_remaining + pending_return_qty across rows FIFO ─
       let remaining = totalDispatch
       let remainingVariants = normalizedOrderVariants
+      let committedQty = 0
       for (const row of rows) {
         if (remaining <= 0) break
+        const rowId = (row as any).id
         const rowQty = num((row as any).quantity_remaining)
-        const deduct = Math.min(rowQty, remaining)
-        
-        const updatePayload: Record<string, any> = { quantity_remaining: rowQty - deduct }
-        if (remainingVariants) {
-          const validationError = validateVariantRequest(remainingVariants, (row as any).variant_quantities_remaining)
-          if (!validationError) {
-            const nextVariants = adjustVariantQuantities((row as any).variant_quantities_remaining, remainingVariants, -1)
-            const rollups = rollupVariantQuantities(nextVariants)
-            updatePayload.variant_quantities_remaining = nextVariants
-            updatePayload.size_quantities_remaining = rollups.sizeQuantities
-            updatePayload.color_quantities_remaining = rollups.colorQuantities
-            remainingVariants = null
+        const pendingRet = num((row as any).pending_return_qty) || 0
+        const rowDeduct = Math.min(rowQty, remaining)
+        const fromRestock = Math.min(pendingRet, rowDeduct)
+        const newQtyRem = rowQty - rowDeduct
+        const newPendRet = Math.max(0, pendingRet - fromRestock)
+
+        const sizeRem = ((row as any).size_quantities_remaining || {}) as Record<string, number>
+        const colorRem = ((row as any).color_quantities_remaining || {}) as Record<string, number>
+        const variantRem = (row as any).variant_quantities_remaining
+        const pendSize = ((row as any).pending_return_size_quantities || {}) as Record<string, number>
+        const pendColor = ((row as any).pending_return_color_quantities || {}) as Record<string, number>
+        const pendVariant = (row as any).pending_return_variant_quantities
+        const normalizeFlat = (obj: unknown) => {
+          const out: Record<string, number> = {}
+          Object.entries(obj as Record<string, number> || {}).forEach(([k, v]) => { out[k] = num(v) })
+          return out
+        }
+        const normalizeVariant = (obj: unknown) => {
+          try { return JSON.parse(JSON.stringify(obj)) } catch { return obj }
+        }
+        const rollups = (v: any) => ({
+          sizeQuantities: Object.entries(normalizeVariant(v) || {}).reduce((acc, [, sizes]) => {
+            Object.entries(sizes as Record<string, number>).forEach(([s, q]) => { acc[s] = (acc[s] || 0) + num(q) })
+            return acc
+          }, {} as Record<string, number>),
+          colorQuantities: Object.entries(normalizeVariant(v) || {}).reduce((acc, [, sizes]) => {
+            Object.entries(sizes as Record<string, number>).forEach(([, q]) => { acc[''] = (acc[''] || 0) + num(q) })
+            return acc
+          }, {} as Record<string, number>),
+        })
+
+        const updatePayload: Record<string, any> = {
+          quantity_remaining: newQtyRem,
+          pending_return_qty: newPendRet,
+        }
+        if (fromRestock > 0 && pendSize) {
+          const next = { ...pendSize }
+          const keys = Object.keys(next)
+          const perKey = Math.max(1, Math.floor(fromRestock / keys.length))
+          let consumed = 0
+          keys.forEach((k, i) => {
+            const amt = i === keys.length - 1 ? Math.max(0, fromRestock - consumed) : perKey
+            const sub = Math.min(num(next[k] || 0), amt)
+            next[k] = Math.max(0, num(next[k] || 0) - sub)
+            consumed += sub
+          })
+          updatePayload.pending_return_size_quantities = Object.values(next).some(v => v > 0) ? next : null
+        }
+        if (fromRestock > 0 && pendColor) {
+          const next = { ...pendColor }
+          const keys = Object.keys(next)
+          const perKey = Math.max(1, Math.floor(fromRestock / keys.length))
+          let consumed = 0
+          keys.forEach((k, i) => {
+            const amt = i === keys.length - 1 ? Math.max(0, fromRestock - consumed) : perKey
+            const sub = Math.min(num(next[k] || 0), amt)
+            next[k] = Math.max(0, num(next[k] || 0) - sub)
+            consumed += sub
+          })
+          updatePayload.pending_return_color_quantities = Object.values(next).some(v => v > 0) ? next : null
+        }
+        if (fromRestock > 0 && pendVariant) {
+          updatePayload.pending_return_variant_quantities = adjustVariantQuantities(pendVariant, normalizedOrderVariants, -1) ?? pendVariant
+        }
+
+        if (remainingVariants && variantRem) {
+          const nextVariants = adjustVariantQuantities(variantRem, remainingVariants, -1)
+          const varRollups = rollups(nextVariants)
+          updatePayload.variant_quantities_remaining = nextVariants
+          updatePayload.size_quantities_remaining = Object.keys(varRollups.sizeQuantities).length ? varRollups.sizeQuantities : null
+          updatePayload.color_quantities_remaining = Object.keys(varRollups.colorQuantities).length ? varRollups.colorQuantities : null
+        } else if (normalizedOrderVariants && variantRem) {
+          const nextVariants = adjustVariantQuantities(variantRem, normalizedOrderVariants, -1)
+          const varRollups = rollups(nextVariants)
+          updatePayload.variant_quantities_remaining = nextVariants
+          updatePayload.size_quantities_remaining = Object.keys(varRollups.sizeQuantities).length ? varRollups.sizeQuantities : null
+          updatePayload.color_quantities_remaining = Object.keys(varRollups.colorQuantities).length ? varRollups.colorQuantities : null
+        } else if (!remainingVariants) {
+          updatePayload.size_quantities_remaining = Object.keys(sizeRem).length ? { ...sizeRem } : null
+          if (normalizedOrderVariants) {
+            const nextV = adjustVariantQuantities(variantRem, normalizedOrderVariants, -1)
+            const r = rollups(nextV)
+            updatePayload.variant_quantities_remaining = nextV
+            updatePayload.size_quantities_remaining = Object.keys(r.sizeQuantities).length ? r.sizeQuantities : null
+            updatePayload.color_quantities_remaining = Object.keys(r.colorQuantities).length ? r.colorQuantities : null
           }
         }
+
         const { error: updErr } = await supabaseAdmin
           .from(TABLES.STORE_INVENTORY)
           .update(updatePayload)
-          .eq('id', (row as any).id)
+          .eq('id', rowId)
         if (updErr) console.error('stock decrement error:', updErr)
-        remaining -= deduct
+
+        remaining -= rowDeduct
+        committedQty += rowDeduct
+        remainingVariants = null
+      }
+
+      if (committedQty < totalDispatch) {
+        await supabaseAdmin.from(TABLES.ORDERS).delete().eq('id', savedOrder.id)
+        return res.status(500).json({ error: 'Failed to update store inventory during order creation' })
       }
 
       return res.status(201).json({
@@ -665,7 +769,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 
         const { data: order, error: fetchErr } = await supabaseAdmin
           .from(TABLES.ORDERS)
-          .select('id, quantity, size_quantities, color_quantities, variant_quantities, return_quantity, return_variant_quantities, refund_quantity, refund_size_quantities, refund_color_quantities, refund_variant_quantities, commission_percent, selling_price, shipment_cost, cost_price')
+          .select('id, quantity, size_quantities, color_quantities, variant_quantities, return_quantity, return_variant_quantities, refund_quantity, refund_size_quantities, refund_color_quantities, refund_variant_quantities, commission_percent, selling_price, shipment_cost, cost_price, store_inventory_id')
           .eq('id', id)
           .single();
 
@@ -708,18 +812,18 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
         const mergedRefundVariantQuantities = mergeVariantQuantities(order.refund_variant_quantities, normalizedRefundVariants);
         const newRefundQty = alreadyRefundedQty + refQty;
 
-        // Refund amount = selling_price x refunded units
-        const refundAmount = num(order.selling_price) * refQty;
+        // Refund amount = selling_price x total refunded units
+        const refundAmount = num(order.selling_price) * newRefundQty;
 
         // Remaining revenue = non-returned, non-refunded units only
-        // Cost stays for ALL original units (refunded items still cost us money)
+        // Cost absorbed for remaining originals only; already-returned units are not double-charged.
         const remainingUnits = Math.max(0, originalQty - alreadyReturnedQty - newRefundQty);
         const remainingGross = num(order.selling_price) * remainingUnits - num(order.shipment_cost);
         // Commission clawed back on refunded units (Option A)
         const remainingCommission = Math.round(remainingGross * num(order.commission_percent)) / 100;
         const remainingAdminTake = remainingGross - remainingCommission;
-        // Full original cost absorbed
-        const remainingProfit = remainingAdminTake - (num(order.cost_price) * originalQty);
+        // Absorb cost only for units that were actually lost (not returned)
+        const remainingProfit = remainingAdminTake - (num(order.cost_price) * (originalQty - alreadyReturnedQty));
 
         const { error: updErr } = await supabaseAdmin
           .from(TABLES.ORDERS)
@@ -965,9 +1069,10 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       const newPct = num(commissionPercent)
 
       // Fetch the existing order to recalculate from source values
+      // Must include return/refund state so we don't overwrite those adjustments.
       const { data: existing, error: fetchErr } = await supabaseAdmin
         .from(TABLES.ORDERS)
-        .select('selling_price, quantity, shipment_cost, cost_price, stores:store_id(name)')
+        .select('selling_price, quantity, shipment_cost, cost_price, return_quantity, refund_quantity, stores:store_id(name)')
         .eq('id', id)
         .single()
 
@@ -975,9 +1080,14 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
         return res.status(404).json({ error: 'Order not found' })
       }
 
-      const grossAmount     = num(existing.selling_price) * num(existing.quantity)
+      const originalQty        = num(existing.quantity)
+      const alreadyReturnedQty = Math.max(0, num(existing.return_quantity))
+      const alreadyRefundedQty = Math.max(0, num(existing.refund_quantity))
+      const effectiveQty       = Math.max(0, originalQty - alreadyReturnedQty - alreadyRefundedQty)
+
+      const grossAmount     = num(existing.selling_price) * effectiveQty
       const totalDeductions = num(existing.shipment_cost)
-      const costPrice       = num(existing.cost_price) * num(existing.quantity)
+      const costPrice       = num(existing.cost_price) * Math.max(0, originalQty - alreadyReturnedQty)
       const amountReceived   = grossAmount - totalDeductions
       const commissionAmount = Math.round(amountReceived * newPct) / 100
       const adminTake        = amountReceived - commissionAmount
@@ -986,16 +1096,16 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       const { error: updateErr } = await supabaseAdmin
         .from(TABLES.ORDERS)
         .update({
-          commission_percent: newPct,
-          commission_amount:  commissionAmount,
-          admin_take:         adminTake,
-          profit:             profit,
+          commission_percent:  newPct,
+          commission_amount:   commissionAmount,
+          admin_take:          adminTake,
+          profit:              profit,
         })
         .eq('id', id)
 
       if (updateErr) {
         console.error('orders PATCH error:', updateErr)
-        return res.status(500).json({ error: 'Failed to update order' })
+        return res.status(500).json({ error: 'Failed to update order commission' })
       }
 
       return res.json({ success: true, commissionAmount, adminTake, profit })
@@ -1234,7 +1344,6 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
         const effectiveSizeQty = variantRollups.sizeQuantities ?? normalizeFlatQuantities(order.size_quantities)
         const effectiveColorQty = variantRollups.colorQuantities ?? normalizeFlatQuantities(order.color_quantities)
 
-        // Find warehouse inventory rows for this product (FIFO — same order as sale creation)
         let invQuery = supabaseAdmin
           .from(TABLES.INVENTORY)
           .select('id, quantity_available, size_quantities, color_quantities, variant_quantities')
@@ -1252,20 +1361,6 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
           return res.status(500).json({ error: 'Failed to lookup warehouse inventory for delete' })
         }
 
-        // Distribute restored qty back across rows FIFO
-        let remaining = soldQty
-        for (const row of invRows) {
-          if (remaining <= 0) break
-          const rowQty = num(row.quantity_available)
-          const add = Math.min(rowQty + remaining, remaining)  // Hmm, this isn't right
-
-          // Actually for restoration, each row just gets its share added back
-          // We distribute evenly across all matching rows proportionally?
-          // No — the simplest correct approach: add the full qty to the first row
-          // That's fine for deletion because we're just putting items back
-        }
-
-        // Simpler: just add to the first matching warehouse row
         if (invRows && invRows.length > 0) {
           const firstRow = invRows[0]
           const newInvSizes = mergeFlat(firstRow.size_quantities, effectiveSizeQty)

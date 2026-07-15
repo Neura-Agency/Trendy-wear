@@ -8,8 +8,11 @@ import Badge from "../components/Badge";
 import { SaleModal as LegacySaleModal, CreateStoreModal, ReportModal, ExpenseBreakdownModal, SaleReturnModal, SaleRefundModal, VariantQuantityGrid, buildVariantGrid, variantGrandTotal, CartModal } from "../components/Modals";
 import { AddExpenseForm } from '../components/Forms';
 import CustomSelect from "../components/CustomSelect";
+import DetailModal from "../components/DetailModal";
 import { User, Order, Store, InventoryItem, Expense, Client, StoreInventoryItem, AppData, PageProps } from "../types";
 import { usePopup } from "../components/Popup";
+import SearchBar from "../components/SearchBar";
+import { formatItemCode } from "../lib/catalog";
 
 // ── SVG Icon Components (mono-color, inherits currentColor) ──
 const IC = {
@@ -89,7 +92,7 @@ function TableFilter({ value, onChange }: TableFilterProps) {
   }
 
   return (
-    <div className="table-filter-wrap" style={{ display: 'flex', gap: 12, alignItems: 'center', flexWrap: 'nowrap', overflowX: 'auto', background: 'var(--surface-2)', padding: '6px 16px', borderRadius: 8, border: '1px solid var(--border)' }}>
+    <div className="table-filter-wrap" style={{ display: 'flex', gap: 12, alignItems: 'center', flexWrap: 'wrap', overflowX: 'auto', background: 'var(--surface-2)', padding: '6px 16px', borderRadius: 8, border: '1px solid var(--border)' }}>
       <span style={{ fontWeight: 700, fontSize: '12px', color: 'var(--text-muted)', textTransform: 'uppercase' }}>Filter:</span>
       <div style={{ minWidth: 120, flex: '0 0 160px', maxWidth: 200 }}>
         <CustomSelect 
@@ -627,6 +630,7 @@ function StoresOverviewSection({ stores, orders, storeInventory, filter, getFilt
   const storeNames = Object.keys(stores);
   const [selected, setSelected] = useState(storeNames[0] || "");
   const [paying, setPaying] = useState<string | null>(null); // productName or 'ALL'
+  const [search, setSearch] = useState('');
 
   useEffect(() => {
     if (!selected && storeNames.length > 0) setSelected(storeNames[0]);
@@ -681,11 +685,13 @@ function StoresOverviewSection({ stores, orders, storeInventory, filter, getFilt
         </div>
       )}
 
+      <SearchBar value={search} onChange={setSearch} placeholder="Search by product name…" resultCount={products.filter(p => !search || p.toLowerCase().includes(search.toLowerCase())).length} />
       <div className="table-wrap">
         <table>
           <thead>
             <tr>
-              <th>Product</th>
+              <th>Item Name</th>
+              <th>Item ID</th>
               <th>Payout</th>
               <th>Items Sold</th>
               <th>Leftover Inventory</th>
@@ -696,10 +702,10 @@ function StoresOverviewSection({ stores, orders, storeInventory, filter, getFilt
             </tr>
           </thead>
           <tbody>
-            {products.length === 0 ? (
-              <tr><td colSpan={8} style={{ textAlign: 'center', padding: 30 }}>No inventory or sales for this partner.</td></tr>
+            {products.filter(p => !search || p.toLowerCase().includes(search.toLowerCase())).length === 0 ? (
+              <tr><td colSpan={9} style={{ textAlign: 'center', padding: 30 }}>{search ? 'No products match your search.' : 'No inventory or sales for this partner.'}</td></tr>
             ) : (
-              products.map(productName => {
+              products.filter(p => !search || p.toLowerCase().includes(search.toLowerCase())).map(productName => {
                 const catOrders = sOrders.filter(o => o.productName === productName);
                 const catInventory = Object.values(storeInventory[name] || {}).filter(si => (si as StoreInventoryItem).productName === productName);
 
@@ -720,6 +726,12 @@ function StoresOverviewSection({ stores, orders, storeInventory, filter, getFilt
                 return (
                   <tr key={productName}>
                     <td className="font-bold">{productName}</td>
+                    <td className="muted" style={{fontWeight:600, fontFamily:'monospace', fontSize:11}}>
+                      {(() => {
+                        const batchNumbers = [...new Set(catInventory.map((si: any) => si.batchNumber).filter(Boolean))];
+                        return batchNumbers.length > 0 ? batchNumbers.map((b: string) => formatItemCode(b)).join(', ') : '—';
+                      })()}
+                    </td>
                     <td>
                       <div className="font-bold" style={{ color: 'var(--success)' }}>{Rs(unpaidAmount)}</div>
                       {paidAmount > 0 && (
@@ -760,14 +772,112 @@ function StoresOverviewSection({ stores, orders, storeInventory, filter, getFilt
                 <td colSpan={2} style={{ padding: '10px 12px', fontWeight: 800, fontSize: 13 }}>
                   Total Unpaid: <span style={{ color: 'var(--success)' }}>{Rs(totalUnpaid)}</span>
                 </td>
-                <td colSpan={6} />
+                <td colSpan={7} />
               </tr>
             </tfoot>
           )}
         </table>
-      </div>
+       </div>
 
-      {isAdmin && (
+       {/* ── Mobile card view (hidden on desktop) ── */}
+       <div className="mobile-card-view">
+         {products.filter(p => !search || p.toLowerCase().includes(search.toLowerCase())).length === 0 ? (
+           <div style={{ textAlign: 'center', padding: 32, color: 'var(--text-muted)' }}>
+             {search ? 'No products match your search.' : 'No inventory or sales for this partner.'}
+           </div>
+         ) : (
+           products.filter(p => !search || p.toLowerCase().includes(search.toLowerCase())).map(productName => {
+             const catOrders = sOrders.filter(o => o.productName === productName);
+             const catInventory = Object.values(storeInventory[name] || {}).filter(si => (si as StoreInventoryItem).productName === productName);
+
+             const unpaidOrders = catOrders.filter(o => o.paymentStatus !== true && (o.commissionAmount || 0) > 0);
+             const paidOrders = catOrders.filter(o => o.paymentStatus === true);
+             const unpaidAmount = unpaidOrders.reduce((acc, o) => acc + (o.commissionAmount || 0), 0);
+             const paidAmount = paidOrders.reduce((acc, o) => acc + (o.commissionAmount || 0), 0);
+             const totalPayout = catOrders.reduce((acc, o) => acc + (o.commissionAmount || 0), 0);
+
+             const itemsSold = catOrders.reduce((acc: number, o) => acc + effectiveQty(o), 0);
+             const leftover = catInventory.reduce((acc: number, si) => acc + ((si as StoreInventoryItem).quantityRemaining as number), 0) as number;
+             const expenses = catOrders.reduce((acc, o) => acc + (o.shipmentCost || 0), 0);
+             const partnerCut = totalPayout;
+             const profit = catOrders.reduce((acc, o) => acc + (o.profit || 0), 0);
+
+             const allPaid = catOrders.length > 0 && unpaidOrders.length === 0;
+             const batchNumbers = [...new Set(catInventory.map((si: any) => si.batchNumber).filter(Boolean))];
+
+             return (
+               <div className="mobile-card" key={productName}>
+                 <div className="mobile-card-header">
+                   <span className="mobile-card-title">{productName}</span>
+                   {allPaid ? (
+                     <Badge type="green">Paid</Badge>
+                   ) : unpaidAmount > 0 && isAdmin ? (
+                     <span className="mobile-card-badge" style={{ fontSize: 10, fontWeight: 700, color: 'var(--success)' }}>
+                       {Rs(unpaidAmount)} unpaid
+                     </span>
+                   ) : (
+                     <Badge type="blue">Balance</Badge>
+                   )}
+                 </div>
+                 <div className="mobile-card-row">
+                   <span className="mobile-card-label">Item ID</span>
+                   <span className="mobile-card-value" style={{ fontFamily: 'monospace', fontSize: 11 }}>
+                     {batchNumbers.length > 0 ? batchNumbers.map((b: string) => formatItemCode(b)).join(', ') : '—'}
+                   </span>
+                 </div>
+                 <div className="mobile-card-row">
+                   <span className="mobile-card-label">Payout</span>
+                   <span className="mobile-card-value" style={{ color: 'var(--success)' }}>{Rs(unpaidAmount)}</span>
+                 </div>
+                 {paidAmount > 0 && (
+                   <div className="mobile-card-row">
+                     <span className="mobile-card-label">Paid</span>
+                     <span className="mobile-card-value text-muted">{Rs(paidAmount)}</span>
+                   </div>
+                 )}
+                 <div className="mobile-card-row">
+                   <span className="mobile-card-label">Items Sold</span>
+                   <span className="mobile-card-value">{itemsSold}</span>
+                 </div>
+                 <div className="mobile-card-row">
+                   <span className="mobile-card-label">Leftover</span>
+                   <span className="mobile-card-value" style={{ color: (leftover as number) > 0 ? 'inherit' : 'var(--danger)' }}>{leftover as number}</span>
+                 </div>
+                 {isAdmin && (
+                   <>
+                     <div className="mobile-card-row">
+                       <span className="mobile-card-label">Expenses</span>
+                       <span className="mobile-card-value" style={{ color: 'var(--danger)' }}>{Rs(expenses)}</span>
+                     </div>
+                     <div className="mobile-card-row">
+                       <span className="mobile-card-label">Partner Cut</span>
+                       <span className="mobile-card-value">{Rs(partnerCut)}</span>
+                     </div>
+                     <div className="mobile-card-row">
+                       <span className="mobile-card-label">Profit</span>
+                       <span className="mobile-card-value" style={{ color: 'var(--acc)' }}>{Rs(profit)}</span>
+                     </div>
+                   </>
+                 )}
+                 {!allPaid && unpaidAmount > 0 && isAdmin && (
+                   <div className="mobile-card-actions">
+                     <button
+                       className="btn btn-sm btn-primary"
+                       style={{ fontSize: 11, height: 36, padding: '0 12px' }}
+                       disabled={paying === productName}
+                       onClick={() => handlePayProduct(productName)}
+                     >
+                       {paying === productName ? '...' : `Pay ${Rs(unpaidAmount)}`}
+                     </button>
+                   </div>
+                 )}
+               </div>
+             );
+           })
+         )}
+       </div>
+
+       {isAdmin && (
         <div className="store-action-buttons" style={{ display: 'flex', flexWrap: 'wrap', gap: 12, marginTop: 24 }}>
           {totalUnpaid > 0 && (
             <button
@@ -797,6 +907,7 @@ function OrdersSection({ orders, overallOrders = [], inventory = [], storeInvent
   const [editingVariantQuantities, setEditingVariantQuantities] = useState<Record<string, Record<string, number>>>({});
   const [returningOrder, setReturningOrder] = useState<any | null>(null);
   const [refundingOrder, setRefundingOrder] = useState<any | null>(null);
+  const [detailOrder, setDetailOrder] = useState<any | null>(null);
 
   const normalizeCatalogValue = (value: string) => String(value ?? '').trim().toLowerCase();
   const buildEmptyQuantities = (keys: string[]) => keys.reduce((acc, key) => {
@@ -1145,9 +1256,11 @@ function OrdersSection({ orders, overallOrders = [], inventory = [], storeInvent
         <table className="sticky-actions">
         <thead>
           <tr>
+            <th>Order ID</th>
             <th>Date</th>
             <th>Store Name</th>
-            <th>Product</th>
+            <th>Item Name</th>
+            <th>Item ID</th>
             <th>Quantity</th>
             <th>Total Price</th>
             <th>Delivery Fee</th>
@@ -1170,7 +1283,7 @@ function OrdersSection({ orders, overallOrders = [], inventory = [], storeInvent
             const refundedQty = Math.min(Number(o.refundQuantity) || 0, soldQty - returnedQty);
             const fullyReturned = returnedQty > 0 ? returnedQty >= soldQty : Boolean(o.orderReturned);
             const fullyRefunded = refundedQty > 0 && refundedQty >= (soldQty - returnedQty);
-            const hasAnyAction = returnedQty > 0 || refundedQty > 0;
+            const hasAnyAction = returnedQty > 0 || refundedQty > 0 || Boolean(o.orderReturned && (o as any).restockedFromOrderId != null);
             const remainingQty = soldQty - returnedQty - refundedQty;
             const effectiveQ = soldQty - returnedQty - refundedQty;
             const gross = o.sellingPrice * effectiveQ;
@@ -1181,6 +1294,7 @@ function OrdersSection({ orders, overallOrders = [], inventory = [], storeInvent
               <tr key={idx} style={{ cursor: 'pointer', opacity: hasAnyAction ? 0.6 : 1, background: hasAnyAction ? 'rgba(0,0,0,0.05)' : 'transparent' }}
                 onClick={() => openEdit(o)}
               >
+                <td style={{ fontWeight: 700, fontFamily: 'monospace', fontSize: 11, color: 'var(--pri-600)', whiteSpace: 'nowrap' }}>{o.orderCode || o.id.slice(0, 8)}</td>
                 <td className="text-muted" style={{ fontSize: '0.75rem' }}>
                   {new Date(o.date).toLocaleDateString()}
                   {fullyReturned
@@ -1198,6 +1312,7 @@ function OrdersSection({ orders, overallOrders = [], inventory = [], storeInvent
                 </td>
                 <td className="font-bold" style={{ color: 'var(--pri-700)' }}>{o.storeName}</td>
                 <td className="font-bold">{o.productName}</td>
+                <td className="muted" style={{fontWeight:600, fontFamily:'monospace', fontSize:11}}>{formatItemCode((o as any).batchNumber || (o as any).id)}</td>
                 <td>
                   {hasAnyAction
                     ? <>
@@ -1231,71 +1346,87 @@ function OrdersSection({ orders, overallOrders = [], inventory = [], storeInvent
                 )}
                 <td onClick={(e) => e.stopPropagation()} style={{ textAlign: 'center' }}>
                   <div style={{ display: 'flex', gap: 6, justifyContent: 'center', flexWrap: 'wrap' }}>
-                    <button
-                      type="button"
-                      className="btn btn-sm"
-                      style={{ fontSize: 11, padding: '4px 10px', background: 'rgba(99,102,241,0.1)', color: '#4f46e5', border: '1.5px solid rgba(99,102,241,0.25)' }}
-                      onClick={(e) => { e.stopPropagation(); openEdit(o); }}
-                    >
-                      Edit
-                    </button>
-                    {canDelete && (
-                      <button
-                        type="button"
-                        className="btn btn-sm"
-                        style={{ fontSize: 11, padding: '4px 10px', background: 'rgba(239,68,68,0.09)', color: '#dc2626', border: '1.5px solid rgba(239,68,68,0.22)' }}
-                        onClick={async (e) => { e.stopPropagation(); if (await confirmDialog('Delete this sale? Inventory will be restored, returns/refunds reversed, and the record permanently removed.')) { onDelete(o.id); } }}
-                      >
-                        Delete
-                      </button>
-                    )}
-                    {returnedQty > 0 && (
-                      <button
-                        type="button"
-                        className="btn btn-sm"
-                        style={{ fontSize: 11, padding: '4px 10px', background: 'rgba(107,114,128,0.1)', color: '#4b5563', border: '1.5px solid rgba(107,114,128,0.22)' }}
-                        onClick={async (e) => { e.stopPropagation(); if (await confirmDialog('Undo this return? The sale will be restored and stock will be deducted again.')) { onUndoReturn(o.id); } }}
-                      >
-                        Undo Return
-                      </button>
-                    )}
-                    {refundedQty > 0 && (
-                      <button
-                        type="button"
-                        className="btn btn-sm"
-                        style={{ fontSize: 11, padding: '4px 10px', background: 'rgba(107,114,128,0.1)', color: '#4b5563', border: '1.5px solid rgba(107,114,128,0.22)' }}
-                        onClick={async (e) => { e.stopPropagation(); if (await confirmDialog('Undo this refund? The sale financials will be restored to their pre-refund state.')) { onUndoRefund(o.id); } }}
-                      >
-                        Undo Refund
-                      </button>
-                    )}
-                    {!fullyReturned && !fullyRefunded && remainingQty > 0 && (
-                      <>
-                        <button
-                          type="button"
-                          className="btn btn-sm"
-                          style={{ fontSize: 11, padding: '4px 10px', background: 'rgba(245,158,11,0.1)', color: '#b45309', border: '1.5px solid rgba(245,158,11,0.28)' }}
-                          onClick={(e) => { e.stopPropagation(); setReturningOrder(o); }}
-                        >
-                          Return
-                        </button>
-                        <button
-                          type="button"
-                          className="btn btn-sm"
-                          style={{ fontSize: 11, padding: '4px 10px', background: 'rgba(220,38,38,0.09)', color: '#b91c1c', border: '1.5px solid rgba(220,38,38,0.22)' }}
-                          onClick={(e) => { e.stopPropagation(); setRefundingOrder(o); }}
-                        >
-                          Refund
-                        </button>
-                      </>
-                    )}
+                    {(() => {
+                      const isRestockedLocked = Boolean(o.orderReturned && (o as any).restockedFromOrderId != null)
+                      if (isRestockedLocked) return <span className="badge badge-pending" style={{ fontSize: 9, opacity: 0.75 }}>Locked (re-stocked)</span>
+                      return (
+                        <>
+                          <button
+                            type="button"
+                            className="btn btn-sm"
+                            style={{ fontSize: 11, padding: '4px 10px', background: 'rgba(99,102,241,0.1)', color: '#4f46e5', border: '1.5px solid rgba(99,102,241,0.25)' }}
+                            onClick={(e) => { e.stopPropagation(); openEdit(o); }}
+                          >
+                            Edit
+                          </button>
+                          <button
+                            type="button"
+                            className="btn btn-sm"
+                            style={{ fontSize: 11, padding: '4px 10px', background: 'rgba(16,185,129,0.1)', color: '#059669', border: '1.5px solid rgba(16,185,129,0.25)' }}
+                            onClick={(e) => { e.stopPropagation(); setDetailOrder(o); }}
+                          >
+                            Detail
+                          </button>
+                          {canDelete && (
+                            <button
+                              type="button"
+                              className="btn btn-sm"
+                              style={{ fontSize: 11, padding: '4px 10px', background: 'rgba(239,68,68,0.09)', color: '#dc2626', border: '1.5px solid rgba(239,68,68,0.22)' }}
+                              onClick={async (e) => { e.stopPropagation(); if (await confirmDialog('Delete this sale? Inventory will be restored, returns/refunds reversed, and the record permanently removed.')) { onDelete(o.id); } }}
+                            >
+                              Delete
+                            </button>
+                          )}
+                          {returnedQty > 0 && (
+                            <button
+                              type="button"
+                              className="btn btn-sm"
+                              style={{ fontSize: 11, padding: '4px 10px', background: 'rgba(107,114,128,0.1)', color: '#4b5563', border: '1.5px solid rgba(107,114,128,0.22)' }}
+                              onClick={async (e) => { e.stopPropagation(); if (await confirmDialog('Undo this return? The sale will be restored and stock will be deducted again.')) { onUndoReturn(o.id); } }}
+                            >
+                              Undo Return
+                            </button>
+                          )}
+                          {refundedQty > 0 && (
+                            <button
+                              type="button"
+                              className="btn btn-sm"
+                              style={{ fontSize: 11, padding: '4px 10px', background: 'rgba(107,114,128,0.1)', color: '#4b5563', border: '1.5px solid rgba(107,114,128,0.22)' }}
+                              onClick={async (e) => { e.stopPropagation(); if (await confirmDialog('Undo this refund? The sale financials will be restored to their pre-refund state.')) { onUndoRefund(o.id); } }}
+                            >
+                              Undo Refund
+                            </button>
+                          )}
+                          {!fullyReturned && !fullyRefunded && remainingQty > 0 && (
+                            <>
+                              <button
+                                type="button"
+                                className="btn btn-sm"
+                                style={{ fontSize: 11, padding: '4px 10px', background: 'rgba(245,158,11,0.1)', color: '#b45309', border: '1.5px solid rgba(245,158,11,0.28)' }}
+                                onClick={(e) => { e.stopPropagation(); setReturningOrder(o); }}
+                              >
+                                Return
+                              </button>
+                              <button
+                                type="button"
+                                className="btn btn-sm"
+                                style={{ fontSize: 11, padding: '4px 10px', background: 'rgba(220,38,38,0.09)', color: '#b91c1c', border: '1.5px solid rgba(220,38,38,0.22)' }}
+                                onClick={(e) => { e.stopPropagation(); setRefundingOrder(o); }}
+                              >
+                                Refund
+                              </button>
+                            </>
+                          )}
+                        </>
+                      )
+                    })()}
                   </div>
                 </td>
                 </tr>
               );
             })}
             {orders.length === 0 && (
-              <tr><td colSpan={isAdmin ? 12 : 9} style={{ textAlign: 'center', padding: 30, color: 'var(--text-muted)' }}>No partner sales match this period.</td></tr>
+              <tr><td colSpan={isAdmin ? 13 : 10} style={{ textAlign: 'center', padding: 30, color: 'var(--text-muted)' }}>No partner sales match this period.</td></tr>
             )}
           </tbody>
         </table>
@@ -1322,6 +1453,7 @@ function OrdersSection({ orders, overallOrders = [], inventory = [], storeInvent
             <div className="order-card" key={idx} onClick={() => setEditing({ ...o })}>
               <div className="order-card-top">
                 <span className="order-card-store">{o.storeName}</span>
+                <span style={{ fontWeight: 700, fontFamily: 'monospace', fontSize: 11, color: 'var(--pri-600)' }}>{o.orderCode || o.id.slice(0, 8)}</span>
                 <span className="order-card-date">{new Date(o.date).toLocaleDateString()}</span>
               </div>
               <div className="order-card-product">{o.productName}</div>
@@ -1364,67 +1496,87 @@ function OrdersSection({ orders, overallOrders = [], inventory = [], storeInvent
                   gap: 5,
                   minWidth: 160,
                 }}>
-                  {/* Row 1: Edit + Delete */}
-                  <button
-                    className="btn btn-sm"
-                    style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 5, padding: '6px 10px', fontSize: 11, fontWeight: 700, background: 'rgba(99,102,241,0.1)', color: '#4f46e5', border: '1.5px solid rgba(99,102,241,0.25)', borderRadius: 8 }}
-                    onClick={(e) => { e.stopPropagation(); openEdit(o); }}
-                  >
-                    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4Z"/></svg>
-                    Edit
-                  </button>
-                  {canDelete ? (
-                    <button
-                      className="btn btn-sm"
-                      style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 5, padding: '6px 10px', fontSize: 11, fontWeight: 700, background: 'rgba(239,68,68,0.09)', color: '#dc2626', border: '1.5px solid rgba(239,68,68,0.22)', borderRadius: 8 }}
-                      onClick={async (e) => { e.stopPropagation(); if (await confirmDialog('Delete this sale? Inventory will be restored, returns/refunds reversed, and the record permanently removed.')) { onDelete(o.id); } }}
-                    >
-                      <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="M3 6h18"/><path d="M8 6V4a1 1 0 0 1 1-1h6a1 1 0 0 1 1 1v2"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/></svg>
-                      Delete
-                    </button>
-                  ) : <div />}
-
-                  {/* Row 2: Return/Undo + Refund/Undo */}
-                  {returnedQty > 0 && (
-                    <button
-                      className="btn btn-sm"
-                      style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 5, padding: '6px 10px', fontSize: 11, fontWeight: 700, background: 'rgba(107,114,128,0.1)', color: '#4b5563', border: '1.5px solid rgba(107,114,128,0.22)', borderRadius: 8, gridColumn: '1 / -1' }}
-                      onClick={async (e) => { e.stopPropagation(); if (await confirmDialog('Undo this return? The sale will be restored and stock will be deducted again.')) { onUndoReturn(o.id); } }}
-                    >
-                      <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="M9 14l-4-4 4-4"/><path d="M5 10h9a6 6 0 0 1 0 12H8"/></svg>
-                      Undo Return
-                    </button>
-                  )}
-                  {refundedQty > 0 && (
-                    <button
-                      className="btn btn-sm"
-                      style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 5, padding: '6px 10px', fontSize: 11, fontWeight: 700, background: 'rgba(107,114,128,0.1)', color: '#4b5563', border: '1.5px solid rgba(107,114,128,0.22)', borderRadius: 8, gridColumn: '1 / -1' }}
-                      onClick={async (e) => { e.stopPropagation(); if (await confirmDialog('Undo this refund? The sale financials will be restored to their pre-refund state.')) { onUndoRefund(o.id); } }}
-                    >
-                      <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="M9 14l-4-4 4-4"/><path d="M5 10h9a6 6 0 0 1 0 12H8"/></svg>
-                      Undo Refund
-                    </button>
-                  )}
-                  {!fullyReturned && !fullyRefunded && remainingQty > 0 && (
-                    <>
-                      <button
-                        className="btn btn-sm"
-                        style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 5, padding: '6px 10px', fontSize: 11, fontWeight: 700, background: 'rgba(245,158,11,0.1)', color: '#b45309', border: '1.5px solid rgba(245,158,11,0.28)', borderRadius: 8 }}
-                        onClick={(e) => { e.stopPropagation(); setReturningOrder(o); }}
-                      >
-                        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><polyline points="9 14 4 9 9 4"/><path d="M20 20v-7a4 4 0 0 0-4-4H4"/></svg>
-                        Return
-                      </button>
-                      <button
-                        className="btn btn-sm"
-                        style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 5, padding: '6px 10px', fontSize: 11, fontWeight: 700, background: 'rgba(220,38,38,0.09)', color: '#b91c1c', border: '1.5px solid rgba(220,38,38,0.22)', borderRadius: 8 }}
-                        onClick={(e) => { e.stopPropagation(); setRefundingOrder(o); }}
-                      >
-                        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><line x1="12" y1="1" x2="12" y2="23"/><path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/></svg>
-                        Refund
-                      </button>
-                    </>
-                  )}
+                  {(() => {
+                    const isRestockedLocked = Boolean(o.orderReturned && (o as any).restockedFromOrderId != null)
+                    if (isRestockedLocked) {
+                      return <span className="badge badge-pending" style={{ fontSize: 9, gridColumn: '1 / -1', justifySelf: 'center', opacity: 0.75 }}>Locked (re-stocked)</span>
+                    }
+                    return null
+                  })()}
+                  {(() => {
+                    const isRestockedLocked = Boolean(o.orderReturned && (o as any).restockedFromOrderId != null)
+                    if (isRestockedLocked) return <span className="badge badge-pending" style={{ fontSize: 9, gridColumn: '1 / -1', justifySelf: 'center', opacity: 0.75 }}>Locked (re-stocked)</span>
+                    return (
+                      <>
+                        <button
+                          className="btn btn-sm"
+                          style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 5, padding: '6px 10px', fontSize: 11, fontWeight: 700, background: 'rgba(99,102,241,0.1)', color: '#4f46e5', border: '1.5px solid rgba(99,102,241,0.25)', borderRadius: 8 }}
+                          onClick={(e) => { e.stopPropagation(); openEdit(o); }}
+                        >
+                          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4Z"/></svg>
+                          Edit
+                        </button>
+                        <button
+                          className="btn btn-sm"
+                          style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 5, padding: '6px 10px', fontSize: 11, fontWeight: 700, background: 'rgba(16,185,129,0.1)', color: '#059669', border: '1.5px solid rgba(16,185,129,0.25)', borderRadius: 8 }}
+                          onClick={(e) => { e.stopPropagation(); setDetailOrder(o); }}
+                        >
+                          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/></svg>
+                          Detail
+                        </button>
+                        {canDelete ? (
+                          <button
+                            className="btn btn-sm"
+                            style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 5, padding: '6px 10px', fontSize: 11, fontWeight: 700, background: 'rgba(239,68,68,0.09)', color: '#dc2626', border: '1.5px solid rgba(239,68,68,0.22)', borderRadius: 8 }}
+                            onClick={async (e) => { e.stopPropagation(); if (await confirmDialog('Delete this sale? Inventory will be restored, returns/refunds reversed, and the record permanently removed.')) { onDelete(o.id); } }}
+                          >
+                            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="M3 6h18"/><path d="M8 6V4a1 1 0 0 1 1-1h6a1 1 0 0 1 1 1v2"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/></svg>
+                            Delete
+                          </button>
+                        ) : <div />}
+                        {returnedQty > 0 && (
+                          <button
+                            className="btn btn-sm"
+                            style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 5, padding: '6px 10px', fontSize: 11, fontWeight: 700, background: 'rgba(107,114,128,0.1)', color: '#4b5563', border: '1.5px solid rgba(107,114,128,0.22)', borderRadius: 8, gridColumn: '1 / -1' }}
+                            onClick={async (e) => { e.stopPropagation(); if (await confirmDialog('Undo this return? The sale will be restored and stock will be deducted again.')) { onUndoReturn(o.id); } }}
+                          >
+                            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="M9 14l-4-4 4-4"/><path d="M5 10h9a6 6 0 0 1 0 12H8"/></svg>
+                            Undo Return
+                          </button>
+                        )}
+                        {refundedQty > 0 && (
+                          <button
+                            className="btn btn-sm"
+                            style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 5, padding: '6px 10px', fontSize: 11, fontWeight: 700, background: 'rgba(107,114,128,0.1)', color: '#4b5563', border: '1.5px solid rgba(107,114,128,0.22)', borderRadius: 8, gridColumn: '1 / -1' }}
+                            onClick={async (e) => { e.stopPropagation(); if (await confirmDialog('Undo this refund? The sale financials will be restored to their pre-refund state.')) { onUndoRefund(o.id); } }}
+                          >
+                            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="M9 14l-4-4 4-4"/><path d="M5 10h9a6 6 0 0 1 0 12H8"/></svg>
+                            Undo Refund
+                          </button>
+                        )}
+                        {!fullyReturned && !fullyRefunded && remainingQty > 0 && (
+                          <>
+                            <button
+                              className="btn btn-sm"
+                              style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 5, padding: '6px 10px', fontSize: 11, fontWeight: 700, background: 'rgba(245,158,11,0.1)', color: '#b45309', border: '1.5px solid rgba(245,158,11,0.28)', borderRadius: 8 }}
+                              onClick={(e) => { e.stopPropagation(); setReturningOrder(o); }}
+                            >
+                              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><polyline points="9 14 4 9 9 4"/><path d="M20 20v-7a4 4 0 0 0-4-4H4"/></svg>
+                              Return
+                            </button>
+                            <button
+                              className="btn btn-sm"
+                              style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 5, padding: '6px 10px', fontSize: 11, fontWeight: 700, background: 'rgba(220,38,38,0.09)', color: '#b91c1c', border: '1.5px solid rgba(220,38,38,0.22)', borderRadius: 8 }}
+                              onClick={(e) => { e.stopPropagation(); setRefundingOrder(o); }}
+                            >
+                              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><line x1="12" y1="1" x2="12" y2="23"/><path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/></svg>
+                              Refund
+                            </button>
+                          </>
+                        )}
+                      </>
+                    )
+                  })()}
                 </div>
               </div>
             </div>
@@ -1487,6 +1639,13 @@ function OrdersSection({ orders, overallOrders = [], inventory = [], storeInvent
           onClose={() => setRefundingOrder(null)}
         />
       )}
+
+      <DetailModal
+        open={!!detailOrder}
+        onClose={() => setDetailOrder(null)}
+        title={detailOrder ? `Order Details — ${detailOrder.orderCode || detailOrder.id}` : undefined}
+        data={detailOrder || {}}
+      />
     </div>
   );
 }
@@ -2367,7 +2526,7 @@ export default function Home({ user, onLogin }: PageProps) {
               <button className="btn btn-primary" style={{ padding: '0.5rem 1rem' }} onClick={() => setShowExpenseModal(true)}>+ Add Expense</button>
             }>
               <div style={{ overflowX: 'auto', width: '100%' }}>
-                <table style={{ width: '100%', fontSize: '0.85rem', borderCollapse: 'collapse', tableLayout: 'fixed', minWidth: 700 }}>
+                <table className="desktop-table-view" style={{ width: '100%', fontSize: '0.85rem', borderCollapse: 'collapse', tableLayout: 'fixed', minWidth: 700 }}>
                   <colgroup>
                     <col style={{ width: '25%' }} />
                     <col style={{ width: '14%' }} />
@@ -2441,6 +2600,57 @@ export default function Home({ user, onLogin }: PageProps) {
                     )}
                   </tbody>
                 </table>
+                {/* ── Mobile card view ── */}
+                <div className="mobile-card-view">
+                  {data.expenses.length === 0 ? (
+                    <div style={{ textAlign: 'center', padding: 32, color: 'var(--text-muted)', fontSize: '0.85rem' }}>
+                      No expenses recorded yet.
+                    </div>
+                  ) : (
+                    [...data.expenses].reverse().map((e, i) => {
+                      const dateStr = e.expense_date || (e as any).date || (e as any).occurred_at || (e as any).created_at;
+                      let displayDate = '-';
+                      try { if (dateStr) displayDate = new Date(String(dateStr)).toLocaleDateString('en-PK', { day: '2-digit', month: 'short', year: 'numeric' }); }
+                      catch { displayDate = String(dateStr || '-'); }
+
+                      const catColors: Record<string, { bg: string; color: string }> = {
+                        'Rent': { bg: '#ede9fe', color: '#6d28d9' },
+                        'Salaries': { bg: '#dbeafe', color: '#1d4ed8' },
+                        'Utilities': { bg: '#dcfce7', color: '#15803d' },
+                        'Marketing': { bg: '#fef9c3', color: '#a16207' },
+                        'Logistics': { bg: '#ffedd5', color: '#c2410c' },
+                        'Misc': { bg: '#f1f5f9', color: '#475569' },
+                      };
+                      const cat = e.category || 'Misc';
+                      const chip = catColors[cat] || { bg: '#f1f5f9', color: '#475569' };
+
+                      return (
+                        <div className="mobile-card" key={i} onClick={() => setEditingExpense(e)}>
+                          <div className="mobile-card-header">
+                            <span className="mobile-card-title">{e.title}</span>
+                            <span style={{ fontSize: 11, fontWeight: 700, padding: '2px 10px', borderRadius: 20, background: chip.bg, color: chip.color, whiteSpace: 'nowrap' }}>{cat}</span>
+                          </div>
+                          <div className="mobile-card-row">
+                            <span className="mobile-card-label">Paid By</span>
+                            <span className="mobile-card-value text-muted">{e.paid_by_owner_name || '—'}</span>
+                          </div>
+                          <div className="mobile-card-row">
+                            <span className="mobile-card-label">From Account</span>
+                            <span className="mobile-card-value text-muted">{e.from_acc || '—'}</span>
+                          </div>
+                          <div className="mobile-card-row">
+                            <span className="mobile-card-label">Date</span>
+                            <span className="mobile-card-value">{displayDate}</span>
+                          </div>
+                          <div className="mobile-card-row">
+                            <span className="mobile-card-label">Amount</span>
+                            <span className="mobile-card-value" style={{ color: 'var(--danger)', fontWeight: 800 }}>−{Rs(e.amount)}</span>
+                          </div>
+                        </div>
+                      );
+                    })
+                  )}
+                </div>
               </div>
             </SectionCard>
           </div>
@@ -2484,8 +2694,8 @@ export default function Home({ user, onLogin }: PageProps) {
             storeName={user.storeName}
             isAdmin={isAdmin}
             storeNames={isAdmin && user.scope === 'all' ? Object.keys(data.stores) : (isAdmin ? (user.managedStores || []) : [user.storeName])}
-            onAdd={(result: any) => {
-              handleAddOrder({ success: true, orderCode: result?.orderCode })
+            onAdd={() => {
+              refresh();
             }}
             onClose={() => setShowSaleModal(false)}
           />

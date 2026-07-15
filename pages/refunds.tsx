@@ -1,5 +1,6 @@
 import { useEffect, useState, useCallback } from "react";
 import Login from "../components/Login";
+import DetailModal from "../components/DetailModal";
 import { PageProps } from "../types";
 
 const Rs = (n: number) => "Rs " + (Number(n) || 0).toLocaleString();
@@ -80,6 +81,7 @@ export default function RefundsPage({ user, onLogin, onLogout }: PageProps) {
   const [storeFilter, setStoreFilter] = useState("All");
   const [sortKey, setSortKey] = useState<"refundedAt" | "productName" | "refundQuantity" | "refundAmount" | "storeName">("refundedAt");
   const [sortDir, setSortDir] = useState<"asc" | "desc">("desc");
+  const [detailRow, setDetailRow] = useState<any | null>(null);
 
   const fetchOrders = useCallback(async () => {
     setLoading(true);
@@ -200,7 +202,7 @@ export default function RefundsPage({ user, onLogin, onLogout }: PageProps) {
           <EmptyState message="No refunded orders found." />
         ) : (
           <div style={{ overflowX: "auto" }}>
-            <table style={{ width: "100%", borderCollapse: "collapse" }}>
+            <table className="desktop-table-view" style={{ width: "100%", borderCollapse: "collapse" }}>
               <thead>
                 <tr>
                   {[
@@ -218,6 +220,7 @@ export default function RefundsPage({ user, onLogin, onLogout }: PageProps) {
                     { label: "COGS Lost", key: null },
                     { label: "Refund Reason", key: null },
                     { label: "Proof", key: null },
+                    { label: "", key: null },
                   ].map(col => (
                     <th key={col.label} style={TH} onClick={() => col.key && toggleSort(col.key as any)}>
                       {col.label}{col.key && <SortIcon k={col.key as any} />}
@@ -269,13 +272,16 @@ export default function RefundsPage({ user, onLogin, onLogout }: PageProps) {
                           <ProofImage src={o.refundProofUrl} />
                         ) : <span style={{ color: "var(--text-faint)", fontStyle: "italic", fontSize: 12 }}>—</span>}
                       </td>
+                      <td style={{ textAlign: 'center' }}>
+                        <button type="button" className="btn btn-sm" style={{ fontSize: 10, padding: '3px 10px', background: 'rgba(16,185,129,0.1)', color: '#059669', border: '1.5px solid rgba(16,185,129,0.25)' }} onClick={() => setDetailRow(o)}>Detail</button>
+                      </td>
                     </tr>
                   );
                 })}
               </tbody>
               <tfoot>
                 <tr style={{ background: "var(--surface-2)", borderTop: "2px solid var(--border-2)" }}>
-                  <td colSpan={6} style={{ ...TD, fontWeight: 700, fontSize: 13, color: "var(--text-head)", borderBottom: "none" }}>Totals ({sorted.length} order{sorted.length !== 1 ? "s" : ""})</td>
+                  <td colSpan={7} style={{ ...TD, fontWeight: 700, fontSize: 13, color: "var(--text-head)", borderBottom: "none" }}>Totals ({sorted.length} order{sorted.length !== 1 ? "s" : ""})</td>
                   <td style={{ ...TD, textAlign: "center", fontWeight: 700, borderBottom: "none" }}>{sorted.reduce((s, o) => s + o.quantity, 0)}</td>
                   <td style={{ ...TD, textAlign: "center", fontWeight: 800, color: "var(--danger)", borderBottom: "none" }}>{totalRefundQty}</td>
                   <td style={{ ...TD, borderBottom: "none" }} />
@@ -284,12 +290,69 @@ export default function RefundsPage({ user, onLogin, onLogout }: PageProps) {
                   <td style={{ ...TD, fontWeight: 800, color: "var(--warning)", borderBottom: "none" }}>{Rs(totalCOGSLost)}</td>
                   <td style={{ ...TD, borderBottom: "none" }} />
                   <td style={{ ...TD, borderBottom: "none" }} />
+                  <td style={{ ...TD, borderBottom: "none" }} />
                 </tr>
               </tfoot>
-            </table>
-          </div>
+              </table>
+              {/* ── Mobile card view ── */}
+              <div className="mobile-card-view">
+                {sorted.map((o, i) => {
+                  const isFullRefund = o.refundQuantity >= o.quantity;
+                  return (
+                    <div className="mobile-card" key={o.id}>
+                      <div className="mobile-card-header">
+                        <span className="mobile-card-title">{o.productName}</span>
+                        <span style={{ display: 'inline-block', background: isFullRefund ? 'var(--danger-soft)' : 'var(--acc-soft)', color: isFullRefund ? 'var(--danger)' : 'var(--acc)', fontWeight: 700, fontSize: 11, padding: '3px 10px', borderRadius: 20 }}>{o.refundQuantity} {isFullRefund ? '• Full' : '• Partial'}</span>
+                      </div>
+                      <div className="mobile-card-row">
+                        <span className="mobile-card-label">Order Code</span>
+                        <span className="mobile-card-value" style={{ fontFamily: 'monospace', fontSize: 11 }}>{o.orderCode || '—'}</span>
+                      </div>
+                      <div className="mobile-card-row">
+                        <span className="mobile-card-label">Store</span>
+                        <span className="mobile-card-value" style={{ color: 'var(--acc)' }}>{o.storeName}</span>
+                      </div>
+                      <div className="mobile-card-row">
+                        <span className="mobile-card-label">Client</span>
+                        <span className="mobile-card-value">{o.clientName || '—'}</span>
+                      </div>
+                      <div className="mobile-card-row">
+                        <span className="mobile-card-label">Sale Date</span>
+                        <span className="mobile-card-value" style={{ fontSize: 12, color: 'var(--text-muted)' }}>{fmtDate(o.date)}</span>
+                      </div>
+                      <div className="mobile-card-row">
+                        <span className="mobile-card-label">Refunded On</span>
+                        <span className="mobile-card-value" style={{ fontWeight: 600 }}>{o.refundedAt ? fmtDate(o.refundedAt) : '—'}</span>
+                      </div>
+                      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 0, borderTop: '1px solid var(--border)', marginTop: 4, paddingTop: 4 }}>
+                        <div style={{ padding: '4px 0' }}><span style={{ fontSize: 10, color: 'var(--text-muted)', textTransform: 'uppercase', fontWeight: 600 }}>Qty Sold</span><div style={{ fontWeight: 700, fontSize: 13 }}>{o.quantity}</div></div>
+                        <div style={{ padding: '4px 0', borderLeft: '1px solid var(--border)', paddingLeft: 8 }}><span style={{ fontSize: 10, color: 'var(--text-muted)', textTransform: 'uppercase', fontWeight: 600 }}>Qty Refunded</span><div style={{ fontWeight: 700, fontSize: 13, color: 'var(--danger)' }}>{o.refundQuantity}</div></div>
+                        <div style={{ padding: '4px 0' }}><span style={{ fontSize: 10, color: 'var(--text-muted)', textTransform: 'uppercase', fontWeight: 600 }}>Refund Amount</span><div style={{ fontWeight: 800, fontSize: 13, color: 'var(--danger)' }}>{Rs(o.refundAmount)}</div></div>
+                        <div style={{ padding: '4px 0', borderLeft: '1px solid var(--border)', paddingLeft: 8 }}><span style={{ fontSize: 10, color: 'var(--text-muted)', textTransform: 'uppercase', fontWeight: 600 }}>COGS Lost</span><div style={{ fontWeight: 700, fontSize: 13, color: 'var(--warning)' }}>{Rs(o.refundQuantity * o.costPrice)}</div></div>
+                      </div>
+                      {o.refundReason && (
+                        <div className="mobile-card-row">
+                          <span className="mobile-card-label">Reason</span>
+                          <span className="mobile-card-value" style={{ fontSize: 12, color: 'var(--acc)', background: 'rgba(99,102,241,0.07)', padding: '4px 8px', borderRadius: 6 }}>{o.refundReason}</span>
+                        </div>
+                      )}
+                      <div className="mobile-card-actions">
+                        <button type="button" className="btn btn-sm" style={{ fontSize: 10, padding: '4px 10px', background: 'rgba(16,185,129,0.1)', color: '#059669', border: '1.5px solid rgba(16,185,129,0.25)' }} onClick={() => setDetailRow(o)}>Detail</button>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
         )}
       </div>
+
+      <DetailModal
+        open={!!detailRow}
+        onClose={() => setDetailRow(null)}
+        title={detailRow ? `Refund Details — ${detailRow.productName || detailRow.id}` : undefined}
+        data={detailRow || {}}
+      />
     </div>
   );
 }

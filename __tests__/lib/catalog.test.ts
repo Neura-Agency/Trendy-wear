@@ -5,6 +5,7 @@ import {
   findMatchingProduct,
   buildDeterministicProductId,
   formatItemCodeFromUuid,
+  formatItemCode,
 } from '../../lib/catalog';
 
 describe('normalizeCatalogValue', () => {
@@ -127,5 +128,15 @@ describe('formatItemCodeFromUuid', () => {
 
   test('should return empty string for empty string', () => {
     expect(formatItemCodeFromUuid('')).toBe('');
+  });
+});
+
+describe('formatItemCode', () => {
+  test('should preserve already formatted item codes', () => {
+    expect(formatItemCode('ITEM-C0A30D57')).toBe('ITEM-C0A30D57');
+  });
+
+  test('should normalize UUIDs to item codes', () => {
+    expect(formatItemCode('550e8400-e29b-41d4-a716-446655440000')).toBe('ITEM-550E8400');
   });
 });

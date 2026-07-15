@@ -33,7 +33,7 @@ function makeReq(method: string, body: any): NextApiRequest {
     headers: {},
   } as any
 }
-function makeRes(): NextApiResponse {
+function makeRes(): NextApiResponse & { data: any } {
   lastRes = {
     statusCode: 200,
     data: null as any,
@@ -243,14 +243,14 @@ describe('Inventory lifecycle: allot → sale → return → refund → undo ret
       .from(TABLES.ORDERS).select('*').eq('id', orderId).single()
     expect(num(order!.refund_quantity)).toBe(1)
     expect(num(order!.refund_amount)).toBe(PRICE)
-    expect(num(order!.profit)).toBe(-600)
+    expect(num(order!.profit)).toBe(-300)
     expect(num(order!.admin_take)).toBe(0)
     expect(num(order!.commission_amount)).toBe(0)
 
     const { data: si } = await supabaseAdmin
       .from(TABLES.STORE_INVENTORY).select('*').eq('id', storeInventoryId).single()
     expect(num(si!.quantity_remaining)).toBe(TOTAL_ASSIGNED - SALE_QTY + 1)
-    expect(num(si!.pending_return_qty)).toBe(1)
+    expect(num(si!.pending_return_qty)).toBe(0)
   })
 
   test('5. Undo the 1-item return', async () => {
