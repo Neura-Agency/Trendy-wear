@@ -217,6 +217,69 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       })
     }
 
+    if (req.method === 'DELETE') {
+      if (!isSuperAdmin(session)) {
+        return res.status(403).json({ error: 'Only super admin can delete a store partner' })
+      }
+
+      const { name } = req.body || {}
+      if (!name || !String(name).trim()) {
+        return res.status(400).json({ error: 'Store name is required' })
+      }
+
+      // Look up the store row so we can also clean up its store_owners row if it becomes orphaned
+      const { data: store, error: findError } = await supabaseAdmin
+        .from(TABLES.STORES)
+        .select('id, owner_id')
+        .eq('name', String(name).trim())
+        .maybeSingle()
+
+      if (findError) {
+        console.error('Error looking up store to delete:', findError)
+        return res.status(500).json({ error: 'Failed to look up store' })
+      }
+      if (!store) {
+        return res.status(404).json({ error: `Store "${name}" not found` })
+      }
+
+      const { error: deleteError } = await supabaseAdmin
+        .from(TABLES.STORES)
+        .delete()
+        .eq('id', store.id)
+
+      if (deleteError) {
+        // Postgres FK "restrict" violation — this store still has orders on record
+        if (deleteError.code === '23503') {
+          return res.status(409).json({ error: `Cannot delete "${name}" — it still has orders on record. Remove or reassign those orders first.` })
+        }
+        console.error('Error deleting store:', deleteError)
+        return res.status(500).json({ error: 'Failed to delete store' })
+      }
+
+      // Best-effort cleanup: if this store's owner row isn't linked to any other store, remove it too.
+      // We never touch the accounts table here, so no login credentials are ever silently deleted.
+      if (store.owner_id) {
+        try {
+          const { data: stillLinked } = await supabaseAdmin
+            .from(TABLES.STORES)
+            .select('id')
+            .eq('owner_id', store.owner_id)
+            .limit(1)
+
+          if (!stillLinked || stillLinked.length === 0) {
+            await supabaseAdmin
+              .from(TABLES.STORE_OWNERS)
+              .delete()
+              .eq('id', store.owner_id)
+          }
+        } catch (cleanupErr) {
+          console.warn('Non-fatal: failed to clean up orphaned store_owners row:', cleanupErr)
+        }
+      }
+
+      return res.json({ success: true })
+    }
+
     return res.status(405).json({ error: 'Method not allowed' })
   } catch (e: any) {
     console.error('Store API error:', e)

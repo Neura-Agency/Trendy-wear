@@ -505,6 +505,24 @@ export default function OwnersPage({ user, onLogin }: PageProps) {
     }
   };
 
+  const handlePermanentDelete = async (owner: Owner) => {
+    const confirmed = await confirmDialog(`Permanently delete "${owner.name}"? This is different from Deactivate — it removes them completely, including all payout history and transfers, and cannot be undone.`);
+    if (!confirmed) return;
+    try {
+      const res = await fetch('/api/owners', {
+        method: 'DELETE',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ id: owner.id, permanent: true }),
+      });
+      const d = await res.json();
+      if (!res.ok) throw new Error(d.error || 'Failed');
+      toast.success(`${owner.name} permanently deleted`);
+      refresh();
+    } catch (err: any) {
+      toast.error(err.message);
+    }
+  };
+
   const handleDeletePayout = async (payout: OwnerPayout) => {
     const confirmed = await confirmDialog(`Delete this payout of ${Rs(payout.amount)} for ${payout.ownerName}?`);
     if (!confirmed) return;
@@ -854,6 +872,14 @@ export default function OwnersPage({ user, onLogin }: PageProps) {
                           ✓ Reactivate
                         </button>
                       )}
+                      <button
+                        className="btn btn-secondary btn-sm"
+                        style={{ color: 'var(--red-500, #ef4444)', borderColor: 'rgba(239, 68, 68, 0.35)' }}
+                        onClick={() => handlePermanentDelete(owner)}
+                        title="Permanently delete this partner and all their history"
+                      >
+                        🗑 Delete
+                      </button>
                     </div>
 
                     {/* Payout history accordion */}

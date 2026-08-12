@@ -1,6 +1,6 @@
 import type { NextApiRequest, NextApiResponse } from 'next'
 import { supabaseAdmin, TABLES } from '../../lib/supabase'
-import { requireAdmin, requireSession } from '../../lib/api/session'
+import { requireAdmin, requireSession, isSuperAdmin } from '../../lib/api/session'
 
 function num(v: any): number {
   const n = Number(v)
@@ -252,10 +252,10 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     }
 
     // ══════════════════════
-    //  DELETE  — remove payout or deactivate owner
+    //  DELETE  — remove payout, deactivate owner, or (permanent=true) hard-delete owner
     // ══════════════════════
     if (req.method === 'DELETE') {
-      const { id } = req.body || {}
+      const { id, permanent } = req.body || {}
       if (!id) return res.status(400).json({ error: 'id is required' })
 
       if (showPayouts) {
@@ -265,6 +265,40 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
           .eq('id', String(id))
         if (error) return res.status(500).json({ error: 'Failed to delete payout' })
         return res.json({ success: true })
+      }
+
+      // Permanent hard-delete: fully removes the owner row and its payout/transaction history.
+      // Restricted to super admin since this cannot be undone.
+      if (permanent) {
+        if (!isSuperAdmin(session)) {
+          return res.status(403).json({ error: 'Only super admin can permanently delete a partner' })
+        }
+
+        const { data: owner, error: findError } = await supabaseAdmin
+          .from(TABLES.OWNERS)
+          .select('id, is_active')
+          .eq('id', String(id))
+          .maybeSingle()
+
+        if (findError) return res.status(500).json({ error: 'Failed to look up owner' })
+        if (!owner) return res.status(404).json({ error: 'Owner not found' })
+
+        const { error: deleteError } = await supabaseAdmin
+          .from(TABLES.OWNERS)
+          .delete()
+          .eq('id', String(id))
+
+        if (deleteError) {
+          console.error('owners permanent DELETE error:', deleteError)
+          return res.status(500).json({ error: 'Failed to permanently delete owner' })
+        }
+
+        // If the deleted owner was active, redistribute shares among whoever remains
+        if (owner.is_active) {
+          await redistributeEqually()
+        }
+
+        return res.json({ success: true, permanent: true })
       }
 
       // Soft-delete: mark inactive rather than hard-delete to preserve history
