@@ -626,15 +626,29 @@ function InlineCommEdit({ value, onSave }) {
 }
 
 // ─── STORES OVERVIEW SECTION (Reworked for Table View) ───────────────
-function StoresOverviewSection({ stores, orders, storeInventory, filter, getFiltered, onPayOrders, onAssignItem, inventory, isAdmin }) {
+function StoresOverviewSection({ stores, orders, storeInventory, filter, getFiltered, onPayOrders, onAssignItem, inventory, isAdmin, isSuperAdmin, onDeleteStore }) {
+  const { confirmDialog } = usePopup();
   const storeNames = Object.keys(stores);
   const [selected, setSelected] = useState(storeNames[0] || "");
   const [paying, setPaying] = useState<string | null>(null); // productName or 'ALL'
   const [search, setSearch] = useState('');
+  const [deleting, setDeleting] = useState(false);
 
   useEffect(() => {
     if (!selected && storeNames.length > 0) setSelected(storeNames[0]);
   }, [storeNames, selected]);
+
+  const handleDeleteSelected = async () => {
+    if (!selected) return;
+    const confirmed = await confirmDialog(`Permanently delete store partner "${selected}"? This cannot be undone. Stores that still have orders on record can't be deleted.`);
+    if (!confirmed) return;
+    setDeleting(true);
+    try {
+      await onDeleteStore(selected);
+    } finally {
+      setDeleting(false);
+    }
+  };
 
   if (storeNames.length === 0) return <div style={{ padding: 40, textAlign: 'center', color: 'var(--text-muted)' }}>No shop partners added yet.</div>;
 
@@ -675,13 +689,27 @@ function StoresOverviewSection({ stores, orders, storeInventory, filter, getFilt
   return (
     <div className="store-selector-view">
       {storeNames.length > 1 && (
-        <div style={{ marginBottom: 24 }}>
-          <CustomSelect
-            label="Select Store Partner"
-            value={selected}
-            options={storeNames}
-            onChange={setSelected}
-          />
+        <div style={{ marginBottom: 24, display: 'flex', alignItems: 'flex-end', gap: 10 }}>
+          <div style={{ flex: 1 }}>
+            <CustomSelect
+              label="Select Store Partner"
+              value={selected}
+              options={storeNames}
+              onChange={setSelected}
+            />
+          </div>
+          {isSuperAdmin && onDeleteStore && (
+            <button
+              type="button"
+              className="btn btn-secondary btn-sm"
+              onClick={handleDeleteSelected}
+              disabled={deleting}
+              title={`Delete "${selected}"`}
+              style={{ height: 48, color: 'var(--red-500, #ef4444)', borderColor: 'rgba(239, 68, 68, 0.35)', whiteSpace: 'nowrap' }}
+            >
+              {deleting ? 'Deleting…' : '🗑 Delete Store'}
+            </button>
+          )}
         </div>
       )}
 
@@ -2150,6 +2178,22 @@ export default function Home({ user, onLogin }: PageProps) {
     }
   };
 
+  const handleDeleteStore = async (name: string) => {
+    try {
+      const response = await fetch('/api/store', {
+        method: 'DELETE',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name })
+      });
+      const result = await response.json();
+      if (!response.ok) throw new Error(result.error || 'Failed to delete store');
+      toast.success(`"${name}" deleted`);
+      refresh();
+    } catch (error: any) {
+      toast.error(error.message || 'Failed to delete store');
+    }
+  };
+
   const handleAddExpense = async (expense: Partial<Expense>) => {
     try {
       const res = await fetch('/api/expenses', {
@@ -2418,6 +2462,8 @@ export default function Home({ user, onLogin }: PageProps) {
               getFiltered={getFiltered}
               onPayOrders={handlePayOrders}
               onAssignItem={(name) => router.push(`/inventory?assign=${name}`)}
+              isSuperAdmin={isSuperAdmin}
+              onDeleteStore={handleDeleteStore}
               isAdmin={isAdmin}
             />
           </SectionCard>
