@@ -1338,49 +1338,52 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       }
 
       // 6. Restore warehouse inventory (Direct sales only: store_inventory_id is null)
+      // Best-effort only: if the batch (or its product) was already deleted from the
+      // warehouse, there's nothing left to restore stock into — that must NOT block
+      // deleting this stale order record, so failures here are logged, not fatal.
       if (!order.store_inventory_id && soldQty > 0) {
-        const normalizedVariants = normalizeVariantQuantities(order.variant_quantities)
-        const variantRollups = rollupVariantQuantities(normalizedVariants)
-        const effectiveSizeQty = variantRollups.sizeQuantities ?? normalizeFlatQuantities(order.size_quantities)
-        const effectiveColorQty = variantRollups.colorQuantities ?? normalizeFlatQuantities(order.color_quantities)
+        try {
+          const normalizedVariants = normalizeVariantQuantities(order.variant_quantities)
+          const variantRollups = rollupVariantQuantities(normalizedVariants)
+          const effectiveSizeQty = variantRollups.sizeQuantities ?? normalizeFlatQuantities(order.size_quantities)
+          const effectiveColorQty = variantRollups.colorQuantities ?? normalizeFlatQuantities(order.color_quantities)
 
-        let invQuery = supabaseAdmin
-          .from(TABLES.INVENTORY)
-          .select('id, quantity_available, size_quantities, color_quantities, variant_quantities')
-          .order('created_at', { ascending: true })
-
-        if (order.product_id) {
-          invQuery = invQuery.eq('product_id', order.product_id)
-        } else {
-          invQuery = invQuery.eq('product_name', order.product_name)
-        }
-
-        const { data: invRows, error: invErr } = await invQuery
-        if (invErr) {
-          console.error('Delete warehouse lookup error:', invErr)
-          return res.status(500).json({ error: 'Failed to lookup warehouse inventory for delete' })
-        }
-
-        if (invRows && invRows.length > 0) {
-          const firstRow = invRows[0]
-          const newInvSizes = mergeFlat(firstRow.size_quantities, effectiveSizeQty)
-          const newInvColors = mergeFlat(firstRow.color_quantities, effectiveColorQty)
-          const newInvVariants = mergeVariantQuantities(firstRow.variant_quantities, normalizedVariants)
-
-          const { error: invUpdErr } = await supabaseAdmin
+          let invQuery = supabaseAdmin
             .from(TABLES.INVENTORY)
-            .update({
-              quantity_available: num(firstRow.quantity_available) + soldQty,
-              size_quantities: newInvSizes,
-              color_quantities: newInvColors,
-              variant_quantities: newInvVariants,
-            })
-            .eq('id', firstRow.id)
+            .select('id, quantity_available, size_quantities, color_quantities, variant_quantities')
+            .order('created_at', { ascending: true })
 
-          if (invUpdErr) {
-            console.error('Delete warehouse restore error:', invUpdErr)
-            return res.status(500).json({ error: 'Failed to restore warehouse inventory during delete' })
+          if (order.product_id) {
+            invQuery = invQuery.eq('product_id', order.product_id)
+          } else {
+            invQuery = invQuery.eq('product_name', order.product_name)
           }
+
+          const { data: invRows, error: invErr } = await invQuery
+          if (invErr) {
+            console.warn('Delete warehouse lookup skipped (non-fatal):', invErr)
+          } else if (invRows && invRows.length > 0) {
+            const firstRow = invRows[0]
+            const newInvSizes = mergeFlat(firstRow.size_quantities, effectiveSizeQty)
+            const newInvColors = mergeFlat(firstRow.color_quantities, effectiveColorQty)
+            const newInvVariants = mergeVariantQuantities(firstRow.variant_quantities, normalizedVariants)
+
+            const { error: invUpdErr } = await supabaseAdmin
+              .from(TABLES.INVENTORY)
+              .update({
+                quantity_available: num(firstRow.quantity_available) + soldQty,
+                size_quantities: newInvSizes,
+                color_quantities: newInvColors,
+                variant_quantities: newInvVariants,
+              })
+              .eq('id', firstRow.id)
+
+            if (invUpdErr) {
+              console.warn('Delete warehouse restore skipped (non-fatal):', invUpdErr)
+            }
+          }
+        } catch (restoreErr) {
+          console.warn('Delete warehouse restore step failed (non-fatal):', restoreErr)
         }
       }
 
