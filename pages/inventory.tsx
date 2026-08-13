@@ -28,6 +28,49 @@ const IC = {
 };
 
 const Rs = (n: number) => "Rs " + (Number(n) || 0).toLocaleString();
+// Search helpers — make the search bars match against every displayed field
+// (including the formatted Item ID like "ITEM-1A2B3C4D").
+const matchesStoreSearch = (s: any, rawQ: string) => {
+    const q = String(rawQ || '').toLowerCase();
+    if (!q) return true;
+    const sold = Math.max(0, (Number(s.quantityAssigned) || 0) - (Number(s.quantityRemaining) || 0));
+    const haystack = [
+        s.storeName,                                  // Shop name
+        s.productName,                                // Item name
+        formatItemCode(s.batchNumber || s.inventoryId), // Item ID (ITEM-XXXXXXXX)
+        s.ownerSupplyPrice,                           // Owner supply price
+        s.quantityAssigned,                           // Total sent
+        s.quantityRemaining,                          // In shop stock
+        sold,                                         // Items sold
+        s.commissionPercent,                          // Shop cut %
+        s.owner,                                      // Alloted by
+        s.category,
+        s.brand,
+    ]
+        .filter(v => v !== undefined && v !== null && v !== '')
+        .join(' ')
+        .toLowerCase();
+    return haystack.includes(q);
+};
+
+const matchesWarehouseSearch = (item: any, rawQ: string) => {
+    const q = String(rawQ || '').toLowerCase();
+    if (!q) return true;
+    const haystack = [
+        item.productName,
+        item.brand,
+        item.category,
+        item.batchNumber,
+        formatItemCode(item.batchNumber || item.id),  // Item ID (ITEM-XXXXXXXX)
+        item.costPrice,
+        item.quantityAvailable,
+    ]
+        .filter(v => v !== undefined && v !== null && v !== '')
+        .join(' ')
+        .toLowerCase();
+    return haystack.includes(q);
+};
+
 
 export default function InventoryPage({ user, onLogin }: PageProps) {
     const { toast } = usePopup();
@@ -465,15 +508,7 @@ export default function InventoryPage({ user, onLogin }: PageProps) {
                                 )}
                             </div>
                             {inventorySearch && (() => {
-                                const count = data.inventory.filter(item => {
-                                    const q = inventorySearch.toLowerCase();
-                                    return (
-                                        item.productName?.toLowerCase().includes(q) ||
-                                        (item as any).brand?.toLowerCase().includes(q) ||
-                                        item.category?.toLowerCase().includes(q) ||
-                                        item.batchNumber?.toLowerCase().includes(q)
-                                    );
-                                }).length;
+                                const count = data.inventory.filter(item => matchesWarehouseSearch(item, inventorySearch)).length;
                                 return <span style={{ fontSize: 12, color: 'var(--text-muted)', whiteSpace: 'nowrap' }}>{count} result{count !== 1 ? 's' : ''}</span>;
                             })()}
                         </div>
@@ -494,15 +529,7 @@ export default function InventoryPage({ user, onLogin }: PageProps) {
                                 </thead>
                                 <tbody>
                                     {(inventorySearch.trim()
-                                        ? data.inventory.filter(item => {
-                                            const q = inventorySearch.toLowerCase();
-                                            return (
-                                                item.productName?.toLowerCase().includes(q) ||
-                                                (item as any).brand?.toLowerCase().includes(q) ||
-                                                item.category?.toLowerCase().includes(q) ||
-                                                item.batchNumber?.toLowerCase().includes(q)
-                                            );
-                                          })
+                                        ? data.inventory.filter(item => matchesWarehouseSearch(item, inventorySearch))
                                         : data.inventory
                                     ).map((item, idx) => {
                                         const picture = item.productImage || (item as any)?.otherVariants?.picture as string | undefined;
@@ -716,11 +743,9 @@ export default function InventoryPage({ user, onLogin }: PageProps) {
                         <button className="btn btn-primary" onClick={() => setShowAllotModal(true)}>+ Alot to Stores</button>
                     ) : undefined}
                 >
-                    <SearchBar value={storeSearch} onChange={setStoreSearch} placeholder="Search by store name, product name…" resultCount={stockProvided.filter(s => {
+                    <SearchBar value={storeSearch} onChange={setStoreSearch} placeholder="Search by shop, product, item ID, price, qty, owner…" resultCount={stockProvided.filter(s => {
                         if (!(isAdmin || storeNameMatches(s.storeName))) return false;
-                        if (!storeSearch) return true;
-                        const q = storeSearch.toLowerCase();
-                        return (s.storeName || '').toLowerCase().includes(q) || (s.productName || '').toLowerCase().includes(q);
+                        return matchesStoreSearch(s, storeSearch);
                     }).length} />
                     <div className="table-wrap">
                         <table className="desktop-table-view">
@@ -742,9 +767,7 @@ export default function InventoryPage({ user, onLogin }: PageProps) {
                                     {(() => {
                                         const rows = stockProvided.filter(s => {
                                             if (!(isAdmin || storeNameMatches(s.storeName))) return false;
-                                            if (!storeSearch) return true;
-                                            const q = storeSearch.toLowerCase();
-                                            return (s.storeName || '').toLowerCase().includes(q) || (s.productName || '').toLowerCase().includes(q);
+                                            return matchesStoreSearch(s, storeSearch);
                                         });
                                         return rows.length === 0 ? (
                                             <tr><td colSpan={isAdmin ? 10 : 8} style={{ textAlign: 'center', padding: 40 }} className="text-muted">{storeSearch ? 'No stock matches your search.' : 'No stock available currently.'}</td></tr>
@@ -872,9 +895,7 @@ export default function InventoryPage({ user, onLogin }: PageProps) {
                                 {(() => {
                                     const rows = stockProvided.filter(s => {
                                         if (!(isAdmin || storeNameMatches(s.storeName))) return false;
-                                        if (!storeSearch) return true;
-                                        const q = storeSearch.toLowerCase();
-                                        return (s.storeName || '').toLowerCase().includes(q) || (s.productName || '').toLowerCase().includes(q);
+                                        return matchesStoreSearch(s, storeSearch);
                                     });
                                     return rows.length === 0 ? (
                                         <div style={{ textAlign: 'center', padding: 40 }} className="text-muted">{storeSearch ? 'No stock matches your search.' : 'No stock available currently.'}</div>
