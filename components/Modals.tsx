@@ -129,7 +129,7 @@ export function VariantQuantityGrid({
     };
 
     return (
-        <div style={{ marginBottom: 16, padding: 16, background: 'var(--surface-2)', borderRadius: 10, border: '1px solid var(--border)', overflowX: 'auto', WebkitOverflowScrolling: 'touch' }}>
+        <div style={{ marginBottom: 16, padding: 16, background: 'var(--surface-2)', borderRadius: 10, border: '1px solid var(--border)', overflowX: 'auto', flexShrink: 0, WebkitOverflowScrolling: 'touch' }}>
             <div style={{ fontSize: 13, fontWeight: 800, marginBottom: 12, color: 'var(--text)', minWidth: 0 }}>{title}</div>
             <table style={{ width: '100%', borderCollapse: 'separate', borderSpacing: 0, minWidth: 240 }}>
                 <thead>
