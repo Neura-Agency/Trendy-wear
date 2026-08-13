@@ -1713,7 +1713,7 @@ function ClientsSection({ clients }) {
 // ─── MAIN PAGE ───────────────────────────────────────────────────────
 export default function Home({ user, onLogin }: PageProps) {
   const router = useRouter();
-  const { toast, confirmDialog } = usePopup();
+  const { toast, confirmDialog, showProcessing, hideProcessing } = usePopup();
   const [data, setData] = useState<{
     orders: Order[];
     inventory: InventoryItem[];
@@ -2105,6 +2105,7 @@ export default function Home({ user, onLogin }: PageProps) {
     }));
 
   const handleAddOrder = async (order: any) => {
+    showProcessing('Saving sale...');
     try {
       const res = await fetch('/api/orders', {
         method: 'POST',
@@ -2139,11 +2140,13 @@ export default function Home({ user, onLogin }: PageProps) {
     } catch (e: any) {
       toast.error(e?.message || 'Failed to save sale');
     } finally {
+      hideProcessing();
       refresh();
     }
   };
 
   const handleCreateStore = async (store: { name: string; partnerName: string; partnerContact: string; commission: number; storeId: string }) => {
+    showProcessing('Creating store...');
     try {
       const response = await fetch('/api/store', {
         method: 'POST',
@@ -2175,10 +2178,13 @@ export default function Home({ user, onLogin }: PageProps) {
       refresh();
     } catch (error: any) {
       toast.error(error.message || 'Failed to create store');
+    } finally {
+      hideProcessing();
     }
   };
 
   const handleDeleteStore = async (name: string) => {
+    showProcessing('Deleting store...');
     try {
       const response = await fetch('/api/store', {
         method: 'DELETE',
@@ -2191,10 +2197,13 @@ export default function Home({ user, onLogin }: PageProps) {
       refresh();
     } catch (error: any) {
       toast.error(error.message || 'Failed to delete store');
+    } finally {
+      hideProcessing();
     }
   };
 
   const handleAddExpense = async (expense: Partial<Expense>) => {
+    showProcessing('Saving expense...');
     try {
       const res = await fetch('/api/expenses', {
         method: 'POST',
@@ -2207,10 +2216,13 @@ export default function Home({ user, onLogin }: PageProps) {
       refresh();
     } catch (e: any) {
       toast.error(e?.message || 'Failed to save expense');
+    } finally {
+      hideProcessing();
     }
   };
 
   const handleEditExpense = async (expense: Partial<Expense> & { id?: string }) => {
+    showProcessing('Updating expense...');
     try {
       const res = await fetch('/api/expenses', {
         method: 'PATCH',
@@ -2224,10 +2236,13 @@ export default function Home({ user, onLogin }: PageProps) {
       refresh();
     } catch (e: any) {
       toast.error(e?.message || 'Failed to update expense');
+    } finally {
+      hideProcessing();
     }
   };
 
   const handlePayOrders = async (ids: string[]) => {
+    showProcessing('Recording payment...');
     try {
       const res = await fetch('/api/orders', {
         method: 'PATCH',
@@ -2240,11 +2255,13 @@ export default function Home({ user, onLogin }: PageProps) {
     } catch (e: any) {
       toast.error(e?.message || 'Failed to update payment status');
     } finally {
+      hideProcessing();
       refresh();
     }
   };
 
   const handleReturnOrder = async (payload: { id: string; returnQuantity: number; returnReason: string; returnSizeQuantities?: Record<string,number>|null; returnColorQuantities?: Record<string,number>|null; returnVariantQuantities?: Record<string, Record<string, number>>|null }) => {
+    showProcessing('Processing return...');
     try {
       const res = await fetch('/api/orders', {
         method: 'PATCH',
@@ -2257,11 +2274,13 @@ export default function Home({ user, onLogin }: PageProps) {
     } catch (e: any) {
       toast.error(e?.message || 'Failed to process return');
     } finally {
+      hideProcessing();
       refresh();
     }
   };
 
   const handleRefundOrder = async (payload: any) => {
+    showProcessing('Processing refund...');
     try {
       const res = await fetch('/api/orders', {
         method: 'PATCH',
@@ -2274,11 +2293,13 @@ export default function Home({ user, onLogin }: PageProps) {
     } catch (e: any) {
       toast.error(e?.message || 'Failed to process refund');
     } finally {
+      hideProcessing();
       refresh();
     }
   };
 
   const handleUndoRefund = async (id: string) => {
+    showProcessing('Undoing refund...');
     try {
       const res = await fetch('/api/orders', {
         method: 'PATCH',
@@ -2290,11 +2311,14 @@ export default function Home({ user, onLogin }: PageProps) {
       else toast.success('↩ Refund undone — sale restored');
     } catch (e: any) {
       toast.error(e?.message || 'Failed to undo refund');
+    } finally {
+      hideProcessing();
     }
     refresh();
   };
 
   const handleUndoReturn = async (id: string) => {
+    showProcessing('Undoing return...');
     try {
       const res = await fetch('/api/orders', {
         method: 'PATCH',
@@ -2307,6 +2331,7 @@ export default function Home({ user, onLogin }: PageProps) {
     } catch (e: any) {
       toast.error(e?.message || 'Failed to undo return');
     } finally {
+      hideProcessing();
       refresh();
     }
   };

@@ -128,7 +128,7 @@ function EditDirectSaleModal({ order, onSave, onClose }: { order: any; onSave: (
 
 // ── Main page ────────────────────────────────────────────────────────
 export default function DirectSalesPage({ user, onLogin }: PageProps) {
-  const { toast, confirmDialog } = usePopup();
+  const { toast, confirmDialog, showProcessing, hideProcessing } = usePopup();
   const [data, setData] = useState<{ inventory: InventoryItem[]; orders: any[] }>({ inventory: [], orders: [] });
   const [loading, setLoading] = useState(true);
   const [showSaleModal, setShowSaleModal] = useState(false);
@@ -207,6 +207,7 @@ export default function DirectSalesPage({ user, onLogin }: PageProps) {
 
   // ── Handlers ──────────────────────────────────────────────────────
   const handleSaveEdit = async (payload: any) => {
+    showProcessing("Updating sale...");
     try {
       const res = await fetch("/api/orders", {
         method: "PUT",
@@ -235,12 +236,14 @@ export default function DirectSalesPage({ user, onLogin }: PageProps) {
     } catch (e: any) {
       toast.error(e?.message || "Failed to update sale");
     } finally {
+      hideProcessing();
       refresh();
     }
   };
 
   const handleDelete = async (id: string) => {
     if (!(await confirmDialog("Delete this sale? Warehouse stock will be restored and the record permanently removed."))) return;
+    showProcessing("Deleting sale...");
     try {
       const res = await fetch("/api/orders", {
         method: "DELETE",
@@ -252,11 +255,13 @@ export default function DirectSalesPage({ user, onLogin }: PageProps) {
     } catch (e: any) {
       toast.error(e?.message || "Failed to delete sale");
     } finally {
+      hideProcessing();
       refresh();
     }
   };
 
   const handleReturn = async (payload: any) => {
+    showProcessing("Processing return...");
     try {
       const res = await fetch("/api/orders", {
         method: "PATCH",
@@ -269,12 +274,14 @@ export default function DirectSalesPage({ user, onLogin }: PageProps) {
     } catch (e: any) {
       toast.error(e?.message || "Failed to process return");
     } finally {
+      hideProcessing();
       setReturningOrder(null);
       refresh();
     }
   };
 
   const handleRefund = async (payload: any) => {
+    showProcessing("Processing refund...");
     try {
       const res = await fetch("/api/orders", {
         method: "PATCH",
@@ -287,12 +294,14 @@ export default function DirectSalesPage({ user, onLogin }: PageProps) {
     } catch (e: any) {
       toast.error(e?.message || "Failed to process refund");
     } finally {
+      hideProcessing();
       setRefundingOrder(null);
       refresh();
     }
   };
 
   const handleUndoReturn = async (id: string) => {
+    showProcessing("Undoing return...");
     try {
       const res = await fetch("/api/orders", {
         method: "PATCH",
@@ -305,11 +314,13 @@ export default function DirectSalesPage({ user, onLogin }: PageProps) {
     } catch (e: any) {
       toast.error(e?.message || "Failed to undo return");
     } finally {
+      hideProcessing();
       refresh();
     }
   };
 
   const handleUndoRefund = async (id: string) => {
+    showProcessing("Undoing refund...");
     try {
       const res = await fetch("/api/orders", {
         method: "PATCH",
@@ -322,6 +333,7 @@ export default function DirectSalesPage({ user, onLogin }: PageProps) {
     } catch (e: any) {
       toast.error(e?.message || "Failed to undo refund");
     } finally {
+      hideProcessing();
       refresh();
     }
   };

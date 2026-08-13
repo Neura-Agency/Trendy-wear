@@ -73,7 +73,7 @@ const matchesWarehouseSearch = (item: any, rawQ: string) => {
 
 
 export default function InventoryPage({ user, onLogin }: PageProps) {
-    const { toast } = usePopup();
+    const { toast, showProcessing, hideProcessing } = usePopup();
     const [data, setData] = useState<{
         inventory: InventoryItem[];
         storeInventory: Record<string, Record<string, StoreInventoryItem>>;
@@ -166,6 +166,7 @@ export default function InventoryPage({ user, onLogin }: PageProps) {
 
 
     const handleSaveInventory = async (payload: any) => {
+        showProcessing('Saving inventory...');
         try {
             const response = await fetch('/api/inventory', {
                 method: 'POST',
@@ -186,11 +187,14 @@ export default function InventoryPage({ user, onLogin }: PageProps) {
             refresh();
         } catch (e: any) {
             toast.error(e?.message || 'Failed to save inventory')
+        } finally {
+            hideProcessing();
         }
     };
 
     const handleUpdateInventory = async (item: InventoryItem, fields: any) => {
         if (!item?.id) return toast.error('Missing inventory id')
+        showProcessing('Updating inventory...');
         try {
             const response = await fetch('/api/inventory', {
                 method: 'PATCH',
@@ -205,6 +209,8 @@ export default function InventoryPage({ user, onLogin }: PageProps) {
             refresh()
         } catch (e: any) {
             toast.error(e?.message || 'Update failed')
+        } finally {
+            hideProcessing();
         }
     }
 
@@ -217,6 +223,7 @@ export default function InventoryPage({ user, onLogin }: PageProps) {
     const confirmDeleteInventory = async () => {
         if (!deletingInventoryItem?.id) return toast.error('Missing inventory id')
 
+        showProcessing('Deleting inventory item...');
         try {
             const response = await fetch('/api/inventory', {
                 method: 'DELETE',
@@ -233,6 +240,8 @@ export default function InventoryPage({ user, onLogin }: PageProps) {
             refresh()
         } catch (e: any) {
             toast.error(e?.message || 'Delete failed')
+        } finally {
+            hideProcessing();
         }
     }
 
@@ -246,6 +255,7 @@ export default function InventoryPage({ user, onLogin }: PageProps) {
         if (!deletingAllotmentRow?.id) return toast.error('Missing allotment id')
 
         setDeletingAllotment(true)
+        showProcessing('Removing allotment...');
         try {
             const response = await fetch('/api/storeInventory', {
                 method: 'DELETE',
@@ -265,10 +275,12 @@ export default function InventoryPage({ user, onLogin }: PageProps) {
             toast.error(e?.message || 'Delete failed')
         } finally {
             setDeletingAllotment(false)
+            hideProcessing();
         }
     }
 
     const handleReturnToWarehouse = async (payload: { id: string; returnQty: number; returnSizeQuantities?: any; returnColorQuantities?: any; returnVariantQuantities?: any }) => {
+        showProcessing('Returning stock to warehouse...');
         try {
             const response = await fetch('/api/storeInventory', {
                 method: 'PATCH',
@@ -282,6 +294,8 @@ export default function InventoryPage({ user, onLogin }: PageProps) {
             refresh()
         } catch (e: any) {
             toast.error(e?.message || 'Return to warehouse failed')
+        } finally {
+            hideProcessing();
         }
     }
 
