@@ -1846,24 +1846,8 @@ export function EditStoreInventoryModal({ item, storeNames, onSave, onClose }: {
                             </div>
                         )}
 
-                        {/* Row 3: New Price (Supply to Store) + Partner Commission % */}
-                        <div className="form-grid-2" style={{ marginBottom: 18 }}>
-                            <div className="input-group">
-                                <label>New Price (Supply to Store)</label>
-                                <input
-                                    type="text"
-                                    inputMode="decimal"
-                                    value={form.ownerSupplyPrice}
-                                    onChange={(e) => setForm({ ...form, ownerSupplyPrice: parseFloat(e.target.value) || 0 })}
-                                    required
-                                    style={{ borderColor: (Number(item?.ownerSupplyPrice) > 0 && Number(form.ownerSupplyPrice) < Number(item?.ownerSupplyPrice)) ? 'var(--danger)' : undefined }}
-                                />
-                                {Number(item?.ownerSupplyPrice) > 0 && (
-                                    <div style={{ fontSize: 11, marginTop: 4, fontWeight: 600, color: Number(form.ownerSupplyPrice) < Number(item?.ownerSupplyPrice) ? 'var(--danger)' : 'var(--text-muted)' }}>
-                                        Min: Rs {Number(item?.ownerSupplyPrice).toLocaleString()} (warehouse cost)
-                                    </div>
-                                )}
-                            </div>
+                        {/* Row 3: Partner Commission % */}
+                        <div style={{ marginBottom: 18 }}>
                             <div className="input-group">
                                 <label>Partner Commission %</label>
                                 <input type="text" inputMode="decimal" value={form.commissionPercent} onChange={(e) => setForm({ ...form, commissionPercent: parseFloat(e.target.value) || 0 })} required />

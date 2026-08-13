@@ -25,6 +25,40 @@ export default function ShopCredentials({ user, onLogin }: PageProps) {
     const [accountStatuses, setAccountStatuses] = useState<Record<string, boolean>>({});
     const [search, setSearch] = useState('');
     const [detailAccount, setDetailAccount] = useState<{ username: string; account: Account } | null>(null);
+    const [revealedPw, setRevealedPw] = useState<Record<string, string>>({});
+    const [showPw, setShowPw] = useState<Record<string, boolean>>({});
+
+    const revealPassword = async (username: string) => {
+        try {
+            const res = await fetch('/api/accounts/reveal', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ username })
+            });
+            const data = await res.json();
+            if (!res.ok) throw new Error(data.error || 'Failed to reveal password');
+            setRevealedPw(prev => ({ ...prev, [username]: data.password || '' }));
+            return (data.password as string) || '';
+        } catch (e: any) {
+            alert(e.message || 'Failed to reveal password');
+            return '';
+        }
+    };
+
+    const togglePassword = async (username: string) => {
+        if (showPw[username]) {
+            setShowPw(prev => ({ ...prev, [username]: false }));
+            setRevealedPw(prev => {
+                const next = { ...prev };
+                delete next[username];
+                return next;
+            });
+            return;
+        }
+        const pw = await revealPassword(username);
+        if (pw) setShowPw(prev => ({ ...prev, [username]: true }));
+    };
+
 
     const refresh = useCallback(async () => {
         try {
@@ -198,7 +232,10 @@ export default function ShopCredentials({ user, onLogin }: PageProps) {
                                                 <code className="credential-code">{username}</code>
                                             </td>
                                             <td>
-                                                <code className="credential-code primary">{acc.password}</code>
+                                                <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                                                    <code className="credential-code primary">{showPw[username] && revealedPw[username] ? revealedPw[username] : '••••••••'}</code>
+                                                    <button type="button" className="btn btn-sm btn-secondary" onClick={() => togglePassword(username)} style={{ fontSize: 10, padding: '3px 8px', whiteSpace: 'nowrap', minWidth: 46 }}>{showPw[username] ? 'Hide' : 'Show'}</button>
+                                                </div>
                                             </td>
                                             <td>
                                                 <Badge type={acc.role === 'admin' ? 'blue' : 'purple'}>{acc.role}</Badge>
@@ -260,7 +297,10 @@ export default function ShopCredentials({ user, onLogin }: PageProps) {
                                             </div>
                                             <div className="mobile-card-row">
                                                 <span className="mobile-card-label">Password</span>
-                                                <span className="mobile-card-value" style={{ fontFamily: 'monospace', fontSize: 12 }}>{acc.password}</span>
+                                                <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+                                                    <span className="mobile-card-value" style={{ fontFamily: 'monospace', fontSize: 12 }}>{showPw[username] && revealedPw[username] ? revealedPw[username] : '••••••••'}</span>
+                                                    <button type="button" className="btn btn-sm btn-secondary" onClick={() => togglePassword(username)} style={{ fontSize: 10, padding: '3px 8px', whiteSpace: 'nowrap', minWidth: 46 }}>{showPw[username] ? 'Hide' : 'Show'}</button>
+                                                </div>
                                             </div>
                                             <div className="mobile-card-row">
                                                 <span className="mobile-card-label">Role</span>
