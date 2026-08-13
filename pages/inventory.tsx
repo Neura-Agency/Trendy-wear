@@ -729,7 +729,7 @@ export default function InventoryPage({ user, onLogin }: PageProps) {
                                     {isAdmin && <th>Shop Name</th>}
                                     <th>Item Name</th>
                                     <th>Item ID</th>
-                                    <th>Owner Supply Price</th>
+                                    {isAdmin && <th>Owner Supply Price</th>}
                                     <th>Total Sent</th>
                                     <th>In Shop Stock</th>
                                     {isAdmin && <th>Shop Cut %</th>}

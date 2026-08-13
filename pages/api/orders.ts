@@ -224,8 +224,28 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
           .eq('name', storeName)
           .maybeSingle()
         if (storeErr) throw storeErr
-        if (!store) return res.status(404).json({ error: 'Store not found' })
-        storeId = store.id
+        if (!store) {
+          // Auto-create the special "Direct" store (owner sells straight from warehouse,
+          // no store partner involved). No store_owners row is needed since Direct
+          // sales pay 0% commission — this keeps the Direct Sales page working even
+          // on a fresh database with no store partners set up yet.
+          if (storeName === 'Direct') {
+            const { data: createdStore, error: createStoreErr } = await supabaseAdmin
+              .from(TABLES.STORES)
+              .insert({ name: 'Direct', commission: 0 })
+              .select('id')
+              .single()
+            if (createStoreErr) {
+              console.error('Failed to auto-create Direct store:', createStoreErr)
+              return res.status(500).json({ error: 'Failed to set up Direct store' })
+            }
+            storeId = createdStore.id
+          } else {
+            return res.status(404).json({ error: 'Store not found' })
+          }
+        } else {
+          storeId = store.id
+        }
       }
 
       if (!storeId) return res.status(400).json({ error: 'Could not resolve store' })
