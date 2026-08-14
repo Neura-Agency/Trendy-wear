@@ -24,6 +24,44 @@ function parseJsonField(value: any): any {
   return value
 }
 
+/** Subtract a flat per-key delta from a base object, keeping only positive keys. */
+function subtractFlat(base: any, delta: any): Record<string, number> | null {
+  const baseObj = (base && typeof base === 'object' && !Array.isArray(base)) ? base as Record<string, number> : {}
+  const deltaObj = (delta && typeof delta === 'object' && !Array.isArray(delta)) ? delta as Record<string, number> : {}
+  const next: Record<string, number> = {}
+  Object.keys(baseObj).forEach((k) => {
+    const n = Math.max(0, (num(baseObj[k]) || 0) - (num(deltaObj[k]) || 0))
+    if (n > 0) next[k] = n
+  })
+  return Object.keys(next).length ? next : null
+}
+
+/** Add a flat per-key delta to a base object (returns null when the result is empty). */
+function addFlat(base: any, delta: any): Record<string, number> | null {
+  const baseObj = (base && typeof base === 'object' && !Array.isArray(base)) ? base as Record<string, number> : {}
+  const deltaObj = (delta && typeof delta === 'object' && !Array.isArray(delta)) ? delta as Record<string, number> : {}
+  const next: Record<string, number> = { ...baseObj }
+  Object.entries(deltaObj).forEach(([k, v]) => {
+    next[k] = Math.max(0, (num(next[k]) || 0) + num(v))
+  })
+  return Object.keys(next).length ? next : null
+}
+
+/** Add a nested variant (color->size->qty) delta to a base object (returns null when empty). */
+function addVariant(base: any, delta: any): Record<string, Record<string, number>> | null {
+  const baseObj = (base && typeof base === 'object' && !Array.isArray(base)) ? base as Record<string, Record<string, number>> : {}
+  const deltaObj = (delta && typeof delta === 'object' && !Array.isArray(delta)) ? delta as Record<string, Record<string, number>> : {}
+  const next: Record<string, Record<string, number>> = {}
+  Object.entries(baseObj).forEach(([c, sizes]) => { next[c] = { ...(sizes || {}) } })
+  Object.entries(deltaObj).forEach(([c, sizes]) => {
+    if (!next[c]) next[c] = {}
+    Object.entries(sizes || {}).forEach(([s, q]) => {
+      next[c][s] = Math.max(0, (num(next[c][s]) || 0) + num(q))
+    })
+  })
+  return Object.keys(next).length ? next : null
+}
+
 export default async function handler(req: NextApiRequest, res: NextApiResponse) {
   try {
     // returnToWarehouse is allowed for store managers (any logged-in user) — not just admins
@@ -289,12 +327,26 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
         return res.status(500).json({ error: 'Failed to save allotment' })
       }
 
-      // Deduct alloted quantity from warehouse inventory (regular + extra)
+      // Deduct alloted quantity from warehouse inventory (regular + extra) — exactly once.
+      // Keep the breakdown columns (variant/size/color_quantities) in sync with the scalar
+      // quantity_available: allotted units are removed from CURRENT warehouse availability.
       const totalDeduction = qty + extraQty
-      await supabaseAdmin
+      const invUpdate: Record<string, any> = {
+        quantity_available: Math.max(0, total - totalDeduction),
+      }
+      if (normalizedVariantsAssigned) {
+        invUpdate.variant_quantities = adjustVariantQuantities(inv.variant_quantities, normalizedVariantsAssigned, -1) ?? null
+      }
+      invUpdate.size_quantities = subtractFlat(inv.size_quantities, effectiveSizeQuantitiesAssigned)
+      invUpdate.color_quantities = subtractFlat(inv.color_quantities, effectiveColorQuantitiesAssigned)
+      const { error: deductErr } = await supabaseAdmin
         .from(TABLES.INVENTORY)
-        .update({ quantity_available: Math.max(0, total - totalDeduction) })
+        .update(invUpdate)
         .eq('id', inv.id)
+      if (deductErr) {
+        console.error('storeInventory warehouse deduct error:', deductErr)
+        return res.status(500).json({ error: 'Failed to deduct alloted quantity from warehouse' })
+      }
 
       // Auto-create expense for gifted (extra) units
       if (extraQty > 0) {
@@ -863,7 +915,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       // Fetch the row so we know how many unsold pieces to return to warehouse
       const { data: row, error: fetchErr } = await supabaseAdmin
         .from(TABLES.STORE_INVENTORY)
-        .select('id, inventory_id, quantity_remaining')
+        .select('id, inventory_id, quantity_remaining, size_quantities_remaining, color_quantities_remaining, variant_quantities_remaining')
         .eq('id', id)
         .maybeSingle()
 
@@ -873,19 +925,24 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 
       const unsold = Number(row.quantity_remaining) || 0
 
-      // Return unsold pieces to warehouse inventory
+      // Return unsold pieces to warehouse inventory, keeping the breakdown columns
+      // (variant/size/color_quantities) in sync with quantity_available.
       if (unsold > 0 && row.inventory_id) {
         const { data: invRow, error: invFetchErr } = await supabaseAdmin
           .from(TABLES.INVENTORY)
-          .select('quantity_available')
+          .select('quantity_available, size_quantities, color_quantities, variant_quantities')
           .eq('id', row.inventory_id)
           .maybeSingle()
 
         if (!invFetchErr && invRow) {
           const newQty = (Number(invRow.quantity_available) || 0) + unsold
+          const invUpdate: Record<string, any> = { quantity_available: newQty }
+          invUpdate.variant_quantities = addVariant(invRow.variant_quantities, row.variant_quantities_remaining)
+          invUpdate.size_quantities = addFlat(invRow.size_quantities, row.size_quantities_remaining)
+          invUpdate.color_quantities = addFlat(invRow.color_quantities, row.color_quantities_remaining)
           await supabaseAdmin
             .from(TABLES.INVENTORY)
-            .update({ quantity_available: newQty })
+            .update(invUpdate)
             .eq('id', row.inventory_id)
         }
       }

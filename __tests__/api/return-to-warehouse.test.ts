@@ -95,6 +95,13 @@ describe('Return to Main Store — allocation consistency', () => {
   afterAll(async () => { await cleanup() })
 
   test('1. FULL return (all 6) reflects current database state', async () => {
+    // Capture pre-return state to verify the invariant
+    const { data: invBefore } = await supabaseAdmin.from(TABLES.INVENTORY).select('quantity_available').eq('id', inventoryId).single()
+    const { data: siBefore } = await supabaseAdmin.from(TABLES.STORE_INVENTORY).select('quantity_assigned, quantity_remaining').eq('id', siId).single()
+    const preInvariant = num(invBefore!.quantity_available) + num(siBefore!.quantity_assigned)
+    // The invariant: warehouse_available + allocated = total physical stock (constant)
+    // For this test warehouse=10, allocated=6, total=16
+
     const res = makeRes()
     await handlerStoreInventory(makeReq('PATCH', {
       action: 'returnToWarehouse',
@@ -119,8 +126,14 @@ describe('Return to Main Store — allocation consistency', () => {
     expect(zeroTotal(sa) || Object.values(sa || {}).every((n: any) => num(n) === 0)).toBe(true)
     expect(zeroTotal(ca) || Object.values(ca || {}).every((n: any) => num(n) === 0)).toBe(true)
 
-    const { data: inv } = await supabaseAdmin.from(TABLES.INVENTORY).select('quantity_available').eq('id', inventoryId).single()
-    expect(inv!.quantity_available).toBe(16)
+    const { data: invAfter } = await supabaseAdmin.from(TABLES.INVENTORY).select('quantity_available').eq('id', inventoryId).single()
+    expect(invAfter!.quantity_available).toBe(16)
+    // Assert the INVARIANT: warehouse_available + allocated = constant (no double-count)
+    const postInvariant = num(invAfter!.quantity_available) + num(si!.quantity_assigned)
+    expect(postInvariant).toBe(preInvariant)
+    // The display Qty = quantity_available (NOT quantity_available - allocated)
+    // So displayed Qty goes from 41 (for 47-6) to 47 (for 47-0) — correct
+    expect(invAfter!.quantity_available).toBe(10 + 6) // physical increment = 6, not 12
   })
 
   test('2. GET returns assigned=0 so Details/Edit/table are consistent', async () => {
