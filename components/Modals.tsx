@@ -1716,7 +1716,9 @@ export function EditStoreInventoryModal({ item, storeNames, onSave, onClose }: {
         onClose();
     };
 
-    const sold = (item?.quantityAssigned || 0) - (item?.quantityRemaining || 0);
+    // quantityAssigned is already net of warehouse returns (see return_to_warehouse),
+    // so Items Sold = assigned - remaining.
+    const sold = Math.max(0, (item?.quantityAssigned || 0) - (item?.quantityRemaining || 0));
 
     const handleAssignedChange = (val: string) => {
         const parsed = parseInt(val) || 0;

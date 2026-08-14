@@ -289,7 +289,8 @@ export default function InventoryPage({ user, onLogin }: PageProps) {
             })
             const result = await response.json()
             if (!response.ok) throw new Error(result.error || 'Failed to return to warehouse')
-            toast.success(`✅ ${payload.returnQty} piece${payload.returnQty !== 1 ? 's' : ''} returned to warehouse`)
+            const returnedQty = result.returned ?? payload.returnQty
+            toast.success(`✅ ${returnedQty} piece${returnedQty !== 1 ? 's' : ''} returned to Main Store successfully.`)
             setReturnToWarehouseRow(null)
             refresh()
         } catch (e: any) {
@@ -317,7 +318,7 @@ export default function InventoryPage({ user, onLogin }: PageProps) {
         Object.values(items || {}).forEach((it: any) => {
             const key = it?.inventoryId;   // inventory.id FK — unique per batch
             if (!key) return;
-            allotedQtyByProduct[key] = (allotedQtyByProduct[key] || 0) + (Number(it.quantityAssigned) || 0);
+            allotedQtyByProduct[key] = (allotedQtyByProduct[key] || 0) + Math.max(0, (Number(it.quantityAssigned) || 0));
             // Accumulate per-variant allotments for the Add Allotment modal
             if (it.variantQuantitiesAssigned && typeof it.variantQuantitiesAssigned === 'object') {
                 if (!allotedVariantsByProduct[key]) allotedVariantsByProduct[key] = {};
@@ -793,7 +794,7 @@ export default function InventoryPage({ user, onLogin }: PageProps) {
                                             <td className="text-muted font-mono" style={{ fontWeight: 600 }}>
                                                 {item.ownerSupplyPrice ? `Rs ${Number(item.ownerSupplyPrice).toLocaleString()}` : '-'}
                                             </td>
-                                            <td><Badge type="gray">{item.quantityAssigned}</Badge></td>
+                                            <td><Badge type="gray">{Math.max(0, item.quantityAssigned)}</Badge></td>
                                             <td className="font-bold" style={{ fontSize: '1rem', color: Math.max(0, item.quantityRemaining) > 0 ? 'var(--text-body)' : 'var(--danger)' }}>
                                                 {Math.max(0, item.quantityRemaining)}
                                             </td>
@@ -929,7 +930,7 @@ export default function InventoryPage({ user, onLogin }: PageProps) {
                                             </div>
                                             <div className="mobile-card-row">
                                                 <span className="mobile-card-label">Total Sent</span>
-                                                <span className="mobile-card-value"><Badge type="gray">{item.quantityAssigned}</Badge></span>
+                                                <span className="mobile-card-value"><Badge type="gray">{Math.max(0, item.quantityAssigned)}</Badge></span>
                                             </div>
                                             <div className="mobile-card-row">
                                                 <span className="mobile-card-label">In Stock</span>
