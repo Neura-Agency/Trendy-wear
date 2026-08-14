@@ -44,7 +44,7 @@ const sectionIcons: Record<string, React.ReactNode> = {
   ),
 };
 
-function renderFormattedObjectOrArray(obj: any) {
+function renderFormattedObjectOrArray(obj: any): React.ReactNode {
   if (obj === null || obj === undefined) {
     return <span style={{ color: 'var(--text-faint)', fontStyle: 'italic' }}>—</span>;
   }
@@ -70,7 +70,7 @@ function renderFormattedObjectOrArray(obj: any) {
               fontWeight: 600,
             }}
           >
-            {typeof item === 'object' ? JSON.stringify(item) : String(item)}
+            {typeof item === 'object' && item !== null ? renderFormattedObjectOrArray(item) : String(item)}
           </span>
         ))}
       </div>
@@ -82,6 +82,45 @@ function renderFormattedObjectOrArray(obj: any) {
     if (entries.length === 0) {
       return <span style={{ color: 'var(--text-faint)', fontStyle: 'italic' }}>—</span>;
     }
+
+    // Two-level nesting (e.g. variant quantities: { grey: { M: 3, S: 4 } }) gets its own
+    // grouped card per top-level key instead of a raw JSON blob like {"M":3,"S":4}.
+    const hasNestedObjects = entries.some(([, v]) => v !== null && typeof v === 'object');
+
+    if (hasNestedObjects) {
+      return (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 8, alignItems: 'flex-end', width: '100%' }}>
+          {entries.map(([k, v]) => (
+            <div
+              key={k}
+              style={{
+                display: 'flex',
+                flexDirection: 'column',
+                gap: 6,
+                padding: '8px 10px',
+                borderRadius: 10,
+                background: 'var(--surface-3)',
+                border: '1px solid var(--border)',
+                width: '100%',
+                maxWidth: 240,
+              }}
+            >
+              <span style={{ fontSize: 10, fontWeight: 800, textTransform: 'uppercase', letterSpacing: '0.05em', color: 'var(--text-muted)' }}>
+                {k}
+              </span>
+              <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, justifyContent: 'flex-end' }}>
+                {v !== null && typeof v === 'object' ? (
+                  renderFormattedObjectOrArray(v)
+                ) : (
+                  <span style={{ fontWeight: 700, color: 'var(--text-head)' }}>{String(v)}</span>
+                )}
+              </div>
+            </div>
+          ))}
+        </div>
+      );
+    }
+
     return (
       <div style={{ display: 'inline-flex', flexWrap: 'wrap', gap: 6, justifyContent: 'flex-end' }}>
         {entries.map(([k, v]) => (
@@ -101,7 +140,7 @@ function renderFormattedObjectOrArray(obj: any) {
             }}
           >
             <span style={{ color: 'var(--text-muted)', textTransform: 'uppercase', fontSize: 11, fontWeight: 700 }}>{k}</span>
-            <span style={{ color: 'var(--acc)', fontWeight: 800 }}>{typeof v === 'object' ? JSON.stringify(v) : String(v)}</span>
+            <span style={{ color: 'var(--acc)', fontWeight: 800 }}>{String(v)}</span>
           </span>
         ))}
       </div>
@@ -111,7 +150,7 @@ function renderFormattedObjectOrArray(obj: any) {
   return <span>{String(obj)}</span>;
 }
 
-function DetailValue({ value, isMoney, isId, isDate }: { value: any; isMoney?: boolean; isId?: boolean; isDate?: boolean }) {
+function DetailValue({ value, isMoney, isId, isDate, isPercent }: { value: any; isMoney?: boolean; isId?: boolean; isDate?: boolean; isPercent?: boolean }) {
   if (value === null || value === undefined || value === '') {
     return <span style={{ color: 'var(--text-faint)', fontStyle: 'italic' }}>—</span>;
   }
@@ -132,6 +171,13 @@ function DetailValue({ value, isMoney, isId, isDate }: { value: any; isMoney?: b
       return (
         <span style={{ fontWeight: 800, color: 'var(--acc)', fontVariantNumeric: 'tabular-nums', fontSize: 14 }}>
           Rs {value.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 2 })}
+        </span>
+      );
+    }
+    if (isPercent) {
+      return (
+        <span style={{ fontWeight: 700, fontVariantNumeric: 'tabular-nums', color: 'var(--text-head)' }}>
+          {value.toLocaleString()}%
         </span>
       );
     }
@@ -226,9 +272,15 @@ export default function DetailModal({
       const isDate = label === 'date' || label === 'occurred_at' || label === 'created_at' || label === 'updated_at' || label === 'expense_date' || label === 'paidAt' || label === 'periodFrom' || label === 'periodTo' || label === 'returned_at' || label === 'refunded_at';
       const isStatus = label === 'status' || label === 'paymentStatus' || label === 'includedInPayout' || label === 'isActive' || label === 'orderReturned';
       const isMoney = label === 'sellingPrice' || label === 'costPrice' || label === 'commissionAmount' || label === 'adminTake' || label === 'profit' || label === 'amount' || label === 'ownerSupplyPrice' || label === 'storeSellingPrice' || label === 'grossRevenue' || label === 'totalDeductions' || label === 'netProfit' || label === 'revenue' || label === 'cogs' || label === 'shipment' || label === 'commission' || label.endsWith('Price') || label.endsWith('Amount') || label.endsWith('Profit') || label.endsWith('Cost');
-      const isQty = label === 'quantity' || label === 'quantityAssigned' || label === 'quantityRemaining' || label === 'returnQuantity' || label === 'refundQuantity' || label === 'rawQuantity' || label === 'chargeableQty' || label.endsWith('Qty');
+      // Matches quantity/quantities/qty fields (size, color, and variant breakdowns included)
+      // so they land in their own QUANTITIES card instead of piling up in DETAILS.
+      const isQty = /quantit/i.test(label) || label.endsWith('Qty');
 
-      if (isId || isCode) {
+      if (isId) {
+        // Internal database identifiers (raw UUIDs like id/productId/inventoryId) aren't
+        // useful to end users — omit them entirely instead of showing them in IDENTIFIERS.
+        return;
+      } else if (isCode) {
         getGroup('IDENTIFIERS').items.push(item);
       } else if (isMoney) {
         getGroup('FINANCIALS').items.push(item);
@@ -257,7 +309,7 @@ export default function DetailModal({
         className="modal-box detail-modal-box"
         onClick={e => e.stopPropagation()}
         style={{
-          maxWidth: 760,
+          maxWidth: 880,
           width: '92%',
           borderRadius: 20,
           overflow: 'hidden',
@@ -347,7 +399,7 @@ export default function DetailModal({
           className="modal-body"
           style={{
             padding: 24,
-            maxHeight: '72vh',
+            maxHeight: '78vh',
             overflowY: 'auto',
             background: 'var(--bg)',
             display: 'flex',
@@ -355,16 +407,11 @@ export default function DetailModal({
             gap: 20,
           }}
         >
-          <div
-            style={{
-              display: 'grid',
-              gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))',
-              gap: 16,
-            }}
-          >
+          <div className="detail-modal-columns">
             {groups.map((group, gi) => (
               <div
                 key={gi}
+                className="detail-modal-card"
                 style={{
                   background: 'var(--surface)',
                   borderRadius: 14,
@@ -406,13 +453,18 @@ export default function DetailModal({
                 {/* Section Items Grid */}
                 <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
                   {group.items.map((item, idx) => {
-                    const formattedLabel = item.label
+                    const labelOverrides: Record<string, string> = {
+                      batchNumber: 'Item ID',
+                      orderCode: 'Order ID',
+                    };
+                    const formattedLabel = labelOverrides[item.label] || item.label
                       .replace(/([A-Z])/g, ' $1')
                       .replace(/^./, s => s.toUpperCase());
 
                     const isId = item.label === 'id' || item.label.endsWith('Id') || item.label === 'orderCode' || item.label === 'batchNumber';
                     const isMoney = item.label === 'sellingPrice' || item.label === 'costPrice' || item.label === 'commissionAmount' || item.label === 'adminTake' || item.label === 'profit' || item.label === 'amount' || item.label === 'ownerSupplyPrice' || item.label.endsWith('Price') || item.label.endsWith('Amount') || item.label.endsWith('Profit') || item.label.endsWith('Cost');
                     const isDate = item.label.includes('date') || item.label.includes('At') || item.label.includes('created_at') || item.label.includes('updated_at');
+                    const isPercent = item.label.toLowerCase().includes('percent');
 
                     return (
                       <div
@@ -440,7 +492,7 @@ export default function DetailModal({
                           {item.render ? (
                             item.render(item.value)
                           ) : (
-                            <DetailValue value={item.value} isMoney={isMoney} isId={isId} isDate={isDate} />
+                            <DetailValue value={item.value} isMoney={isMoney} isId={isId} isDate={isDate} isPercent={isPercent} />
                           )}
                         </div>
                       </div>
@@ -451,6 +503,23 @@ export default function DetailModal({
             ))}
           </div>
         </div>
+
+        <style jsx>{`
+          .detail-modal-columns {
+            column-gap: 16px;
+            column-count: 1;
+          }
+          .detail-modal-card {
+            break-inside: avoid;
+            -webkit-column-break-inside: avoid;
+            margin-bottom: 16px;
+          }
+          @media (min-width: 620px) {
+            .detail-modal-columns {
+              column-count: 2;
+            }
+          }
+        `}</style>
 
         {/* Modal Footer */}
         <div

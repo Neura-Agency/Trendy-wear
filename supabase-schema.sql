@@ -423,3 +423,10 @@ alter table public.store_inventory
   add column if not exists pending_return_qty integer default 0,
   add column if not exists pending_return_size_quantities jsonb default null,
   add column if not exists pending_return_color_quantities jsonb default null;
+
+-- Store inventory table: cumulative units returned to the warehouse via "Return to
+-- Main Store" (both direct unsold-stock returns and confirmed pending customer
+-- returns). Used so the "Items Sold" figure never counts a warehouse return as a
+-- sale — Items Sold = quantity_assigned - quantity_remaining - returned_to_warehouse_qty.
+alter table public.store_inventory
+  add column if not exists returned_to_warehouse_qty integer default 0;

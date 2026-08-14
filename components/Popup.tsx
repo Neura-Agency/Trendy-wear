@@ -31,6 +31,8 @@ interface PopupContextValue {
     info: (msg: string) => void;
   };
   confirmDialog: (msg: string) => Promise<boolean>;
+  showProcessing: (message: string) => void;
+  hideProcessing: () => void;
 }
 
 const PopupContext = createContext<PopupContextValue | null>(null);
@@ -45,6 +47,7 @@ export function usePopup(): PopupContextValue {
 export function PopupProvider({ children }: { children: React.ReactNode }) {
   const [toasts, setToasts] = useState<ToastItem[]>([]);
   const [confirm, setConfirm] = useState<ConfirmState | null>(null);
+  const [processing, setProcessing] = useState<{ message: string } | null>(null);
   const idRef = useRef(0);
 
   // — Toast helpers —
@@ -71,6 +74,14 @@ export function PopupProvider({ children }: { children: React.ReactNode }) {
     setConfirm(null);
   }, [confirm]);
 
+  const showProcessing = useCallback((message: string) => {
+    setProcessing({ message: message || 'Saving changes...' });
+  }, []);
+
+  const hideProcessing = useCallback(() => {
+    setProcessing(null);
+  }, []);
+
   // Close confirm on Escape
   useEffect(() => {
     if (!confirm) return;
@@ -79,7 +90,7 @@ export function PopupProvider({ children }: { children: React.ReactNode }) {
     return () => window.removeEventListener('keydown', onKey);
   }, [confirm, handleConfirm]);
 
-  const value: PopupContextValue = { toast: toastFn, confirmDialog };
+  const value: PopupContextValue = { toast: toastFn, confirmDialog, showProcessing, hideProcessing };
 
   return (
     <PopupContext.Provider value={value}>
@@ -121,6 +132,17 @@ export function PopupProvider({ children }: { children: React.ReactNode }) {
               <button className="btn btn-glass" onClick={() => handleConfirm(false)}>Cancel</button>
               <button className="btn btn-primary" autoFocus onClick={() => handleConfirm(true)}>Confirm</button>
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* ── Processing Dialog ─────────────────────────────── */}
+      {processing && (
+        <div className="popup-processing-backdrop" aria-live="assertive">
+          <div className="popup-processing-box">
+            <div className="popup-processing-spinner" aria-hidden="true" />
+            <p className="popup-processing-title">{processing.message}</p>
+            <p className="popup-processing-subtitle">Please wait while the database is updating.</p>
           </div>
         </div>
       )}
@@ -196,8 +218,34 @@ export function PopupProvider({ children }: { children: React.ReactNode }) {
         }
         .popup-confirm-actions .btn { min-width: 100px; height: 40px; font-weight: 700; }
 
+        /* ── Processing Dialog ──────────────────────── */
+        .popup-processing-backdrop {
+          position: fixed; inset: 0; z-index: 10002;
+          background: rgba(15, 23, 42, 0.55); backdrop-filter: blur(6px);
+          display: grid; place-items: center; padding: 20px;
+          animation: popupFadeIn .2s ease;
+        }
+        .popup-processing-box {
+          background: rgba(255,255,255,0.98); border-radius: 18px;
+          width: min(420px, 92vw); padding: 28px 22px 24px; text-align: center;
+          box-shadow: 0 24px 80px rgba(15, 23, 42, 0.24);
+          animation: popupScaleIn .25s cubic-bezier(.16,1,.3,1);
+        }
+        .popup-processing-spinner {
+          width: 52px; height: 52px; margin: 0 auto 16px;
+          border-radius: 50%; border: 4px solid rgba(79, 70, 229, 0.18);
+          border-top-color: #4f46e5; animation: popupSpin .9s linear infinite;
+        }
+        .popup-processing-title {
+          margin: 0 0 8px; font-size: 1.05rem; font-weight: 800; color: #0f172a;
+        }
+        .popup-processing-subtitle {
+          margin: 0; font-size: 0.92rem; color: #475569; line-height: 1.5;
+        }
+
         @keyframes popupFadeIn  { from { opacity: 0; } to { opacity: 1; } }
         @keyframes popupScaleIn { from { opacity: 0; transform: scale(.9); } to { opacity: 1; transform: scale(1); } }
+        @keyframes popupSpin { to { transform: rotate(360deg); } }
       `}</style>
     </PopupContext.Provider>
   );

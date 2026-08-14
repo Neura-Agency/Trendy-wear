@@ -349,15 +349,12 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
           ? storedBatch
           : (productDerivedId || storedBatch)
         
-        // Compute correct quantityAvailable from variant rollup if variant quantities exist
-        let correctQty: number
-        const rawVariants = normalizeVariantQuantities(parseJsonField(row.variant_quantities))
-        if (rawVariants) {
-          correctQty = rollupVariantQuantities(rawVariants).total
-        } else {
-          correctQty = Number(row.quantity_available) || 0
-        }
-        
+        // Source of truth for "available warehouse stock" is the inventory.quantity_available
+        // column. It is decremented by allotments and restored by Return-to-Main / Delete.
+        // Do NOT replace it with the variant_quantities rollup (that is a lifetime/batch
+        // breakdown, not the currently-available quantity).
+        const correctQty = Number(row.quantity_available) || 0
+
         return {
           id: row.id,
           productId: row.product_id ?? null,

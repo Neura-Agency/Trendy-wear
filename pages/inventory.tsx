@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from "react";
+﻿import { useState, useEffect, useCallback } from "react";
 import { usePopup } from '../components/Popup';
 import SectionCard from "../components/SectionCard";
 import Badge from "../components/Badge";
@@ -17,7 +17,7 @@ import {
 } from "../types";
 import { AddInventoryModal, AllotToStoreModal, EditInventoryModal, EditStoreInventoryModal, ReturnToWarehouseModal } from "../components/Modals";
 
-// ── SVG Icon Components (mono-color, inherits currentColor) ──
+// â”€â”€ SVG Icon Components (mono-color, inherits currentColor) â”€â”€
 const IC = {
   warehouse: <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d="M6 22V4a2 2 0 0 1 2-2h8a2 2 0 0 1 2 2v18Z"/><path d="M6 12H4a2 2 0 0 0-2 2v6a2 2 0 0 0 2 2h2"/><path d="M18 9h2a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2h-2"/><path d="M10 6h4"/><path d="M10 10h4"/><path d="M10 14h4"/><path d="M10 18h4"/></svg>,
   store: <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d="m2 7 4.41-4.41A2 2 0 0 1 7.83 2h8.34a2 2 0 0 1 1.42.59L22 7"/><path d="M4 12v8a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-8"/><path d="M15 22v-4a2 2 0 0 0-2-2h-2a2 2 0 0 0-2 2v4"/><path d="M2 7h20"/><path d="M22 7v3a2 2 0 0 1-2 2 2.7 2.7 0 0 1-1.59-.63.7.7 0 0 0-.82 0A2.7 2.7 0 0 1 16 12a2.7 2.7 0 0 1-1.59-.63.7.7 0 0 0-.82 0A2.7 2.7 0 0 1 12 12a2.7 2.7 0 0 1-1.59-.63.7.7 0 0 0-.82 0A2.7 2.7 0 0 1 8 12a2.7 2.7 0 0 1-1.59-.63.7.7 0 0 0-.82 0A2.7 2.7 0 0 1 4 12a2 2 0 0 1-2-2V7"/></svg>,
@@ -28,9 +28,52 @@ const IC = {
 };
 
 const Rs = (n: number) => "Rs " + (Number(n) || 0).toLocaleString();
+// Search helpers — make the search bars match against every displayed field
+// (including the formatted Item ID like "ITEM-1A2B3C4D").
+const matchesStoreSearch = (s: any, rawQ: string) => {
+    const q = String(rawQ || '').toLowerCase();
+    if (!q) return true;
+    const sold = Math.max(0, (Number(s.quantityAssigned) || 0) - (Number(s.quantityRemaining) || 0));
+    const haystack = [
+        s.storeName,                                  // Shop name
+        s.productName,                                // Item name
+        formatItemCode(s.batchNumber || s.inventoryId), // Item ID (ITEM-XXXXXXXX)
+        s.ownerSupplyPrice,                           // Owner supply price
+        s.quantityAssigned,                           // Total sent
+        s.quantityRemaining,                          // In shop stock
+        sold,                                         // Items sold
+        s.commissionPercent,                          // Shop cut %
+        s.owner,                                      // Alloted by
+        s.category,
+        s.brand,
+    ]
+        .filter(v => v !== undefined && v !== null && v !== '')
+        .join(' ')
+        .toLowerCase();
+    return haystack.includes(q);
+};
+
+const matchesWarehouseSearch = (item: any, rawQ: string) => {
+    const q = String(rawQ || '').toLowerCase();
+    if (!q) return true;
+    const haystack = [
+        item.productName,
+        item.brand,
+        item.category,
+        item.batchNumber,
+        formatItemCode(item.batchNumber || item.id),  // Item ID (ITEM-XXXXXXXX)
+        item.costPrice,
+        item.quantityAvailable,
+    ]
+        .filter(v => v !== undefined && v !== null && v !== '')
+        .join(' ')
+        .toLowerCase();
+    return haystack.includes(q);
+};
+
 
 export default function InventoryPage({ user, onLogin }: PageProps) {
-    const { toast } = usePopup();
+    const { toast, showProcessing, hideProcessing } = usePopup();
     const [data, setData] = useState<{
         inventory: InventoryItem[];
         storeInventory: Record<string, Record<string, StoreInventoryItem>>;
@@ -123,6 +166,7 @@ export default function InventoryPage({ user, onLogin }: PageProps) {
 
 
     const handleSaveInventory = async (payload: any) => {
+        showProcessing('Saving inventory...');
         try {
             const response = await fetch('/api/inventory', {
                 method: 'POST',
@@ -143,11 +187,14 @@ export default function InventoryPage({ user, onLogin }: PageProps) {
             refresh();
         } catch (e: any) {
             toast.error(e?.message || 'Failed to save inventory')
+        } finally {
+            hideProcessing();
         }
     };
 
     const handleUpdateInventory = async (item: InventoryItem, fields: any) => {
         if (!item?.id) return toast.error('Missing inventory id')
+        showProcessing('Updating inventory...');
         try {
             const response = await fetch('/api/inventory', {
                 method: 'PATCH',
@@ -162,6 +209,8 @@ export default function InventoryPage({ user, onLogin }: PageProps) {
             refresh()
         } catch (e: any) {
             toast.error(e?.message || 'Update failed')
+        } finally {
+            hideProcessing();
         }
     }
 
@@ -174,6 +223,7 @@ export default function InventoryPage({ user, onLogin }: PageProps) {
     const confirmDeleteInventory = async () => {
         if (!deletingInventoryItem?.id) return toast.error('Missing inventory id')
 
+        showProcessing('Deleting inventory item...');
         try {
             const response = await fetch('/api/inventory', {
                 method: 'DELETE',
@@ -190,6 +240,8 @@ export default function InventoryPage({ user, onLogin }: PageProps) {
             refresh()
         } catch (e: any) {
             toast.error(e?.message || 'Delete failed')
+        } finally {
+            hideProcessing();
         }
     }
 
@@ -203,6 +255,7 @@ export default function InventoryPage({ user, onLogin }: PageProps) {
         if (!deletingAllotmentRow?.id) return toast.error('Missing allotment id')
 
         setDeletingAllotment(true)
+        showProcessing('Removing allotment...');
         try {
             const response = await fetch('/api/storeInventory', {
                 method: 'DELETE',
@@ -222,10 +275,12 @@ export default function InventoryPage({ user, onLogin }: PageProps) {
             toast.error(e?.message || 'Delete failed')
         } finally {
             setDeletingAllotment(false)
+            hideProcessing();
         }
     }
 
     const handleReturnToWarehouse = async (payload: { id: string; returnQty: number; returnSizeQuantities?: any; returnColorQuantities?: any; returnVariantQuantities?: any }) => {
+        showProcessing('Returning stock to warehouse...');
         try {
             const response = await fetch('/api/storeInventory', {
                 method: 'PATCH',
@@ -234,11 +289,14 @@ export default function InventoryPage({ user, onLogin }: PageProps) {
             })
             const result = await response.json()
             if (!response.ok) throw new Error(result.error || 'Failed to return to warehouse')
-            toast.success(`✅ ${payload.returnQty} piece${payload.returnQty !== 1 ? 's' : ''} returned to warehouse`)
+            const returnedQty = result.returned ?? payload.returnQty
+            toast.success(`✅ ${returnedQty} piece${returnedQty !== 1 ? 's' : ''} returned to Main Store successfully.`)
             setReturnToWarehouseRow(null)
             refresh()
         } catch (e: any) {
             toast.error(e?.message || 'Return to warehouse failed')
+        } finally {
+            hideProcessing();
         }
     }
 
@@ -254,36 +312,26 @@ export default function InventoryPage({ user, onLogin }: PageProps) {
 
     // Keyed by inventory.id (batch-level), NOT productName, to avoid cross-batch confusion
     const allotedQtyByProduct: Record<string, number> = {};
-    // Per-variant allotted quantities summed across all stores, keyed by inventoryId
-    const allotedVariantsByProduct: Record<string, Record<string, Record<string, number>>> = {};
     Object.values(data.storeInventory || {}).forEach((items: any) => {
         Object.values(items || {}).forEach((it: any) => {
             const key = it?.inventoryId;   // inventory.id FK — unique per batch
             if (!key) return;
-            allotedQtyByProduct[key] = (allotedQtyByProduct[key] || 0) + (Number(it.quantityAssigned) || 0);
-            // Accumulate per-variant allotments for the Add Allotment modal
-            if (it.variantQuantitiesAssigned && typeof it.variantQuantitiesAssigned === 'object') {
-                if (!allotedVariantsByProduct[key]) allotedVariantsByProduct[key] = {};
-                Object.entries(it.variantQuantitiesAssigned as Record<string, Record<string, number>>).forEach(([color, sizes]) => {
-                    if (!allotedVariantsByProduct[key][color]) allotedVariantsByProduct[key][color] = {};
-                    Object.entries(sizes || {}).forEach(([size, qty]) => {
-                        allotedVariantsByProduct[key][color][size] = (allotedVariantsByProduct[key][color][size] || 0) + (Number(qty) || 0);
-                    });
-                });
-            }
+            allotedQtyByProduct[key] = (allotedQtyByProduct[key] || 0) + Math.max(0, (Number(it.quantityAssigned) || 0));
         });
     });
 
-    // Enrich warehouse inventory items with per-variant remaining quantities for the Add Allotment modal
+    // Enrich warehouse inventory items with per-variant CURRENT available quantities for the
+    // Add Allotment modal. inventory.variant_quantities is maintained as the current warehouse
+    // breakdown (reduced on allot, restored on return/delete), so it is used directly - NOT
+    // reduced further by allocations here (that would double-count).
     const inventoryWithRemaining = data.inventory.map((item: any) => {
-        const allotedVariants = allotedVariantsByProduct[item.id];
-        if (!allotedVariants || !item.variantQuantities) return item;
+        const variants = item.variantQuantities;
+        if (!variants) return item;
         const variantQuantitiesRemaining: Record<string, Record<string, number>> = {};
-        Object.entries(item.variantQuantities as Record<string, Record<string, number>>).forEach(([color, sizes]) => {
+        Object.entries(variants as Record<string, Record<string, number>>).forEach(([color, sizes]) => {
             variantQuantitiesRemaining[color] = {};
-            Object.entries(sizes || {}).forEach(([size, total]) => {
-                const alloted = allotedVariants[color]?.[size] || 0;
-                variantQuantitiesRemaining[color][size] = Math.max(0, (Number(total) || 0) - alloted);
+            Object.entries(sizes || {}).forEach(([size, qty]) => {
+                variantQuantitiesRemaining[color][size] = Math.max(0, Number(qty) || 0);
             });
         });
         return { ...item, variantQuantitiesRemaining };
@@ -302,7 +350,7 @@ export default function InventoryPage({ user, onLogin }: PageProps) {
     const alerts: Array<{ type: 'out' | 'low' | 'store-out'; product: string; detail: string; rowId: string; section: 'warehouse' | 'store' }> = [];
     data.inventory.forEach(item => {
         const allotedQty = allotedQtyByProduct[item.id] || 0;
-        const availableQty = Math.max(0, (Number(item.quantityAvailable) || 0) - allotedQty);
+        const availableQty = Math.max(0, (Number(item.quantityAvailable) || 0));
         if (availableQty <= 0) {
             alerts.push({ type: 'out', product: item.productName, detail: `Batch ${item.batchNumber} — 0 units left in warehouse`, rowId: `inv-row-${item.batchNumber}`, section: 'warehouse' });
         } else if (availableQty <= (item.lowStockWarning || 5)) {
@@ -331,7 +379,7 @@ export default function InventoryPage({ user, onLogin }: PageProps) {
     // Summary calculations
     // For superadmin: all stores. For store admin: only managed stores.
 
-    // True inventory value = (warehouse unallotted + store remaining) × cost_price
+    // True inventory value = (warehouse unallotted + store remaining) Ã— cost_price
     // This excludes already-sold units so the number reflects real unsold stock value.
     const storeRemainingByProduct: Record<string, number> = {};
     // Keyed by inventoryId (batch FK) so each batch's store-remaining is tracked separately
@@ -342,7 +390,7 @@ export default function InventoryPage({ user, onLogin }: PageProps) {
 
     const calcInventoryValue = (inventoryItems: typeof data.inventory) =>
         inventoryItems.reduce((acc, it) => {
-            const warehouseUnallotted = Math.max(0, (Number(it.quantityAvailable) || 0) - (allotedQtyByProduct[it.id] || 0));
+            const warehouseUnallotted = Math.max(0, (Number(it.quantityAvailable) || 0));
             const atStores = storeRemainingByProduct[it.id] || 0;
             return acc + (Number(it.costPrice) || 0) * (warehouseUnallotted + atStores);
         }, 0);
@@ -352,18 +400,18 @@ export default function InventoryPage({ user, onLogin }: PageProps) {
     let totalItemsInStores = 0;
     if (isSuperAdmin) {
         totalInventoryValue = calcInventoryValue(data.inventory);
-        totalItemsInWarehouse = data.inventory.reduce((acc, it) => acc + Math.max(0, (Number(it.quantityAvailable) || 0) - (allotedQtyByProduct[it.id] || 0)), 0);
+        totalItemsInWarehouse = data.inventory.reduce((acc, it) => acc + Math.max(0, (Number(it.quantityAvailable) || 0)), 0);
         totalItemsInStores = stockProvided.reduce((acc, it) => acc + Math.max(0, it.quantityRemaining), 0);
     } else if (isStoreAdmin) {
         const ownedItems = data.inventory.filter(it => it.owner === user.username);
         totalInventoryValue = calcInventoryValue(ownedItems);
-        totalItemsInWarehouse = ownedItems.reduce((acc, it) => acc + Math.max(0, (Number(it.quantityAvailable) || 0) - (allotedQtyByProduct[it.id] || 0)), 0);
+        totalItemsInWarehouse = ownedItems.reduce((acc, it) => acc + Math.max(0, (Number(it.quantityAvailable) || 0)), 0);
         totalItemsInStores = stockProvided.filter(it => visibleStoreNames.some((name) => name.trim().toLowerCase() === it.storeName.trim().toLowerCase())).reduce((acc, it) => acc + Math.max(0, it.quantityRemaining), 0);
     } else {
         // Store user: only their own
         const ownedItems = data.inventory.filter(it => it.owner === user.username);
         totalInventoryValue = calcInventoryValue(ownedItems);
-        totalItemsInWarehouse = ownedItems.reduce((acc, it) => acc + Math.max(0, (Number(it.quantityAvailable) || 0) - (allotedQtyByProduct[it.id] || 0)), 0);
+        totalItemsInWarehouse = ownedItems.reduce((acc, it) => acc + Math.max(0, (Number(it.quantityAvailable) || 0)), 0);
         totalItemsInStores = stockProvided.filter(it => storeNameMatches(it.storeName)).reduce((acc, it) => acc + Math.max(0, it.quantityRemaining), 0);
     }
 
@@ -465,15 +513,7 @@ export default function InventoryPage({ user, onLogin }: PageProps) {
                                 )}
                             </div>
                             {inventorySearch && (() => {
-                                const count = data.inventory.filter(item => {
-                                    const q = inventorySearch.toLowerCase();
-                                    return (
-                                        item.productName?.toLowerCase().includes(q) ||
-                                        (item as any).brand?.toLowerCase().includes(q) ||
-                                        item.category?.toLowerCase().includes(q) ||
-                                        item.batchNumber?.toLowerCase().includes(q)
-                                    );
-                                }).length;
+                                const count = data.inventory.filter(item => matchesWarehouseSearch(item, inventorySearch)).length;
                                 return <span style={{ fontSize: 12, color: 'var(--text-muted)', whiteSpace: 'nowrap' }}>{count} result{count !== 1 ? 's' : ''}</span>;
                             })()}
                         </div>
@@ -494,15 +534,7 @@ export default function InventoryPage({ user, onLogin }: PageProps) {
                                 </thead>
                                 <tbody>
                                     {(inventorySearch.trim()
-                                        ? data.inventory.filter(item => {
-                                            const q = inventorySearch.toLowerCase();
-                                            return (
-                                                item.productName?.toLowerCase().includes(q) ||
-                                                (item as any).brand?.toLowerCase().includes(q) ||
-                                                item.category?.toLowerCase().includes(q) ||
-                                                item.batchNumber?.toLowerCase().includes(q)
-                                            );
-                                          })
+                                        ? data.inventory.filter(item => matchesWarehouseSearch(item, inventorySearch))
                                         : data.inventory
                                     ).map((item, idx) => {
                                         const picture = item.productImage || (item as any)?.otherVariants?.picture as string | undefined;
@@ -511,7 +543,7 @@ export default function InventoryPage({ user, onLogin }: PageProps) {
                                             .filter(([, items]) => Object.values(items as any).some((si: any) => si.inventoryId === item.id))
                                             .map(([storeName]) => storeName);
                                         const allotedQty = allotedQtyByProduct[item.id] || 0;
-                                        const availableQty = Math.max(0, (Number(item.quantityAvailable) || 0) - allotedQty);
+                                        const availableQty = Math.max(0, (Number(item.quantityAvailable) || 0));
 
                                         return (
                                             <tr key={`${item.productName}-${item.batchNumber}-${idx}`} id={`inv-row-${item.batchNumber}`}>
@@ -632,7 +664,7 @@ export default function InventoryPage({ user, onLogin }: PageProps) {
                                     })}
                                 </tbody>
                             </table>
-                            {/* ── Mobile card view ── */}
+                            {/* â”€â”€ Mobile card view â”€â”€ */}
                             <div className="mobile-card-view">
                                 {(inventorySearch.trim()
                                     ? data.inventory.filter(item => {
@@ -652,7 +684,7 @@ export default function InventoryPage({ user, onLogin }: PageProps) {
                                         .filter(([, items]) => Object.values(items as any).some((si: any) => si.inventoryId === item.id))
                                         .map(([storeName]) => storeName);
                                     const allotedQty = allotedQtyByProduct[item.id] || 0;
-                                    const availableQty = Math.max(0, (Number(item.quantityAvailable) || 0) - allotedQty);
+                                    const availableQty = Math.max(0, (Number(item.quantityAvailable) || 0));
 
                                     return (
                                         <div className="mobile-card" key={`${item.productName}-${item.batchNumber}-${idx}`} id={`inv-row-${item.batchNumber}`}>
@@ -716,11 +748,9 @@ export default function InventoryPage({ user, onLogin }: PageProps) {
                         <button className="btn btn-primary" onClick={() => setShowAllotModal(true)}>+ Alot to Stores</button>
                     ) : undefined}
                 >
-                    <SearchBar value={storeSearch} onChange={setStoreSearch} placeholder="Search by store name, product name…" resultCount={stockProvided.filter(s => {
+                    <SearchBar value={storeSearch} onChange={setStoreSearch} placeholder="Search by shop, product, item ID, price, qty, owner…" resultCount={stockProvided.filter(s => {
                         if (!(isAdmin || storeNameMatches(s.storeName))) return false;
-                        if (!storeSearch) return true;
-                        const q = storeSearch.toLowerCase();
-                        return (s.storeName || '').toLowerCase().includes(q) || (s.productName || '').toLowerCase().includes(q);
+                        return matchesStoreSearch(s, storeSearch);
                     }).length} />
                     <div className="table-wrap">
                         <table className="desktop-table-view">
@@ -729,7 +759,7 @@ export default function InventoryPage({ user, onLogin }: PageProps) {
                                     {isAdmin && <th>Shop Name</th>}
                                     <th>Item Name</th>
                                     <th>Item ID</th>
-                                    <th>Owner Supply Price</th>
+                                    {isAdmin && <th>Owner Supply Price</th>}
                                     <th>Total Sent</th>
                                     <th>In Shop Stock</th>
                                     {isAdmin && <th>Shop Cut %</th>}
@@ -742,9 +772,7 @@ export default function InventoryPage({ user, onLogin }: PageProps) {
                                     {(() => {
                                         const rows = stockProvided.filter(s => {
                                             if (!(isAdmin || storeNameMatches(s.storeName))) return false;
-                                            if (!storeSearch) return true;
-                                            const q = storeSearch.toLowerCase();
-                                            return (s.storeName || '').toLowerCase().includes(q) || (s.productName || '').toLowerCase().includes(q);
+                                            return matchesStoreSearch(s, storeSearch);
                                         });
                                         return rows.length === 0 ? (
                                             <tr><td colSpan={isAdmin ? 10 : 8} style={{ textAlign: 'center', padding: 40 }} className="text-muted">{storeSearch ? 'No stock matches your search.' : 'No stock available currently.'}</td></tr>
@@ -756,7 +784,7 @@ export default function InventoryPage({ user, onLogin }: PageProps) {
                                             <td className="text-muted font-mono" style={{ fontWeight: 600 }}>
                                                 {item.ownerSupplyPrice ? `Rs ${Number(item.ownerSupplyPrice).toLocaleString()}` : '-'}
                                             </td>
-                                            <td><Badge type="gray">{item.quantityAssigned}</Badge></td>
+                                            <td><Badge type="gray">{Math.max(0, item.quantityAssigned)}</Badge></td>
                                             <td className="font-bold" style={{ fontSize: '1rem', color: Math.max(0, item.quantityRemaining) > 0 ? 'var(--text-body)' : 'var(--danger)' }}>
                                                 {Math.max(0, item.quantityRemaining)}
                                             </td>
@@ -787,20 +815,15 @@ export default function InventoryPage({ user, onLogin }: PageProps) {
                                                                 onClick={() => {
                                                                     const warehouseItem = data.inventory.find((i: any) => i.id === item.inventoryId);
                                                                     const warehouseVariants = warehouseItem?.variantQuantities || {};
+                                                                    // warehouseVariantQuantitiesRemaining = the warehouse's CURRENT available variant
+                                                                    // breakdown (inventory.variant_quantities is maintained as current - reduced on allot,
+                                                                    // restored on return/delete). No further subtraction of other stores' allocations.
                                                                     const warehouseVariantRemaining: Record<string, Record<string, number>> = {};
                                                                     if (warehouseItem && Object.keys(warehouseVariants).length > 0) {
                                                                         Object.entries(warehouseVariants).forEach(([color, sizes]: [string, any]) => {
                                                                             warehouseVariantRemaining[color] = {};
                                                                             Object.entries(sizes || {}).forEach(([size, total]: [string, any]) => {
-                                                                                let otherStoresAllotted = 0;
-                                                                                Object.values(data.storeInventory || {}).forEach((storeItems: any) => {
-                                                                                    Object.values(storeItems || {}).forEach((si: any) => {
-                                                                                        if (si.inventoryId === item.inventoryId && si.id !== item.id) {
-                                                                                            otherStoresAllotted += Number((si.variantQuantitiesAssigned?.[color])?.[size] || 0);
-                                                                                        }
-                                                                                    });
-                                                                                });
-                                                                                warehouseVariantRemaining[color][size] = Math.max(0, Number(total) - otherStoresAllotted);
+                                                                                warehouseVariantRemaining[color][size] = Math.max(0, Number(total) || 0);
                                                                             });
                                                                         });
                                                                     }
@@ -867,14 +890,12 @@ export default function InventoryPage({ user, onLogin }: PageProps) {
                                 })()}
                             </tbody>
                             </table>
-                            {/* ── Mobile card view ── */}
+                            {/* â”€â”€ Mobile card view â”€â”€ */}
                             <div className="mobile-card-view">
                                 {(() => {
                                     const rows = stockProvided.filter(s => {
                                         if (!(isAdmin || storeNameMatches(s.storeName))) return false;
-                                        if (!storeSearch) return true;
-                                        const q = storeSearch.toLowerCase();
-                                        return (s.storeName || '').toLowerCase().includes(q) || (s.productName || '').toLowerCase().includes(q);
+                                        return matchesStoreSearch(s, storeSearch);
                                     });
                                     return rows.length === 0 ? (
                                         <div style={{ textAlign: 'center', padding: 40 }} className="text-muted">{storeSearch ? 'No stock matches your search.' : 'No stock available currently.'}</div>
@@ -894,7 +915,7 @@ export default function InventoryPage({ user, onLogin }: PageProps) {
                                             </div>
                                             <div className="mobile-card-row">
                                                 <span className="mobile-card-label">Total Sent</span>
-                                                <span className="mobile-card-value"><Badge type="gray">{item.quantityAssigned}</Badge></span>
+                                                <span className="mobile-card-value"><Badge type="gray">{Math.max(0, item.quantityAssigned)}</Badge></span>
                                             </div>
                                             <div className="mobile-card-row">
                                                 <span className="mobile-card-label">In Stock</span>
@@ -995,7 +1016,7 @@ export default function InventoryPage({ user, onLogin }: PageProps) {
                                         ))}
                                     </tbody>
                                 </table>
-                                {/* ── Mobile card view ── */}
+                                {/* â”€â”€ Mobile card view â”€â”€ */}
                                 <div className="mobile-card-view">
                                     {extras.map((e, i) => (
                                         <div className="mobile-card" key={i}>
@@ -1267,7 +1288,7 @@ export default function InventoryPage({ user, onLogin }: PageProps) {
                 )}
             </div>
 
-            {/* ── Return to Warehouse Modal (Scenario B) ── */}
+            {/* â”€â”€ Return to Warehouse Modal (Scenario B) â”€â”€ */}
             {returnToWarehouseRow && (
                 <ReturnToWarehouseModal
                     allotment={{
@@ -1288,7 +1309,7 @@ export default function InventoryPage({ user, onLogin }: PageProps) {
                 />
             )}
 
-            {/* ── Alerts Popup ── */}
+            {/* â”€â”€ Alerts Popup â”€â”€ */}
             {showAlerts && (
                 <div className="modal-overlay" onClick={() => setShowAlerts(false)}>
                     <div className="modal-box" style={{ maxWidth: 520 }} onClick={e => e.stopPropagation()}>
@@ -1318,7 +1339,7 @@ export default function InventoryPage({ user, onLogin }: PageProps) {
                                     onMouseLeave={e => (e.currentTarget.style.opacity = '1')}
                                 >
                                     <span style={{ fontSize: 18, flexShrink: 0 }}>
-                                        {alert.type === 'out' || alert.type === 'store-out' ? '🚫' : '⚠️'}
+                                        {alert.type === 'out' || alert.type === 'store-out' ? 'ðŸš«' : '⚠ï¸'}
                                     </span>
                                     <div style={{ flex: 1, minWidth: 0 }}>
                                         <div style={{ fontWeight: 700, fontSize: 13, color: '#1e293b' }}>{alert.product}</div>

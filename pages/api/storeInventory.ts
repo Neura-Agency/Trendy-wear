@@ -24,6 +24,44 @@ function parseJsonField(value: any): any {
   return value
 }
 
+/** Subtract a flat per-key delta from a base object, keeping only positive keys. */
+function subtractFlat(base: any, delta: any): Record<string, number> | null {
+  const baseObj = (base && typeof base === 'object' && !Array.isArray(base)) ? base as Record<string, number> : {}
+  const deltaObj = (delta && typeof delta === 'object' && !Array.isArray(delta)) ? delta as Record<string, number> : {}
+  const next: Record<string, number> = {}
+  Object.keys(baseObj).forEach((k) => {
+    const n = Math.max(0, (num(baseObj[k]) || 0) - (num(deltaObj[k]) || 0))
+    if (n > 0) next[k] = n
+  })
+  return Object.keys(next).length ? next : null
+}
+
+/** Add a flat per-key delta to a base object (returns null when the result is empty). */
+function addFlat(base: any, delta: any): Record<string, number> | null {
+  const baseObj = (base && typeof base === 'object' && !Array.isArray(base)) ? base as Record<string, number> : {}
+  const deltaObj = (delta && typeof delta === 'object' && !Array.isArray(delta)) ? delta as Record<string, number> : {}
+  const next: Record<string, number> = { ...baseObj }
+  Object.entries(deltaObj).forEach(([k, v]) => {
+    next[k] = Math.max(0, (num(next[k]) || 0) + num(v))
+  })
+  return Object.keys(next).length ? next : null
+}
+
+/** Add a nested variant (color->size->qty) delta to a base object (returns null when empty). */
+function addVariant(base: any, delta: any): Record<string, Record<string, number>> | null {
+  const baseObj = (base && typeof base === 'object' && !Array.isArray(base)) ? base as Record<string, Record<string, number>> : {}
+  const deltaObj = (delta && typeof delta === 'object' && !Array.isArray(delta)) ? delta as Record<string, Record<string, number>> : {}
+  const next: Record<string, Record<string, number>> = {}
+  Object.entries(baseObj).forEach(([c, sizes]) => { next[c] = { ...(sizes || {}) } })
+  Object.entries(deltaObj).forEach(([c, sizes]) => {
+    if (!next[c]) next[c] = {}
+    Object.entries(sizes || {}).forEach(([s, q]) => {
+      next[c][s] = Math.max(0, (num(next[c][s]) || 0) + num(q))
+    })
+  })
+  return Object.keys(next).length ? next : null
+}
+
 export default async function handler(req: NextApiRequest, res: NextApiResponse) {
   try {
     // returnToWarehouse is allowed for store managers (any logged-in user) — not just admins
@@ -62,7 +100,8 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
           pending_return_qty,
           pending_return_size_quantities,
           pending_return_color_quantities,
-          pending_return_variant_quantities
+          pending_return_variant_quantities,
+          returned_to_warehouse_qty
         `)
         .order('created_at', { ascending: false })
 
@@ -126,6 +165,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
           pendingReturnSizeQuantities: parseJsonField(row.pending_return_size_quantities),
           pendingReturnColorQuantities: parseJsonField(row.pending_return_color_quantities),
           pendingReturnVariantQuantities: parseJsonField(row.pending_return_variant_quantities),
+          returnedToWarehouseQty: num(row.returned_to_warehouse_qty ?? 0),
           created_at: row.created_at,
           updated_at: row.updated_at
         }
@@ -287,12 +327,26 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
         return res.status(500).json({ error: 'Failed to save allotment' })
       }
 
-      // Deduct alloted quantity from warehouse inventory (regular + extra)
+      // Deduct alloted quantity from warehouse inventory (regular + extra) — exactly once.
+      // Keep the breakdown columns (variant/size/color_quantities) in sync with the scalar
+      // quantity_available: allotted units are removed from CURRENT warehouse availability.
       const totalDeduction = qty + extraQty
-      await supabaseAdmin
+      const invUpdate: Record<string, any> = {
+        quantity_available: Math.max(0, total - totalDeduction),
+      }
+      if (normalizedVariantsAssigned) {
+        invUpdate.variant_quantities = adjustVariantQuantities(inv.variant_quantities, normalizedVariantsAssigned, -1) ?? null
+      }
+      invUpdate.size_quantities = subtractFlat(inv.size_quantities, effectiveSizeQuantitiesAssigned)
+      invUpdate.color_quantities = subtractFlat(inv.color_quantities, effectiveColorQuantitiesAssigned)
+      const { error: deductErr } = await supabaseAdmin
         .from(TABLES.INVENTORY)
-        .update({ quantity_available: Math.max(0, total - totalDeduction) })
+        .update(invUpdate)
         .eq('id', inv.id)
+      if (deductErr) {
+        console.error('storeInventory warehouse deduct error:', deductErr)
+        return res.status(500).json({ error: 'Failed to deduct alloted quantity from warehouse' })
+      }
 
       // Auto-create expense for gifted (extra) units
       if (extraQty > 0) {
@@ -318,131 +372,105 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     if (req.method === 'PATCH') {
       // ── Scenario B: Return pending stock back to warehouse ──────────────────
       if (req.body?.action === 'returnToWarehouse') {
-        const { id, returnQty, returnSizeQuantities, returnColorQuantities, returnVariantQuantities } = req.body || {}
+        const { id, returnSizeQuantities, returnColorQuantities, returnVariantQuantities } = req.body || {}
         if (!id) return res.status(400).json({ error: 'id is required' })
-        const retQty = num(returnQty)
-        if (retQty < 1) return res.status(400).json({ error: 'returnQty must be at least 1' })
-
-        // Fetch the allotment row
-        const { data: siRow, error: siFetchErr } = await supabaseAdmin
-          .from(TABLES.STORE_INVENTORY)
-          .select('id, inventory_id, quantity_remaining, size_quantities_remaining, color_quantities_remaining, variant_quantities_remaining, pending_return_qty, pending_return_size_quantities, pending_return_color_quantities, pending_return_variant_quantities')
-          .eq('id', id)
-          .single()
-
-        if (siFetchErr || !siRow) return res.status(404).json({ error: 'Allotment not found' })
-
-        const remainingQty = num(siRow.quantity_remaining) || 0
-        if (retQty > remainingQty) {
-          return res.status(400).json({ error: `Can only return up to ${remainingQty} piece(s) to warehouse` })
-        }
-
+        // Source of truth = the color & size quantities selected by the user in the
+        // `Return by Color & Size` table (NOT the original allocation or pending counters).
         const normalizedReturnVariants = normalizeVariantQuantities(returnVariantQuantities)
-        const returnVariantRollups = rollupVariantQuantities(normalizedReturnVariants)
-        const effectiveReturnSizeQuantities = returnVariantRollups.sizeQuantities ?? normalizeFlatQuantities(returnSizeQuantities)
-        const effectiveReturnColorQuantities = returnVariantRollups.colorQuantities ?? normalizeFlatQuantities(returnColorQuantities)
+        const returnVariantRollups = normalizedReturnVariants ? rollupVariantQuantities(normalizedReturnVariants) : null
+        const effectiveReturnSizeQuantities = returnVariantRollups?.sizeQuantities ?? normalizeFlatQuantities(returnSizeQuantities)
+        const effectiveReturnColorQuantities = returnVariantRollups?.colorQuantities ?? normalizeFlatQuantities(returnColorQuantities)
+        const hasAnything = Boolean((Object.keys(effectiveReturnSizeQuantities || {}).length) || (Object.keys(effectiveReturnColorQuantities || {}).length) || normalizedReturnVariants)
+        if (!hasAnything) return res.status(400).json({ error: 'Nothing selected to return' })
+        const retQty = normalizedReturnVariants
+          ? returnVariantRollups.total
+          : Math.max(Object.values(effectiveReturnSizeQuantities || {}).reduce((sum, v) => sum + num(v), 0), Object.values(effectiveReturnColorQuantities || {}).reduce((sum, v) => sum + num(v), 0), 0)
+        if (retQty < 1) return res.status(400).json({ error: 'Nothing selected to return' })
 
-        // Rebuild pending & remaining size/color
-        const newPendingSize = { ...(siRow.pending_return_size_quantities || {}) } as Record<string, number>
-        const newSizeRem = { ...(siRow.size_quantities_remaining || {}) } as Record<string, number>
-        if (effectiveReturnSizeQuantities) {
-          Object.entries(effectiveReturnSizeQuantities).forEach(([size, qty]) => {
-            newPendingSize[size] = Math.max(0, (newPendingSize[size] || 0) - num(qty))
-            newSizeRem[size] = Math.max(0, (newSizeRem[size] || 0) - num(qty))
-          })
-        }
-
-        const newPendingColor = { ...(siRow.pending_return_color_quantities || {}) } as Record<string, number>
-        const newColorRem = { ...(siRow.color_quantities_remaining || {}) } as Record<string, number>
-        if (effectiveReturnColorQuantities) {
-          Object.entries(effectiveReturnColorQuantities).forEach(([color, qty]) => {
-            newPendingColor[color] = Math.max(0, (newPendingColor[color] || 0) - num(qty))
-            newColorRem[color] = Math.max(0, (newColorRem[color] || 0) - num(qty))
-          })
-        }
-
-        const pendingQty = num(siRow.pending_return_qty) || 0
-
-        // ── Validate pending return quantities before subtracting ──────────────
-        if (retQty > pendingQty) {
-          return res.status(400).json({ error: `Cannot return ${retQty} piece(s); only ${pendingQty} piece(s) are pending return from this store.` })
-        }
-        if (effectiveReturnSizeQuantities) {
-          for (const [size, qty] of Object.entries(effectiveReturnSizeQuantities)) {
-            const pendingSize = num((siRow.pending_return_size_quantities as any)?.[size] || 0)
-            if (num(qty) > pendingSize) {
-              return res.status(400).json({ error: `Size ${size}: cannot return ${qty}, only ${pendingSize} pending` })
-            }
-          }
-        }
-        if (effectiveReturnColorQuantities) {
-          for (const [color, qty] of Object.entries(effectiveReturnColorQuantities)) {
-            const pendingColor = num((siRow.pending_return_color_quantities as any)?.[color] || 0)
-            if (num(qty) > pendingColor) {
-              return res.status(400).json({ error: `Color ${color}: cannot return ${qty}, only ${pendingColor} pending` })
-            }
-          }
-        }
-
-        // Update store_inventory: deduct from quantity_remaining (items physically leave the store)
-        // and deduct from pending_return_qty (tracking counter)
-        // (no Math.max(0, ...) needed since we validated above)
-        const { error: siUpdErr } = await supabaseAdmin
+        // Snapshot the CURRENT allocation before the RPC so we can verify that the
+        // deployed DB function netted the allocation columns (quantity_assigned and the
+        // *_quantities_assigned breakdowns). The canonical `return_to_warehouse` function
+        // does this; an older deployed version may not, so we heal it after the RPC below.
+        const { data: siBefore, error: siBeforeErr } = await supabaseAdmin
           .from(TABLES.STORE_INVENTORY)
-          .update({
-            quantity_remaining: num(siRow.quantity_remaining) - retQty,
-            size_quantities_remaining: Object.keys(newSizeRem).length ? newSizeRem : null,
-            color_quantities_remaining: Object.keys(newColorRem).length ? newColorRem : null,
-            variant_quantities_remaining: adjustVariantQuantities(siRow.variant_quantities_remaining, normalizedReturnVariants, -1),
-            pending_return_qty: pendingQty - retQty,
-            pending_return_size_quantities: Object.values(newPendingSize).some(v => v > 0) ? newPendingSize : null,
-            pending_return_color_quantities: Object.values(newPendingColor).some(v => v > 0) ? newPendingColor : null,
-            pending_return_variant_quantities: adjustVariantQuantities(siRow.pending_return_variant_quantities, normalizedReturnVariants, -1),
-          })
+          .select('id, quantity_assigned, quantity_remaining, variant_quantities_assigned, size_quantities_assigned, color_quantities_assigned')
           .eq('id', id)
+          .maybeSingle()
+        if (siBeforeErr || !siBefore) return res.status(404).json({ error: 'Allotment not found' })
+        const beforeAssigned = num(siBefore.quantity_assigned)
 
-        if (siUpdErr) {
-          console.error('returnToWarehouse store_inventory update error:', siUpdErr)
-          return res.status(500).json({ error: 'Failed to update store inventory' })
-        }
-
-        // Restore warehouse inventory
-        if (siRow.inventory_id) {
-          const { data: invRow, error: invFetchErr } = await supabaseAdmin
-            .from(TABLES.INVENTORY)
-            .select('id, quantity_available, size_quantities, color_quantities, variant_quantities')
-            .eq('id', siRow.inventory_id)
-            .single()
-
-          if (!invFetchErr && invRow) {
-            const newInvSizes = { ...(invRow.size_quantities || {}) } as Record<string, number>
-            if (effectiveReturnSizeQuantities) {
-              Object.entries(effectiveReturnSizeQuantities).forEach(([size, qty]) => {
-                newInvSizes[size] = (newInvSizes[size] || 0) + num(qty)
-              })
-            }
-            const newInvColors = { ...(invRow.color_quantities || {}) } as Record<string, number>
-            if (effectiveReturnColorQuantities) {
-              Object.entries(effectiveReturnColorQuantities).forEach(([color, qty]) => {
-                newInvColors[color] = (newInvColors[color] || 0) + num(qty)
-              })
-            }
-
-            const { error: invUpdErr } = await supabaseAdmin
-              .from(TABLES.INVENTORY)
-              .update({
-                quantity_available: num(invRow.quantity_available) + retQty,
-                size_quantities: Object.keys(newInvSizes).length ? newInvSizes : invRow.size_quantities,
-                color_quantities: Object.keys(newInvColors).length ? newInvColors : invRow.color_quantities,
-                variant_quantities: adjustVariantQuantities(invRow.variant_quantities, normalizedReturnVariants, 1) ?? invRow.variant_quantities,
-              })
-              .eq('id', siRow.inventory_id)
-
-            if (invUpdErr) console.error('returnToWarehouse inventory update error:', invUpdErr)
+        // Delegate the validated, atomic update to a Postgres function (single transaction,
+        // row-locked, and it re-validates per color+size against the store's actual stock).
+        // It decrements quantity_remaining + pending_return_*, restores warehouse stock and
+        // increments returned_to_warehouse_qty. In the canonical version it also decrements
+        // quantity_assigned and the *_quantities_assigned breakdowns.
+        const rpcRes = await supabaseAdmin.rpc('return_to_warehouse', {
+          p_store_inventory_id: id,
+          p_variant_quantities: normalizedReturnVariants,
+          p_size_quantities: effectiveReturnSizeQuantities,
+          p_color_quantities: effectiveReturnColorQuantities,
+          p_return_qty: retQty,
+        })
+        const error = rpcRes?.error
+        if (error) {
+          const msg = String(error?.message || '')
+          if (msg.includes('ALLOTMENT_NOT_FOUND')) return res.status(404).json({ error: 'Allotment not found' })
+          if (msg.includes('ZERO_RETURN')) return res.status(400).json({ error: 'Nothing selected to return' })
+          if (msg.includes('EXCEEDS')) {
+            const m = msg.match(/EXCEEDS[ :]*(.*)/)
+            return res.status(400).json({ error: m && m[1] ? 'Cannot return ' + m[1] : 'Return quantity exceeds available stock' })
           }
+          console.error('return_to_warehouse error:', msg)
+          return res.status(500).json({ error: 'Failed to return stock to main store' })
+        }
+        const returned = num((rpcRes?.data as any)?.returned ?? retQty)
+
+        // ── Allocation-state consistency guard ─────────────────────────────────
+        // If the deployed function did NOT net the allocation columns (older version), the
+        // main inventory aggregates are fine (quantity_remaining / warehouse updated by the
+        // RPC) but the allocation views (quantity_assigned, *_quantities_assigned) would still
+        // report the pre-return quantity. Detect that and net them here so Details / Edit /
+        // the Partner Store Inventory table stay consistent for both full and partial returns.
+        // Once the canonical function is deployed this block is a no-op (no double-netting).
+        const { data: siAfter } = await supabaseAdmin
+          .from(TABLES.STORE_INVENTORY)
+          .select('quantity_assigned')
+          .eq('id', id)
+          .maybeSingle()
+
+        const afterAssigned = num((siAfter as any)?.quantity_assigned ?? beforeAssigned)
+        if (returned > 0 && afterAssigned === beforeAssigned) {
+          // The RPC did not net the allocation -> apply the netting here.
+          const heal: Record<string, any> = {
+            quantity_assigned: Math.max(0, beforeAssigned - returned),
+          }
+          const netFlat = (base: any, delta: any) => {
+            const baseObj = (base && typeof base === 'object' && !Array.isArray(base)) ? base as Record<string, number> : {}
+            const deltaObj = (delta && typeof delta === 'object' && !Array.isArray(delta)) ? delta as Record<string, number> : {}
+            const next: Record<string, number> = {}
+            Object.keys(baseObj).forEach((k) => {
+              const n = Math.max(0, (num(baseObj[k]) || 0) - (num(deltaObj[k]) || 0))
+              if (n > 0) next[k] = n
+            })
+            return Object.keys(next).length ? next : null
+          }
+          if (normalizedReturnVariants) {
+            heal.variant_quantities_assigned = adjustVariantQuantities(siBefore.variant_quantities_assigned, normalizedReturnVariants, -1) ?? null
+          }
+          if (effectiveReturnSizeQuantities) {
+            heal.size_quantities_assigned = netFlat(siBefore.size_quantities_assigned, effectiveReturnSizeQuantities)
+          }
+          if (effectiveReturnColorQuantities) {
+            heal.color_quantities_assigned = netFlat(siBefore.color_quantities_assigned, effectiveReturnColorQuantities)
+          }
+          const { error: healErr } = await supabaseAdmin
+            .from(TABLES.STORE_INVENTORY)
+            .update(heal)
+            .eq('id', id)
+          if (healErr) console.error('returnToWarehouse allocation heal error:', healErr.message)
         }
 
-        return res.json({ success: true, returned: retQty })
+        return res.json({ success: true, returned })
       }
 
       // Update existing store_inventory row (admin only)
@@ -887,7 +915,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       // Fetch the row so we know how many unsold pieces to return to warehouse
       const { data: row, error: fetchErr } = await supabaseAdmin
         .from(TABLES.STORE_INVENTORY)
-        .select('id, inventory_id, quantity_remaining')
+        .select('id, inventory_id, quantity_remaining, size_quantities_remaining, color_quantities_remaining, variant_quantities_remaining')
         .eq('id', id)
         .maybeSingle()
 
@@ -897,19 +925,24 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 
       const unsold = Number(row.quantity_remaining) || 0
 
-      // Return unsold pieces to warehouse inventory
+      // Return unsold pieces to warehouse inventory, keeping the breakdown columns
+      // (variant/size/color_quantities) in sync with quantity_available.
       if (unsold > 0 && row.inventory_id) {
         const { data: invRow, error: invFetchErr } = await supabaseAdmin
           .from(TABLES.INVENTORY)
-          .select('quantity_available')
+          .select('quantity_available, size_quantities, color_quantities, variant_quantities')
           .eq('id', row.inventory_id)
           .maybeSingle()
 
         if (!invFetchErr && invRow) {
           const newQty = (Number(invRow.quantity_available) || 0) + unsold
+          const invUpdate: Record<string, any> = { quantity_available: newQty }
+          invUpdate.variant_quantities = addVariant(invRow.variant_quantities, row.variant_quantities_remaining)
+          invUpdate.size_quantities = addFlat(invRow.size_quantities, row.size_quantities_remaining)
+          invUpdate.color_quantities = addFlat(invRow.color_quantities, row.color_quantities_remaining)
           await supabaseAdmin
             .from(TABLES.INVENTORY)
-            .update({ quantity_available: newQty })
+            .update(invUpdate)
             .eq('id', row.inventory_id)
         }
       }

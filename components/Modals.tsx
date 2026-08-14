@@ -71,6 +71,15 @@ export const variantGrandTotal = (variants?: VariantQuantities | null) => rollup
 const variantRowTotal = (variants: VariantQuantities, color: string) => Object.values(variants[color] || {}).reduce((sum, qty) => sum + normalizeQty(qty), 0);
 const variantColumnTotal = (variants: VariantQuantities, size: string) => Object.values(variants || {}).reduce((sum, sizes) => sum + normalizeQty(sizes?.[size]), 0);
 
+const SIZE_ORDER = ['XS', 'S', 'M', 'L', 'XL', 'XXL'];
+
+const sortSizes = (sizes: string[]): string[] => {
+    const known = sizes.filter(size => SIZE_ORDER.includes(size));
+    const unknown = sizes.filter(size => !SIZE_ORDER.includes(size));
+    known.sort((a, b) => SIZE_ORDER.indexOf(a) - SIZE_ORDER.indexOf(b));
+    return [...known, ...unknown];
+};
+
 const buildLegacyMaxVariantGrid = (colorQuantities?: Record<string, number> | null, sizeQuantities?: Record<string, number> | null) => {
     const colors = colorQuantities && typeof colorQuantities === 'object' ? Object.keys(colorQuantities) : [];
     const sizes = sizeQuantities && typeof sizeQuantities === 'object' ? Object.keys(sizeQuantities) : [];
@@ -105,6 +114,7 @@ export function VariantQuantityGrid({
     showRemainingLabel?: boolean;
 }) {
     if (!colors.length || !sizes.length) return null;
+    const orderedSizes = sortSizes(sizes);
     const total = variantGrandTotal(values);
     const setCell = (color: string, size: string, qty: number) => {
         const max = maxValues?.[color]?.[size];
@@ -119,13 +129,13 @@ export function VariantQuantityGrid({
     };
 
     return (
-        <div style={{ marginBottom: 16, padding: 16, background: 'var(--surface-2)', borderRadius: 10, border: '1px solid var(--border)', overflowX: 'auto', WebkitOverflowScrolling: 'touch' }}>
+        <div style={{ marginBottom: 16, padding: 16, background: 'var(--surface-2)', borderRadius: 10, border: '1px solid var(--border)', overflowX: 'auto', flexShrink: 0, WebkitOverflowScrolling: 'touch' }}>
             <div style={{ fontSize: 13, fontWeight: 800, marginBottom: 12, color: 'var(--text)', minWidth: 0 }}>{title}</div>
             <table style={{ width: '100%', borderCollapse: 'separate', borderSpacing: 0, minWidth: 240 }}>
                 <thead>
                     <tr>
                         <th style={{ textAlign: 'left', padding: 8, fontSize: 11, color: 'var(--text-muted)' }}>Color</th>
-                        {sizes.map(size => (
+                        {orderedSizes.map(size => (
                             <th key={size} style={{ textAlign: 'center', padding: 8, fontSize: 11, color: 'var(--text-muted)' }}>{size}</th>
                         ))}
                         <th style={{ textAlign: 'right', padding: 8, fontSize: 11, color: 'var(--text-muted)' }}>Total</th>
@@ -138,7 +148,7 @@ export function VariantQuantityGrid({
                                 <span style={{ display: 'inline-flex', width: 8, height: 8, borderRadius: '50%', background: color, marginRight: 8, verticalAlign: 'middle' }} />
                                 {color}
                             </td>
-                            {sizes.map(size => {
+                            {orderedSizes.map(size => {
                                 const max = maxValues?.[color]?.[size];
                                 const currentVal = normalizeQty(values[color]?.[size]);
                                 const remaining = max !== undefined ? normalizeQty(max) - currentVal : undefined;
@@ -185,7 +195,7 @@ export function VariantQuantityGrid({
                 <tfoot>
                     <tr>
                         <td style={{ padding: 8, fontWeight: 900 }}>Total</td>
-                        {sizes.map(size => (
+                        {orderedSizes.map(size => (
                             <td key={size} style={{ padding: 8, textAlign: 'center', fontWeight: 900 }}>{variantColumnTotal(values, size)}</td>
                         ))}
                         <td style={{ padding: 8, textAlign: 'right', fontWeight: 900 }}>{total}</td>
@@ -329,6 +339,80 @@ function CatalogInput({
                 </div>
             )}
             
+        </div>
+    );
+}
+
+
+/* ==========================================================================
+   ITEM NAME PICKER — searchable combobox for selecting an EXISTING warehouse
+   batch. Shows "Product Name (ITEM-XXXXXXXX)" instead of the raw batch/COGS
+   code, and lets the user type to filter the list instead of scrolling a
+   plain <select>.
+   ======================================================================= */
+function ItemNamePicker({
+    items,
+    value,
+    onChange,
+    placeholder = 'Search by item name…',
+}: {
+    items: InventoryItem[];
+    value: string;
+    onChange: (batchNumber: string) => void;
+    placeholder?: string;
+}) {
+    const [open, setOpen] = useState(false);
+    const [query, setQuery] = useState('');
+
+    const formatOption = (it: InventoryItem) => `${it.productName || 'Unnamed item'} (${formatItemCode(it.batchNumber)})`;
+
+    const selected = (items || []).find(it => it.batchNumber === value);
+    const selectedLabel = selected ? formatOption(selected) : '';
+
+    const filtered = (items || []).filter(it => formatOption(it).toLowerCase().includes(query.trim().toLowerCase()));
+
+    return (
+        <div className="input-group" style={{ position: 'relative', zIndex: open ? 1100 : 'auto' }}>
+            <label>Item Name</label>
+            <input
+                required
+                value={open ? query : selectedLabel}
+                placeholder={placeholder}
+                autoComplete="off"
+                spellCheck={false}
+                onFocus={() => { setQuery(''); setOpen(true); }}
+                onChange={e => setQuery(e.target.value)}
+                onBlur={() => setTimeout(() => setOpen(false), 150)}
+            />
+            {open && (
+                <div style={{ position: 'absolute', top: '100%', left: 0, right: 0, marginTop: 6, background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 10, boxShadow: '0 14px 40px rgba(15, 23, 42, 0.12)', zIndex: 1200, maxHeight: 220, overflowY: 'auto' }}>
+                    {filtered.length === 0 ? (
+                        <div style={{ padding: '12px 14px', fontSize: 13, color: 'var(--text-muted)' }}>No items match your search.</div>
+                    ) : filtered.map(it => {
+                        const isSelected = it.batchNumber === value;
+                        return (
+                            <div
+                                key={it.batchNumber}
+                                role="button"
+                                tabIndex={0}
+                                onMouseDown={e => e.preventDefault()}
+                                onClick={() => { onChange(it.batchNumber); setQuery(formatOption(it)); setOpen(false); }}
+                                onKeyDown={e => {
+                                    if (e.key === 'Enter' || e.key === ' ') {
+                                        e.preventDefault();
+                                        onChange(it.batchNumber);
+                                        setQuery(formatOption(it));
+                                        setOpen(false);
+                                    }
+                                }}
+                                style={{ padding: '10px 12px', cursor: 'pointer', fontWeight: isSelected ? 800 : 600, color: isSelected ? 'var(--acc)' : 'var(--text)', background: isSelected ? 'var(--acc-soft)' : 'transparent', borderBottom: '1px solid var(--surface-2)' }}
+                            >
+                                {formatOption(it)}
+                            </div>
+                        );
+                    })}
+                </div>
+            )}
         </div>
     );
 }
@@ -1632,7 +1716,9 @@ export function EditStoreInventoryModal({ item, storeNames, onSave, onClose }: {
         onClose();
     };
 
-    const sold = (item?.quantityAssigned || 0) - (item?.quantityRemaining || 0);
+    // quantityAssigned is already net of warehouse returns (see return_to_warehouse),
+    // so Items Sold = assigned - remaining.
+    const sold = Math.max(0, (item?.quantityAssigned || 0) - (item?.quantityRemaining || 0));
 
     const handleAssignedChange = (val: string) => {
         const parsed = parseInt(val) || 0;
@@ -1669,7 +1755,7 @@ export function EditStoreInventoryModal({ item, storeNames, onSave, onClose }: {
 
                             <div className="input-group">
                                 <label>Item Name</label>
-                                <input readOnly value={item?.productName || item?.batchNumber || 'Unknown'} style={{ background: 'var(--surface-2)', fontWeight: 700 }} />
+                                <input readOnly value={item?.productName ? `${item.productName} (${formatItemCode(item?.batchNumber)})` : (item?.batchNumber ? formatItemCode(item.batchNumber) : 'Unknown')} style={{ background: 'var(--surface-2)', fontWeight: 700 }} />
                             </div>
                         </div>
 
@@ -1762,24 +1848,8 @@ export function EditStoreInventoryModal({ item, storeNames, onSave, onClose }: {
                             </div>
                         )}
 
-                        {/* Row 3: New Price (Supply to Store) + Partner Commission % */}
-                        <div className="form-grid-2" style={{ marginBottom: 18 }}>
-                            <div className="input-group">
-                                <label>New Price (Supply to Store)</label>
-                                <input
-                                    type="text"
-                                    inputMode="decimal"
-                                    value={form.ownerSupplyPrice}
-                                    onChange={(e) => setForm({ ...form, ownerSupplyPrice: parseFloat(e.target.value) || 0 })}
-                                    required
-                                    style={{ borderColor: (Number(item?.ownerSupplyPrice) > 0 && Number(form.ownerSupplyPrice) < Number(item?.ownerSupplyPrice)) ? 'var(--danger)' : undefined }}
-                                />
-                                {Number(item?.ownerSupplyPrice) > 0 && (
-                                    <div style={{ fontSize: 11, marginTop: 4, fontWeight: 600, color: Number(form.ownerSupplyPrice) < Number(item?.ownerSupplyPrice) ? 'var(--danger)' : 'var(--text-muted)' }}>
-                                        Min: Rs {Number(item?.ownerSupplyPrice).toLocaleString()} (warehouse cost)
-                                    </div>
-                                )}
-                            </div>
+                        {/* Row 3: Partner Commission % */}
+                        <div style={{ marginBottom: 18 }}>
                             <div className="input-group">
                                 <label>Partner Commission %</label>
                                 <input type="text" inputMode="decimal" value={form.commissionPercent} onChange={(e) => setForm({ ...form, commissionPercent: parseFloat(e.target.value) || 0 })} required />
@@ -2141,15 +2211,9 @@ export function EditInventoryModal({ item, minQuantity, onSave, onClose, product
                             </div>
                         </div>
 
-                        <div className="form-grid-2" style={{ marginBottom: 12 }}>
-                            <div className="input-group">
-                                <label>Cost Per Piece</label>
-                                <input type="text" inputMode="decimal" value={form.costPrice} onChange={e => setForm({ ...form, costPrice: parseFloat(e.target.value) || 0 })} />
-                            </div>
-                            <div className="input-group">
-                                <label>Selling Price</label>
-                                <input type="text" inputMode="decimal" value={form.sellingPrice} onChange={e => setForm({ ...form, sellingPrice: parseFloat(e.target.value) || 0 })} />
-                            </div>
+                        <div className="input-group" style={{ marginBottom: 12 }}>
+                            <label>Cost Per Piece</label>
+                            <input type="text" inputMode="decimal" value={form.costPrice} onChange={e => setForm({ ...form, costPrice: parseFloat(e.target.value) || 0 })} />
                         </div>
 
                         <div className="form-grid-2" style={{ marginBottom: 12 }}>
@@ -2760,7 +2824,10 @@ export function CartModal({ inventory, storeName, isAdmin, storeNames, onAdd, on
         const found = inventory.find(i => (i.productId && i.productId === selectedProductId) || i.productName === selectedProductId);
         setSelectedItem(found || null);
         if (found) {
-            setItemPrice(found.sellingPrice || 0);
+            // Store owners should never see a pre-filled selling price — they type in
+            // whatever they actually sold the item for. Admins keep the convenience
+            // auto-fill since they already know the catalog pricing.
+            setItemPrice(isAdmin ? (found.sellingPrice || 0) : 0);
             setItemQty(0);
             setItemExtraQty(0);
             setSizeQuantities(buildEmptyQuantities(Array.isArray(found.sizes) ? found.sizes : []));
@@ -2769,7 +2836,7 @@ export function CartModal({ inventory, storeName, isAdmin, storeNames, onAdd, on
             setItemSize('');
             setItemColor('');
         }
-    }, [selectedProductId, inventory]);
+    }, [selectedProductId, inventory, isAdmin]);
 
     const cartVariantQuantities = cartItems.reduce((acc, it) => {
         if (it.variantQuantities) {
@@ -3058,7 +3125,7 @@ export function CartModal({ inventory, storeName, isAdmin, storeNames, onAdd, on
 
                                 <div className="input-group">
                                     <label>Price ({currency})</label>
-                                    <input type="number" min="0" step="0.01" value={itemPrice} onChange={e => setItemPrice(parseFloat(e.target.value) || 0)} style={{ fontWeight: 700 }} />
+                                    <input type="number" min="0" step="0.01" value={itemPrice === 0 ? '' : itemPrice} placeholder={isAdmin ? '0' : 'Enter the price you sold it for'} onChange={e => setItemPrice(parseFloat(e.target.value) || 0)} style={{ fontWeight: 700 }} />
                                     {currency === 'GBP' && <div style={{ fontSize: 10, color: 'var(--success)', marginTop: 2, fontWeight: 600 }}>≈ Rs {(itemPrice * gbpRate).toLocaleString()}</div>}
                                 </div>
 
@@ -3998,16 +4065,11 @@ export function AllotToStoreModal({ onSave, onClose, stores, inventory, allotedQ
                                 </select>
                             </div>
 
-                            <div className="input-group">
-                                <label>Item Name</label>
-                                <select value={form.batchNumber} onChange={(e) => setForm({ ...form, batchNumber: e.target.value })} required>
-                                    {(inventory || []).map((it) => (
-                                        <option key={it.batchNumber} value={it.batchNumber}>
-                                            {it.productName}
-                                        </option>
-                                    ))}
-                                </select>
-                            </div>
+                            <ItemNamePicker
+                                items={inventory || []}
+                                value={form.batchNumber}
+                                onChange={(batchNumber) => setForm({ ...form, batchNumber })}
+                            />
                         </div>
 
                         <div className="form-grid-2" style={{ marginBottom: 16 }}>
@@ -4137,33 +4199,15 @@ export function AllotToStoreModal({ onSave, onClose, stores, inventory, allotedQ
                             </div>
                         )}
 
-                        <div className="form-grid-2" style={{ marginBottom: 18 }}>
-                            <div className="input-group">
-                                <label>New Price (Supply to Store)</label>
-                                <input
-                                    type="text"
-                                    inputMode="decimal"
-                                    value={form.ownerSupplyPrice}
-                                    onChange={(e) => setForm({ ...form, ownerSupplyPrice: parseFloat(e.target.value) || 0 })}
-                                    required
-                                    style={{ borderColor: (Number(selectedInv?.costPrice) > 0 && Number(form.ownerSupplyPrice) < Number(selectedInv?.costPrice)) ? 'var(--danger)' : undefined }}
-                                />
-                                {Number(selectedInv?.costPrice) > 0 && (
-                                    <div style={{ fontSize: 11, marginTop: 4, fontWeight: 600, color: Number(form.ownerSupplyPrice) < Number(selectedInv?.costPrice) ? 'var(--danger)' : 'var(--text-muted)' }}>
-                                        Min: Rs {Number(selectedInv?.costPrice).toLocaleString()} (warehouse cost)
-                                    </div>
-                                )}
-                            </div>
-                            <div className="input-group">
-                                <label>Partner Commission %</label>
-                                <input
-                                    type="text"
-                                    inputMode="decimal"
-                                    value={form.commissionPercent}
-                                    onChange={(e) => setForm({ ...form, commissionPercent: parseFloat(e.target.value) || 0 })}
-                                    required
-                                />
-                            </div>
+                        <div className="input-group" style={{ marginBottom: 18 }}>
+                            <label>Partner Commission %</label>
+                            <input
+                                type="text"
+                                inputMode="decimal"
+                                value={form.commissionPercent}
+                                onChange={(e) => setForm({ ...form, commissionPercent: parseFloat(e.target.value) || 0 })}
+                                required
+                            />
                         </div>
 
                         <div className="form-grid-2" style={{ marginBottom: 18 }}>

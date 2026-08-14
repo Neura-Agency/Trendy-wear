@@ -148,6 +148,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
         .insert({
           username: username,
           password_hash: passwordHash,
+          plain_password: plainPassword,
           role: 'store',
           managed_stores: [],
           is_active: true
