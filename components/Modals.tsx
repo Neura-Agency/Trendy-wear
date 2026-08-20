@@ -1,9 +1,9 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { usePopup } from './Popup';
 import Badge from './Badge';
 import { SaleModalProps, CreateStoreModalProps, ReportModalProps, AddInventoryModalProps, AllotToStoreModalProps, InventoryItem, Order, Product, Store, Expense } from '../types';
 import { buildDeterministicProductId, findMatchingProduct, formatItemCode, formatItemCodeFromUuid, resolveCanonicalBrand } from '../lib/catalog';
-import { adjustVariantQuantities, rollupVariantQuantities, scaleVariantQuantitiesToTotal, VariantQuantities } from '../lib/variantQuantities';
+import { adjustVariantQuantities, mergeVariantQuantities, rollupVariantQuantities, scaleVariantQuantitiesToTotal, VariantQuantities } from '../lib/variantQuantities';
 
 type SaleInventoryItem = Pick<InventoryItem, 'productName' | 'quantityAvailable' | 'sellingPrice'> & {
     productId?: string;
@@ -4694,6 +4694,8 @@ export function SaleReturnModal({ order, onConfirm, onClose }: SaleReturnModalPr
 // SALE REFUND MODAL
 // Customer keeps the item. No inventory restored. Full cost absorbed as loss.
 // ============================================================
+export type RefundType = 'quantity' | 'amount' | 'replacement';
+
 export interface SaleRefundModalProps {
     order: {
         id: string;
@@ -4718,6 +4720,15 @@ export interface SaleRefundModalProps {
         id: string;
         refundQuantity: number;
         refundReason: string;
+        refundType?: RefundType;
+        fixedAmount?: number | null;
+        replacementItem?: string | null;
+        replacementProductId?: string | null;
+        replacementQuantity?: number | null;
+        replacementSize?: string | null;
+        replacementColor?: string | null;
+        replacementVariantQuantities?: VariantQuantities | null;
+        originalItemReturned?: boolean | null;
         refundSizeQuantities?: Record<string, number> | null;
         refundColorQuantities?: Record<string, number> | null;
         refundVariantQuantities?: VariantQuantities | null;
@@ -4725,6 +4736,67 @@ export interface SaleRefundModalProps {
     }) => Promise<void>;
     onClose: () => void;
 }
+
+export const resolveRefundDecision = ({
+    refundType = 'quantity',
+    sellingPrice = 0,
+    refundQuantity = 0,
+    fixedAmount,
+    replacementItem,
+    replacementProductId,
+    replacementQuantity,
+    replacementSize,
+    replacementColor,
+    originalItemReturned = false,
+}: {
+    refundType?: RefundType;
+    sellingPrice?: number;
+    refundQuantity?: number;
+    fixedAmount?: number | null;
+    replacementItem?: string | null;
+    replacementProductId?: string | null;
+    replacementQuantity?: number | null;
+    replacementSize?: string | null;
+    replacementColor?: string | null;
+    originalItemReturned?: boolean;
+}) => {
+    const normalizedType: RefundType = refundType === 'amount' ? 'amount' : refundType === 'replacement' ? 'replacement' : 'quantity';
+    const qty = Math.max(0, Number(refundQuantity) || 0);
+    const amount = Math.max(0, Number(fixedAmount) || 0);
+    const item = typeof replacementItem === 'string' ? replacementItem.trim() : '';
+
+    if (normalizedType === 'amount') {
+        return {
+            refundType: normalizedType,
+            refundAmount: amount,
+            refundReason: amount > 0 ? 'Fixed amount refund' : 'Amount refund',
+            replacementItem: null,
+            originalItemReturned: false,
+        };
+    }
+
+    if (normalizedType === 'replacement') {
+        return {
+            refundType: normalizedType,
+            refundAmount: 0,
+            refundReason: item ? `Replacement: ${item}` : 'Replacement item refund',
+            replacementItem: item || null,
+            replacementProductId: replacementProductId || null,
+            replacementQuantity: replacementQuantity ?? null,
+            replacementSize: replacementSize || null,
+            replacementColor: replacementColor || null,
+            originalItemReturned,
+        };
+    }
+
+    return {
+        refundType: normalizedType,
+        refundAmount: (Number(sellingPrice) || 0) * qty,
+        refundReason: '',
+        replacementItem: null,
+        originalItemReturned: false,
+    };
+};
 
 const REFUND_REASONS = ['Customer Dissatisfied', 'Wrong Item Sent', 'Damaged on Arrival', 'Goodwill Refund', 'Other'];
 
@@ -4757,6 +4829,10 @@ export function SaleRefundModal({ order, onConfirm, onClose }: SaleRefundModalPr
         buildVariantGrid(variantColors, variantSizes, variantMax)
     );
     const [refundQty, setRefundQty] = useState(Math.max(1, remainingQty));
+    const [refundType, setRefundType] = useState<RefundType>('quantity');
+    const [fixedAmount, setFixedAmount] = useState(50);
+    const [replacementItem, setReplacementItem] = useState('');
+    const [originalItemReturned, setOriginalItemReturned] = useState(true);
     const [reason, setReason] = useState(REFUND_REASONS[0]);
     const [sizeInputs, setSizeInputs] = useState<Record<string, number>>(
         remainingSizeQuantities ? Object.fromEntries(Object.entries(remainingSizeQuantities).map(([k, v]) => [k, v])) : {}
@@ -4767,10 +4843,77 @@ export function SaleRefundModal({ order, onConfirm, onClose }: SaleRefundModalPr
     const [saving, setSaving] = useState(false);
     const [proofImage, setProofImage] = useState<string | null>(null);
 
+    // ── Replacement product selection (real product/variant, not free text) ──
+    const { toast } = usePopup();
+    const [replacementProducts, setReplacementProducts] = useState<any[]>([]);
+    const [replacementLoading, setReplacementLoading] = useState(false);
+    const [selectedReplacementProductId, setSelectedReplacementProductId] = useState('');
+    const [replacementQty, setReplacementQty] = useState(1);
+    const [replacementVariantQuantities, setReplacementVariantQuantities] = useState<VariantQuantities>({});
+
+    useEffect(() => {
+        if (refundType !== 'replacement') return;
+        let cancelled = false;
+        setReplacementLoading(true);
+        (async () => {
+            try {
+                const res = await fetch('/api/storeInventory');
+                const payload = await res.json();
+                const byStore = payload?.storeInventory || {};
+                const storeItems = byStore?.[order.storeName] ? Object.values(byStore[order.storeName]) : [];
+                const productMap = new Map<string, any>();
+                (storeItems as any[]).forEach((item: any) => {
+                    if (!item || !item.productId) return;
+                    const existing = productMap.get(item.productId);
+                    if (!existing) {
+                        productMap.set(item.productId, {
+                            ...item,
+                            variantQuantitiesRemaining: { ...(item.variantQuantitiesRemaining || {}) },
+                        });
+                    } else {
+                        existing.variantQuantitiesRemaining = mergeVariantQuantities(existing.variantQuantitiesRemaining, item.variantQuantitiesRemaining) || existing.variantQuantitiesRemaining;
+                        existing.quantityRemaining = (Number(existing.quantityRemaining) || 0) + (Number(item.quantityRemaining) || 0);
+                    }
+                });
+                if (!cancelled) setReplacementProducts(Array.from(productMap.values()));
+            } catch {
+                /* ignore — list stays empty */
+            } finally {
+                if (!cancelled) setReplacementLoading(false);
+            }
+        })();
+        return () => { cancelled = true; };
+    }, [refundType, order.storeName]);
+
+    const selectedReplacement = replacementProducts.find(p => p.productId === selectedReplacementProductId) || null;
+    const replacementVariantsRemaining = selectedReplacement?.variantQuantitiesRemaining ?? null;
+    const replacementVariantColors = Object.keys(replacementVariantsRemaining || {});
+    const replacementVariantSizes = Array.from(new Set(Object.values(replacementVariantsRemaining || {}).flatMap((sizes: any) => Object.keys(sizes || {}))));
+    const hasReplacementVariantGrid = replacementVariantColors.length > 0 && replacementVariantSizes.length > 0;
+    const replacementHasFlatSizes = !hasReplacementVariantGrid && selectedReplacement?.sizeQuantitiesRemaining && Object.keys(selectedReplacement.sizeQuantitiesRemaining).length > 0;
+    const replacementHasFlatColors = !hasReplacementVariantGrid && selectedReplacement?.colorQuantitiesRemaining && Object.keys(selectedReplacement.colorQuantitiesRemaining).length > 0;
+    const replacementSelectedColors = Object.keys(replacementVariantQuantities || {});
+    const replacementColor = replacementSelectedColors.length ? replacementSelectedColors[0] : null;
+    const replacementSizeForColor = replacementColor && replacementVariantQuantities[replacementColor] ? Object.keys(replacementVariantQuantities[replacementColor]) : [];
+    const replacementSize = replacementSizeForColor.length ? replacementSizeForColor[0] : null;
+    const normalizedReplacementQty = Math.max(1, Number(replacementQty) || 1);
+    const replacementVariantTotal = variantGrandTotal(replacementVariantQuantities);
+    const replacementItemName = selectedReplacement?.productName || replacementItem;
+
+    const updateReplacementVariant = (color: string, size: string, value: number) => {
+        const cap = Number(replacementVariantsRemaining?.[color]?.[size] ?? 0);
+        setReplacementVariantQuantities(prev => ({
+            ...prev,
+            [color]: { ...(prev[color] || {}), [size]: Math.max(0, Math.min(cap, Number(value) || 0)) },
+        }));
+    };
+
+
     const hasSizes = !hasVariantGrid && remainingSizeQuantities && Object.keys(remainingSizeQuantities).length > 0;
     const hasColors = !hasVariantGrid && remainingColorQuantities && Object.keys(remainingColorQuantities).length > 0;
     const effectiveRefundQty = hasVariantGrid ? variantGrandTotal(variantInputs) : refundQty;
-    const refundAmount = (order.sellingPrice || 0) * effectiveRefundQty;
+    const resolvedRefund = resolveRefundDecision({ refundType, sellingPrice: order.sellingPrice, refundQuantity: effectiveRefundQty, fixedAmount, replacementItem: replacementItemName, replacementProductId: selectedReplacementProductId || undefined, replacementQuantity: normalizedReplacementQty, replacementSize: replacementSize || undefined, replacementColor: replacementColor || undefined, originalItemReturned });
+    const refundAmount = resolvedRefund.refundAmount;
 
     const handleProofImageChange = (e: React.ChangeEvent<HTMLInputElement>) => {
         const file = e.target.files?.[0];
@@ -4783,12 +4926,32 @@ export function SaleRefundModal({ order, onConfirm, onClose }: SaleRefundModalPr
     const handleSubmit = async () => {
         if (saving) return;
         if (effectiveRefundQty < 1) return;
+        if (refundType === 'amount' && fixedAmount <= 0) return;
+        if (refundType === 'replacement') {
+            if (!selectedReplacementProductId) { toast.error('Select a replacement product'); return; }
+            if (hasReplacementVariantGrid && variantGrandTotal(replacementVariantQuantities) < 1) { toast.error('Enter quantities for at least one replacement color-size'); return; }
+        }
         setSaving(true);
         try {
+            const selectedReason = refundType === 'amount'
+                ? `${reason} — Fixed amount refund`
+                : refundType === 'replacement'
+                    ? `${reason} — ${resolvedRefund.refundReason}`
+                    : reason;
+
             await onConfirm({
                 id: order.id,
                 refundQuantity: effectiveRefundQty,
-                refundReason: reason,
+                refundReason: selectedReason,
+                refundType,
+                fixedAmount: refundType === 'amount' ? fixedAmount : null,
+                replacementItem: refundType === 'replacement' ? (replacementItemName || null) : null,
+                replacementProductId: refundType === 'replacement' ? (selectedReplacementProductId || null) : null,
+                replacementQuantity: refundType === 'replacement' ? normalizedReplacementQty : null,
+                replacementSize: refundType === 'replacement' ? (replacementSize || null) : null,
+                replacementColor: refundType === 'replacement' ? (replacementColor || null) : null,
+                replacementVariantQuantities: refundType === 'replacement' && hasReplacementVariantGrid ? replacementVariantQuantities : null,
+                originalItemReturned: refundType === 'replacement' ? originalItemReturned : null,
                 refundSizeQuantities: hasSizes ? sizeInputs : null,
                 refundColorQuantities: hasColors ? colorInputs : null,
                 refundVariantQuantities: hasVariantGrid ? variantInputs : null,
@@ -4882,6 +5045,118 @@ export function SaleRefundModal({ order, onConfirm, onClose }: SaleRefundModalPr
                     )}
 
                     <div className="input-group">
+                        <label style={{ fontSize: 12, fontWeight: 700, color: 'var(--text-muted)', display: 'block', marginBottom: 6 }}>Refund Method</label>
+                        <select value={refundType} onChange={e => setRefundType(e.target.value as RefundType)} style={{ width: '100%' }}>
+                            <option value="quantity">Quantity refund (default)</option>
+                            <option value="amount">Fixed amount refund</option>
+                            <option value="replacement">Replacement item</option>
+                        </select>
+                    </div>
+
+                    {refundType === 'amount' && (
+                        <div className="input-group">
+                            <label style={{ fontSize: 12, fontWeight: 700, color: 'var(--text-muted)', display: 'block', marginBottom: 6 }}>Fixed Amount to Return</label>
+                            <input
+                                type="number"
+                                min={0}
+                                step={1}
+                                value={fixedAmount}
+                                onChange={e => setFixedAmount(Math.max(0, Number(e.target.value) || 0))}
+                                style={{ width: '100%' }}
+                                placeholder="50"
+                            />
+                        </div>
+                    )}
+
+                    {refundType === 'replacement' && (
+                        <>
+                            <div className="input-group">
+                                <label style={{ fontSize: 12, fontWeight: 700, color: 'var(--text-muted)', display: 'block', marginBottom: 6 }}>Replacement Product</label>
+                                <select
+                                    value={selectedReplacementProductId}
+                                    onChange={e => {
+                                        const id = e.target.value;
+                                        setSelectedReplacementProductId(id);
+                                        setReplacementVariantQuantities({});
+                                        const product = replacementProducts.find(p => p.productId === id);
+                                        setReplacementItem(product?.productName || '');
+                                    }}
+                                    style={{ width: '100%', backgroundColor: 'var(--bg-1, #fff)' }}
+                                >
+                                    <option value="">{replacementLoading ? 'Loading products…' : 'Select a product'}</option>
+                                    {replacementProducts.map(p => (
+                                        <option key={p.productId} value={p.productId}>
+                                            {p.productName} ({Number(p.quantityRemaining) || 0} available)
+                                        </option>
+                                    ))}
+                                </select>
+                            </div>
+
+                            {hasReplacementVariantGrid && selectedReplacementProductId && (
+                                <div className="input-group">
+                                    <label style={{ fontSize: 12, fontWeight: 700, color: 'var(--text-muted)', display: 'block', marginBottom: 6 }}>Replacement Size / Color</label>
+                                    <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+                                        <thead>
+                                            <tr>
+                                                <th style={{ border: '1px solid var(--border)', padding: 4, fontSize: 11 }}>Color \ Size</th>
+                                                {replacementVariantSizes.map(size => (
+                                                    <th key={size} style={{ border: '1px solid var(--border)', padding: 4, fontSize: 11 }}>{size}</th>
+                                                ))}
+                                            </tr>
+                                        </thead>
+                                        <tbody>
+                                            {replacementVariantColors.map(color => (
+                                                <tr key={color}>
+                                                    <td style={{ border: '1px solid var(--border)', padding: 4, fontSize: 11, fontWeight: 600 }}>{color}</td>
+                                                    {replacementVariantSizes.map(size => {
+                                                        const cap = Number(replacementVariantsRemaining?.[color]?.[size] ?? 0);
+                                                        return (
+                                                            <td key={size} style={{ border: '1px solid var(--border)', padding: 4 }}>
+                                                                <input
+                                                                    type="number"
+                                                                    min={0}
+                                                                    max={cap}
+                                                                    value={replacementVariantQuantities?.[color]?.[size] ?? ''}
+                                                                    onChange={e => updateReplacementVariant(color, size, Number(e.target.value))}
+                                                                    style={{ width: '100%', minWidth: 50 }}
+                                                                    placeholder={cap > 0 ? `${cap}` : '0'}
+                                                                />
+                                                            </td>
+                                                        );
+                                                    })}
+                                                </tr>
+                                            ))}
+                                        </tbody>
+                                    </table>
+                                </div>
+                            )}
+
+                            {!hasReplacementVariantGrid && !replacementHasFlatSizes && !replacementHasFlatColors && (
+                                <div className="input-group">
+                                    <label style={{ fontSize: 12, fontWeight: 700, color: 'var(--text-muted)', display: 'block', marginBottom: 6 }}>Replacement Quantity</label>
+                                    <input
+                                        type="number"
+                                        min={1}
+                                        step={1}
+                                        value={replacementQty}
+                                        onChange={e => setReplacementQty(Math.max(1, Math.floor(Number(e.target.value)) || 1))}
+                                        style={{ width: '100%' }}
+                                        placeholder="1"
+                                    />
+                                </div>
+                            )}
+
+                            <div className="input-group">
+                                <label style={{ fontSize: 12, fontWeight: 700, color: 'var(--text-muted)', display: 'block', marginBottom: 6 }}>Was the original item returned?</label>
+                                <select value={originalItemReturned ? 'yes' : 'no'} onChange={e => setOriginalItemReturned(e.target.value === 'yes')} style={{ width: '100%' }}>
+                                    <option value="yes">Yes — original item came back</option>
+                                    <option value="no">No — customer kept the original item</option>
+                                </select>
+                            </div>
+                        </>
+                    )}
+
+                    <div className="input-group">
                         <label style={{ fontSize: 12, fontWeight: 700, color: 'var(--text-muted)', display: 'block', marginBottom: 6 }}>Refund Reason</label>
                         <select value={reason} onChange={e => setReason(e.target.value)} style={{ width: '100%' }}>
                             {REFUND_REASONS.map(r => <option key={r} value={r}>{r}</option>)}
@@ -4902,7 +5177,15 @@ export function SaleRefundModal({ order, onConfirm, onClose }: SaleRefundModalPr
 
                     {/* Refund amount preview */}
                     <div style={{ padding: '10px 14px', background: '#f0fdf4', border: '1px solid #bbf7d0', borderRadius: 8, fontSize: 12, color: '#14532d', fontWeight: 600 }}>
-                        💸 Refund amount: <strong>${refundAmount.toLocaleString()}</strong> ({effectiveRefundQty} × ${order.sellingPrice?.toLocaleString()})
+                        {refundType === 'amount' && (
+                            <>💸 Fixed refund amount: <strong>${refundAmount.toLocaleString()}</strong> ({effectiveRefundQty} units selected)</>
+                        )}
+                        {refundType === 'replacement' && (
+                            <>🔁 Replacement: <strong>{replacementItemName || 'Not specified'}</strong> × {Math.max(1, replacementVariantTotal || normalizedReplacementQty)} — no cash refund ({originalItemReturned ? 'original item returned' : 'original item kept'})</>
+                        )}
+                        {refundType === 'quantity' && (
+                            <>💸 Refund amount: <strong>${refundAmount.toLocaleString()}</strong> ({effectiveRefundQty} × ${order.sellingPrice?.toLocaleString()})</>
+                        )}
                     </div>
 
                     <div style={{ display: 'flex', gap: 10, justifyContent: 'flex-end', marginTop: 4 }}>

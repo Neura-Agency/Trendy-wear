@@ -8,6 +8,7 @@ import {
   normalizeVariantQuantities,
   rollupVariantQuantities,
   validateVariantRequest,
+  type VariantQuantities,
 } from '../../lib/variantQuantities'
 
 function num(v: any): number {
@@ -35,6 +36,133 @@ async function generateOrderCode(
   }
   return code
 }
+
+/**
+ * Deduct stock for the replacement item across store_inventory rows FIFO (oldest first),
+ * mirroring the sale-deduction loop. The consumed store_inventory rows are selected
+ * automatically by FIFO — never by a user-picked batch.
+ * Returns consumed row ids and the replacement COGS (sum of owner_supply_price × qty),
+ * matching the sale branch's cost basis.
+ */
+async function deductStoreInventoryFIFO(
+  storeId: string,
+  productId: string,
+  variants: VariantQuantities | null,
+  qty: number,
+): Promise<{ consumedIds: string[]; replacementCostTotal: number } | { error: string }> {
+  const { data: rows, error } = await supabaseAdmin
+    .from(TABLES.STORE_INVENTORY)
+    .select('id, owner_supply_price, quantity_remaining, size_quantities_remaining, color_quantities_remaining, variant_quantities_remaining')
+    .eq('store_id', storeId)
+    .eq('product_id', productId)
+    .order('created_at', { ascending: true })
+
+  if (error) return { error: error.message }
+
+  const avail = (rows || []).filter((r: any) => num(r.quantity_remaining) > 0)
+  const totalAvailable = avail.reduce((s: number, r: any) => s + num(r.quantity_remaining), 0)
+  if (totalAvailable < qty) {
+    return { error: `Insufficient stock for replacement. Only ${totalAvailable} unit(s) available (need ${qty}).` }
+  }
+
+  if (variants) {
+    const variantAvailable = avail.reduce((acc: Record<string, Record<string, number>>, row: any) => {
+      const variantsRow = normalizeVariantQuantities(row.variant_quantities_remaining) || {}
+      Object.entries(variantsRow).forEach(([color, sizes]) => {
+        if (!acc[color]) acc[color] = {}
+        Object.entries(sizes).forEach(([size, v]) => { acc[color][size] = (acc[color][size] || 0) + v })
+      })
+      return acc
+    }, {})
+    const validationError = validateVariantRequest(variants, variantAvailable)
+    if (validationError) return { error: validationError }
+  }
+
+  let remaining = qty
+  const consumedIds: string[] = []
+  let replacementCostTotal = 0
+  for (const row of avail) {
+    if (remaining <= 0) break
+    const rowQty = num(row.quantity_remaining)
+    const deduct = Math.min(rowQty, remaining)
+    const updatePayload: Record<string, any> = { quantity_remaining: rowQty - deduct }
+
+    if (variants && row.variant_quantities_remaining) {
+      const nextVariants = adjustVariantQuantities(row.variant_quantities_remaining, variants, -1)
+      const rollups = rollupVariantQuantities(nextVariants)
+      updatePayload.variant_quantities_remaining = nextVariants
+      updatePayload.size_quantities_remaining = rollups.sizeQuantities
+      updatePayload.color_quantities_remaining = rollups.colorQuantities
+    }
+
+    const { error: updErr } = await supabaseAdmin.from(TABLES.STORE_INVENTORY).update(updatePayload).eq('id', row.id)
+    if (updErr) return { error: updErr.message }
+
+    replacementCostTotal += num(row.owner_supply_price) * deduct
+    consumedIds.push(row.id)
+    remaining -= deduct
+  }
+
+  if (remaining > 0) return { error: 'Insufficient stock for replacement after allocation.' }
+  return { consumedIds, replacementCostTotal }
+}
+
+/**
+ * Restore a refunded original item back onto its store allotment for
+ * replacement Scenario A (original_item_returned = true). Uses the SAME
+ * mechanism and inventory-allocation data as the existing sale-return flow:
+ * the order's own store_inventory_id, incrementing quantity_remaining and
+ * pending_return_* breakdowns. No new batch-selection rule.
+ */
+async function restoreOrderInventoryToStore(
+  order: any,
+  sizeQuantities: Record<string, number> | null,
+  colorQuantities: Record<string, number> | null,
+  variants: VariantQuantities | null,
+  addQty: number,
+): Promise<void> {
+  if (!order.store_inventory_id) return
+
+  const { data: inv, error: invFetchErr } = await supabaseAdmin
+    .from(TABLES.STORE_INVENTORY)
+    .select('quantity_remaining, size_quantities_remaining, color_quantities_remaining, variant_quantities_remaining, pending_return_qty, pending_return_size_quantities, pending_return_color_quantities, pending_return_variant_quantities')
+    .eq('id', order.store_inventory_id)
+    .single()
+
+  if (invFetchErr || !inv) return
+
+  const newSizeRem = { ...(inv.size_quantities_remaining || {}) } as Record<string, number>
+  if (sizeQuantities) {
+    Object.entries(sizeQuantities).forEach(([size, qty]) => { newSizeRem[size] = (newSizeRem[size] || 0) + qty })
+  }
+  const newColorRem = { ...(inv.color_quantities_remaining || {}) } as Record<string, number>
+  if (colorQuantities) {
+    Object.entries(colorQuantities).forEach(([color, qty]) => { newColorRem[color] = (newColorRem[color] || 0) + qty })
+  }
+  const newPendingSize = { ...(inv.pending_return_size_quantities || {}) } as Record<string, number>
+  if (sizeQuantities) {
+    Object.entries(sizeQuantities).forEach(([size, qty]) => { newPendingSize[size] = (newPendingSize[size] || 0) + qty })
+  }
+  const newPendingColor = { ...(inv.pending_return_color_quantities || {}) } as Record<string, number>
+  if (colorQuantities) {
+    Object.entries(colorQuantities).forEach(([color, qty]) => { newPendingColor[color] = (newPendingColor[color] || 0) + qty })
+  }
+
+  await supabaseAdmin
+    .from(TABLES.STORE_INVENTORY)
+    .update({
+      quantity_remaining: num(inv.quantity_remaining) + addQty,
+      size_quantities_remaining: Object.keys(newSizeRem).length ? newSizeRem : null,
+      color_quantities_remaining: Object.keys(newColorRem).length ? newColorRem : null,
+      variant_quantities_remaining: adjustVariantQuantities(inv.variant_quantities_remaining, variants, 1) ?? inv.variant_quantities_remaining,
+      pending_return_qty: (num(inv.pending_return_qty) || 0) + addQty,
+      pending_return_size_quantities: Object.keys(newPendingSize).length ? newPendingSize : null,
+      pending_return_color_quantities: Object.keys(newPendingColor).length ? newPendingColor : null,
+      pending_return_variant_quantities: adjustVariantQuantities(inv.pending_return_variant_quantities, variants, 1) ?? inv.pending_return_variant_quantities,
+    })
+    .eq('id', order.store_inventory_id)
+}
+
 
 export default async function handler(req: NextApiRequest, res: NextApiResponse) {
   try {
@@ -81,6 +209,13 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
           returned_at,
           refund_quantity,
           refund_amount,
+          refund_type,
+          replacement_item,
+          replacement_product_id,
+          replacement_quantity,
+          replacement_size,
+          replacement_color,
+          original_item_returned,
           refund_reason,
           refund_size_quantities,
           refund_color_quantities,
@@ -152,6 +287,13 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
           returnedAt: row.returned_at ?? null,
           refundQuantity: row.refund_quantity ?? null,
           refundAmount: row.refund_amount ?? null,
+          refundType: row.refund_type ?? 'quantity',
+          replacementItem: row.replacement_item ?? null,
+          replacementProductId: row.replacement_product_id ?? null,
+          replacementQuantity: row.replacement_quantity ?? null,
+          replacementSize: row.replacement_size ?? null,
+          replacementColor: row.replacement_color ?? null,
+          originalItemReturned: row.original_item_returned ?? null,
           refundReason: row.refund_reason ?? null,
           refundSizeQuantities: row.refund_size_quantities ?? null,
           refundColorQuantities: row.refund_color_quantities ?? null,
@@ -780,6 +922,15 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
           id,
           refundQuantity,
           refundReason,
+          refundType,
+          fixedAmount,
+          replacementItem,
+          replacementProductId,
+          replacementQuantity,
+          replacementSize,
+          replacementColor,
+          replacementVariantQuantities,
+          originalItemReturned,
           refundSizeQuantities,
           refundColorQuantities,
           refundVariantQuantities,
@@ -787,9 +938,30 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
         } = req.body;
         if (!id) return res.status(400).json({ error: 'id is required' });
 
+        const refundMethod = refundType === 'amount' ? 'amount' : refundType === 'replacement' ? 'replacement' : 'quantity';
+        const normalizedFixedAmount = Math.max(0, num(fixedAmount));
+        const normalizedReplacement = typeof replacementItem === 'string' ? replacementItem.trim() : '';
+        const normalizedReplacementProductId = String(replacementProductId || '').trim();
+        const normalizedReplacementQty = Math.max(1, Math.floor(num(replacementQuantity)) || 1);
+        const normalizedReplacementSize = refundMethod === 'replacement' && replacementSize ? String(replacementSize).trim() : null;
+        const normalizedReplacementColor = refundMethod === 'replacement' && replacementColor ? String(replacementColor).trim() : null;
+        const normalizedOriginalReturned = refundMethod === 'replacement' ? Boolean(originalItemReturned) : null;
+
+        if (refundMethod === 'amount' && normalizedFixedAmount <= 0) {
+          return res.status(400).json({ error: 'fixedAmount must be greater than 0 when refundType is amount' });
+        }
+        if (refundMethod === 'replacement') {
+          if (!normalizedReplacementProductId) {
+            return res.status(400).json({ error: 'replacementProductId is required when refundType is replacement' });
+          }
+          if (!normalizedReplacement || !normalizedReplacementProductId) {
+            return res.status(400).json({ error: 'A real replacement product must be selected when refundType is replacement' });
+          }
+        }
+
         const { data: order, error: fetchErr } = await supabaseAdmin
           .from(TABLES.ORDERS)
-          .select('id, quantity, size_quantities, color_quantities, variant_quantities, return_quantity, return_variant_quantities, refund_quantity, refund_size_quantities, refund_color_quantities, refund_variant_quantities, commission_percent, selling_price, shipment_cost, cost_price, store_inventory_id')
+          .select('id, quantity, store_id, size_quantities, color_quantities, variant_quantities, return_quantity, return_variant_quantities, refund_quantity, refund_size_quantities, refund_color_quantities, refund_variant_quantities, commission_percent, selling_price, shipment_cost, cost_price, store_inventory_id')
           .eq('id', id)
           .single();
 
@@ -832,8 +1004,49 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
         const mergedRefundVariantQuantities = mergeVariantQuantities(order.refund_variant_quantities, normalizedRefundVariants);
         const newRefundQty = alreadyRefundedQty + refQty;
 
-        // Refund amount = selling_price x total refunded units
-        const refundAmount = num(order.selling_price) * newRefundQty;
+        const refundAmount = refundMethod === 'amount'
+          ? normalizedFixedAmount
+          : refundMethod === 'replacement'
+            ? 0
+            : num(order.selling_price) * newRefundQty;
+
+        const resolvedRefundReason = refundMethod === 'replacement'
+          ? `Replacement: ${normalizedReplacement}`
+          : refundMethod === 'amount'
+            ? `${refundReason || 'Other'} — Fixed amount refund`
+            : refundReason || null;
+
+        // ── Replacement inventory handling ──────────────────────────────────
+        let replacementCostTotal = 0
+        let replacementConsumedStoreInventoryIds: string[] = []
+        if (refundMethod === 'replacement') {
+          // Build the replacement variant request from the selected product/variant.
+          // Product/variant identity is the source of truth; FIFO picks the batches.
+          const suppliedReplacementVariants = normalizeVariantQuantities(replacementVariantQuantities)
+          const replacementVariants: VariantQuantities | null =
+            suppliedReplacementVariants ||
+            (normalizedReplacementColor && normalizedReplacementSize
+              ? { [normalizedReplacementColor]: { [normalizedReplacementSize]: normalizedReplacementQty } }
+              : null)
+
+          const deduction = await deductStoreInventoryFIFO(
+            order.store_id as string,
+            normalizedReplacementProductId,
+            replacementVariants,
+            normalizedReplacementQty,
+          )
+          if ('error' in deduction) {
+            return res.status(400).json({ error: deduction.error })
+          }
+          replacementCostTotal = deduction.replacementCostTotal
+          replacementConsumedStoreInventoryIds = deduction.consumedIds
+
+          // Scenario A: the original item came back. Restore it onto the order's
+          // own store allotment using the same mechanism the sale-return flow uses.
+          if (normalizedOriginalReturned) {
+            await restoreOrderInventoryToStore(order, effectiveRefundSizeQuantities, effectiveRefundColorQuantities, normalizedRefundVariants, refQty)
+          }
+        }
 
         // Remaining revenue = non-returned, non-refunded units only
         // Cost absorbed for remaining originals only; already-returned units are not double-charged.
@@ -842,8 +1055,17 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
         // Commission clawed back on refunded units (Option A)
         const remainingCommission = Math.round(remainingGross * num(order.commission_percent)) / 100;
         const remainingAdminTake = remainingGross - remainingCommission;
-        // Absorb cost only for units that were actually lost (not returned)
-        const remainingProfit = remainingAdminTake - (num(order.cost_price) * (originalQty - alreadyReturnedQty));
+
+        // Absorb cost only for units that were actually lost (not returned).
+        // - Quantity / Amount: unchanged behavior (original lost units absorbed).
+        // - Replacement Scenario B (original kept): original lost units (current behavior) + replacement COGS.
+        // - Replacement Scenario A (original returned): restored originals are NOT lost,
+        //   so only still-lost originals absorb cost, plus replacement COGS.
+        let lostOriginalUnits = originalQty - alreadyReturnedQty
+        if (refundMethod === 'replacement' && normalizedOriginalReturned) {
+          lostOriginalUnits = Math.max(0, lostOriginalUnits - newRefundQty)
+        }
+        const remainingProfit = remainingAdminTake - (num(order.cost_price) * lostOriginalUnits) - replacementCostTotal;
 
         const { error: updErr } = await supabaseAdmin
           .from(TABLES.ORDERS)
@@ -853,7 +1075,14 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
             commission_amount: Math.max(0, remainingCommission),
             refund_quantity: newRefundQty,
             refund_amount: refundAmount,
-            refund_reason: refundReason || null,
+            refund_type: refundMethod,
+            replacement_item: refundMethod === 'replacement' ? normalizedReplacement : null,
+            replacement_product_id: refundMethod === 'replacement' ? normalizedReplacementProductId : null,
+            replacement_quantity: refundMethod === 'replacement' ? normalizedReplacementQty : null,
+            replacement_size: normalizedReplacementSize,
+            replacement_color: normalizedReplacementColor,
+            original_item_returned: refundMethod === 'replacement' ? normalizedOriginalReturned : null,
+            refund_reason: resolvedRefundReason || null,
             refund_size_quantities: mergedRefundSizeQuantities,
             refund_color_quantities: mergedRefundColorQuantities,
             refund_variant_quantities: mergedRefundVariantQuantities,
@@ -869,7 +1098,8 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 
         // If the order has store inventory with pending returns, reduce the pending
         // count because refunded units will NOT be physically returned to the warehouse.
-        if (order.store_inventory_id) {
+        // Skip for replacement Scenario A: the original WAS returned and re-stocked above.
+        if (order.store_inventory_id && !(refundMethod === 'replacement' && normalizedOriginalReturned)) {
           const { data: inv, error: invFetchErr } = await supabaseAdmin
             .from(TABLES.STORE_INVENTORY)
             .select('pending_return_qty, pending_return_size_quantities, pending_return_color_quantities, pending_return_variant_quantities')
@@ -919,7 +1149,16 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
         }
 
         // NO inventory restoration — customer keeps the item
-        return res.json({ success: true, refundAmount });
+        return res.json({
+          success: true,
+          refundAmount,
+          ...(refundMethod === 'replacement'
+            ? {
+                replacementCostTotal,
+                replacementConsumedStoreInventoryIds,
+              }
+            : {}),
+        });
       }
 
       // ── Undo Return ─────────────────────────────────────────────────────────
@@ -1065,6 +1304,13 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
             commission_amount: Math.max(0, commission),
             refund_quantity: null,
             refund_amount: null,
+            refund_type: null,
+            replacement_item: null,
+            replacement_product_id: null,
+            replacement_quantity: null,
+            replacement_size: null,
+            replacement_color: null,
+            original_item_returned: null,
             refund_reason: null,
             refund_size_quantities: null,
             refund_color_quantities: null,
@@ -1254,6 +1500,13 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
             commission_amount: Math.max(0, commission),
             refund_quantity: null,
             refund_amount: null,
+            refund_type: null,
+            replacement_item: null,
+            replacement_product_id: null,
+            replacement_quantity: null,
+            replacement_size: null,
+            replacement_color: null,
+            original_item_returned: null,
             refund_reason: null,
             refund_size_quantities: null,
             refund_color_quantities: null,

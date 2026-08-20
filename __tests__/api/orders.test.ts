@@ -1,3 +1,5 @@
+import { resolveRefundDecision } from '../../components/Modals'
+
 // Helper function since test-helpers moved
 function generateOrderCode(): string {
   const ts = Date.now().toString(36).toUpperCase()
@@ -91,6 +93,64 @@ describe('Orders API - Business Logic', () => {
     expect(result.commissionAmount).toBe(200)
     expect(result.adminTake).toBe(1800)
     expect(result.profit).toBe(1000)
+  })
+
+  test('should resolve refund mode decisions', () => {
+    expect(resolveRefundDecision({ refundType: 'quantity', sellingPrice: 100, refundQuantity: 2 })).toEqual({
+      refundType: 'quantity',
+      refundAmount: 200,
+      refundReason: '',
+      replacementItem: null,
+      originalItemReturned: false,
+    })
+
+    expect(resolveRefundDecision({ refundType: 'amount', fixedAmount: 50, sellingPrice: 100, refundQuantity: 2 })).toEqual({
+      refundType: 'amount',
+      refundAmount: 50,
+      refundReason: 'Fixed amount refund',
+      replacementItem: null,
+      originalItemReturned: false,
+    })
+
+    expect(resolveRefundDecision({ refundType: 'replacement', replacementItem: 'Joggers', replacementProductId: 'prod-1', replacementQuantity: 3, originalItemReturned: true, sellingPrice: 100, refundQuantity: 1 })).toEqual({
+      refundType: 'replacement',
+      refundAmount: 0,
+      refundReason: 'Replacement: Joggers',
+      replacementItem: 'Joggers',
+      replacementProductId: 'prod-1',
+      replacementQuantity: 3,
+      replacementSize: null,
+      replacementColor: null,
+      originalItemReturned: true,
+    })
+  })
+
+  test('fixed amount refunds store the exact entered amount', () => {
+    expect(resolveRefundDecision({ refundType: 'amount', fixedAmount: 50 }).refundAmount).toBe(50)
+    expect(resolveRefundDecision({ refundType: 'amount', fixedAmount: 100 }).refundAmount).toBe(100)
+    // Not recalculated from selling price × quantity
+    expect(resolveRefundDecision({ refundType: 'amount', fixedAmount: 50, sellingPrice: 200, refundQuantity: 5 }).refundAmount).toBe(50)
+  })
+
+  test('negative/zero fixed amount is clamped to 0 (API then rejects <= 0)', () => {
+    expect(resolveRefundDecision({ refundType: 'amount', fixedAmount: -10 }).refundAmount).toBe(0)
+    expect(resolveRefundDecision({ refundType: 'amount', fixedAmount: 0 }).refundAmount).toBe(0)
+  })
+
+  test('replacement carries structured product/variant identity and 0 cash refund', () => {
+    const decision = resolveRefundDecision({ refundType: 'replacement', replacementItem: 'Joggers', replacementProductId: 'prod-9', replacementQuantity: 2, replacementSize: 'M', replacementColor: 'Blue', originalItemReturned: false })
+    expect(decision.refundAmount).toBe(0)
+    expect(decision.replacementProductId).toBe('prod-9')
+    expect(decision.replacementQuantity).toBe(2)
+    expect(decision.replacementSize).toBe('M')
+    expect(decision.replacementColor).toBe('Blue')
+    expect(decision.originalItemReturned).toBe(false)
+  })
+
+  test('legacy null refund_type behaves as quantity refund', () => {
+    const decision = resolveRefundDecision({ refundType: null as any, sellingPrice: 100, refundQuantity: 2 })
+    expect(decision.refundType).toBe('quantity')
+    expect(decision.refundAmount).toBe(200)
   })
 
   test('should set commission to 0 for Direct store orders', () => {
