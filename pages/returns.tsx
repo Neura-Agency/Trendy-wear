@@ -3,6 +3,7 @@ import Login from "../components/Login";
 import DetailModal from "../components/DetailModal";
 import { PageProps } from "../types";
 import ContextHelp from "../components/ContextHelp";
+import { TableSkeleton } from "../components/Skeletons";
 
 const Rs = (n: number) => "Rs " + (Number(n) || 0).toLocaleString();
 const fmtDate = (d: string) => d ? new Date(d).toLocaleDateString("en-PK", { day: "2-digit", month: "short", year: "numeric" }) : "—";
@@ -198,7 +199,7 @@ export default function ReturnsPage({ user, onLogin, onLogout }: PageProps) {
       {/* ── Table ── */}
       <div style={{ background: "var(--surface)", borderRadius: "var(--radius-lg)", border: "1px solid var(--border)", boxShadow: "var(--shadow-sm)", overflow: "hidden" }}>
         {loading ? (
-          <div style={{ padding: 40, textAlign: "center", color: "var(--text-muted)" }}>Loading returns…</div>
+          <TableSkeleton label="Loading returns" />
         ) : sorted.length === 0 ? (
           <EmptyState message="No returned orders found." />
         ) : (

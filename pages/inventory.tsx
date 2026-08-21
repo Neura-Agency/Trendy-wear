@@ -17,6 +17,7 @@ import {
 } from "../types";
 import { AddInventoryModal, AllotToStoreModal, EditInventoryModal, EditStoreInventoryModal, ReturnToWarehouseModal } from "../components/Modals";
 import ContextHelp from "../components/ContextHelp";
+import PageSkeleton from "../components/Skeletons";
 
 // â”€â”€ SVG Icon Components (mono-color, inherits currentColor) â”€â”€
 const IC = {
@@ -156,7 +157,7 @@ export default function InventoryPage({ user, onLogin }: PageProps) {
 
     if (!user) return <Login onLogin={onLogin} />;
 
-    if (loading) return <div className="loading">Loading...</div>;
+    if (loading) return <PageSkeleton label="Loading inventory" />;
 
     const isAdmin = user.role === "admin";
     const isSuperAdmin = isAdmin && user.scope === 'all';

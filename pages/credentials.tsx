@@ -6,6 +6,7 @@ import SearchBar from '../components/SearchBar';
 import DetailModal from '../components/DetailModal';
 import { PageProps, Account, Store } from '../types';
 import ContextHelp from "../components/ContextHelp";
+import PageSkeleton from "../components/Skeletons";
 
 interface EditingAccount {
     username: string;
@@ -162,7 +163,7 @@ export default function ShopCredentials({ user, onLogin }: PageProps) {
     };
 
     if (!user) return <Login onLogin={onLogin} />;
-    if (loading) return <div className="loading">Loading...</div>;
+    if (loading) return <PageSkeleton label="Loading credentials" />;
     if (user.role !== 'admin') {
         return <div style={{ padding: 40, textAlign: 'center' }}>Access Denied. Admins only.</div>;
     }

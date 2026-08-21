@@ -14,6 +14,7 @@ import { usePopup } from "../components/Popup";
 import SearchBar from "../components/SearchBar";
 import { formatItemCode } from "../lib/catalog";
 import ContextHelp from "../components/ContextHelp";
+import PageSkeleton from "../components/Skeletons";
 
 // ── SVG Icon Components (mono-color, inherits currentColor) ──
 const IC = {
@@ -1797,7 +1798,7 @@ export default function Home({ user, onLogin }: PageProps) {
 
   if (!user) return <Login onLogin={onLogin} />;
 
-  if (loading) return <div className="loading">Loading...</div>;
+  if (loading) return <PageSkeleton label="Loading dashboard" />;
 
   const isAdmin = user.role === "admin";
   const isSuperAdmin = isAdmin && user.scope === 'all';

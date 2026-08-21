@@ -7,6 +7,7 @@ import DetailModal from '../components/DetailModal';
 import { usePopup } from '../components/Popup';
 import { PageProps, Owner, OwnerPayout } from '../types';
 import ContextHelp from "../components/ContextHelp";
+import PageSkeleton from "../components/Skeletons";
 
 // ── Currency helpers ──────────────────────────────────────────────────────────
 const Rs = (n: number) =>
@@ -412,7 +413,7 @@ export default function OwnersPage({ user, onLogin }: PageProps) {
 
   // ── Guard ─────────────────────────────────────────────────────────────
   if (!user) return <Login onLogin={onLogin} />;
-  if (loading) return <div className="loading">Loading…</div>;
+  if (loading) return <PageSkeleton label="Loading profit partners" />;
   if (user.role !== 'admin' || user.scope !== 'all') {
     return <div style={{ padding: 40, textAlign: 'center', color: 'var(--text-muted)' }}>Access Denied — Super Admin only.</div>;
   }

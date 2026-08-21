@@ -9,6 +9,7 @@ import { usePopup } from "../components/Popup";
 import { formatItemCode } from "../lib/catalog";
 import { PageProps, InventoryItem } from "../types";
 import ContextHelp from "../components/ContextHelp";
+import PageSkeleton from "../components/Skeletons";
 
 // ── Helpers ──────────────────────────────────────────────────────────
 const Rs = (n: number) => "Rs " + (Number(n) || 0).toLocaleString();
@@ -168,7 +169,7 @@ export default function DirectSalesPage({ user, onLogin }: PageProps) {
   }, [user, isSuperAdmin, refresh]);
 
   if (!user) return <Login onLogin={onLogin} />;
-  if (loading) return <div className="loading">Loading...</div>;
+  if (loading) return <PageSkeleton label="Loading direct sales" />;
   if (!isSuperAdmin) {
     return <div style={{ padding: 40, textAlign: "center", color: "var(--text-muted)" }}>Access Denied — Super Admin only.</div>;
   }

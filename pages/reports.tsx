@@ -6,6 +6,7 @@ import DetailModal from '../components/DetailModal';
 import { PageProps, Order, Expense } from '../types';
 import { usePopup } from '../components/Popup';
 import ContextHelp from '../components/ContextHelp';
+import { TableSkeleton } from "../components/Skeletons";
 import {
   BarChart, Bar, LineChart, Line, PieChart, Pie, Cell,
   XAxis, YAxis, Tooltip, Legend, ResponsiveContainer, CartesianGrid,
@@ -537,7 +538,7 @@ export default function ReportsPage({ user, onLogin }: PageProps) {
           </div>
         </div>
 
-        {loading && <div style={{ textAlign: 'center', padding: 60, color: 'var(--text-muted)' }}>Loading report data…</div>}
+        {loading && <TableSkeleton rows={8} label="Loading report data" />}
 
         {/* ══════════════════════════════════════════════════════════════
             STORE OWNER TAB 0: SUMMARY
