@@ -946,3 +946,47 @@ input[aria-invalid="true"],
   white-space: nowrap;
   border: 0;
 }
+
+/* ── 15. Laptop density scaling ────────────────────────────
+   On typical laptop viewports the desktop layout renders too large,
+   which makes tables and cards feel cramped. Scale the shell down so
+   100% browser zoom matches the comfortable ~80% zoom density.
+   Full-height elements are compensated so nothing overflows.
+   Purely presentational: no layout or behaviour changes. */
+@media (min-width: 769px) {
+  html {
+    zoom: var(--ui-zoom, 1);
+  }
+  .page-wrap,
+  .login-page-wrap,
+  .login-card {
+    min-height: calc(100vh / var(--ui-zoom, 1));
+  }
+  .sidebar {
+    height: calc(100vh / var(--ui-zoom, 1));
+  }
+}
+
+@media (min-width: 769px) and (max-width: 1650px) {
+  html {
+    --ui-zoom: 0.9;
+  }
+}
+
+@media (min-width: 769px) and (max-width: 1500px) {
+  html {
+    --ui-zoom: 0.85;
+  }
+}
+
+@media (min-width: 769px) and (max-width: 1380px) {
+  html {
+    --ui-zoom: 0.8;
+  }
+}
+
+@media (min-width: 769px) and (max-width: 1180px) {
+  html {
+    --ui-zoom: 0.75;
+  }
+}
