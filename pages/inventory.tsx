@@ -16,6 +16,8 @@ import {
   User 
 } from "../types";
 import { AddInventoryModal, AllotToStoreModal, EditInventoryModal, EditStoreInventoryModal, ReturnToWarehouseModal } from "../components/Modals";
+import ContextHelp from "../components/ContextHelp";
+import PageSkeleton from "../components/Skeletons";
 
 // â”€â”€ SVG Icon Components (mono-color, inherits currentColor) â”€â”€
 const IC = {
@@ -155,7 +157,7 @@ export default function InventoryPage({ user, onLogin }: PageProps) {
 
     if (!user) return <Login onLogin={onLogin} />;
 
-    if (loading) return <div className="loading">Loading...</div>;
+    if (loading) return <PageSkeleton label="Loading inventory" />;
 
     const isAdmin = user.role === "admin";
     const isSuperAdmin = isAdmin && user.scope === 'all';
@@ -423,6 +425,7 @@ export default function InventoryPage({ user, onLogin }: PageProps) {
                         <div className="header-titles">
                             <h1 className="main-title">
                                 {isSuperAdmin ? 'Global Inventory' : isStoreAdmin ? 'Managed Shop Inventory' : 'Shop Inventory'}
+                                {' '}<ContextHelp id="inventory.page" />
                             </h1>
                             <p className="subtitle">
                                 {isSuperAdmin ? 'Manage warehouse stock and shop distributions' : isStoreAdmin ? 'View and manage inventory for your assigned shops' : 'View products supplied to your shop by the owner'}
@@ -493,7 +496,7 @@ export default function InventoryPage({ user, onLogin }: PageProps) {
 
                 {isSuperAdmin && (
                     <SectionCard 
-                        title="Warehouse Inventory" 
+                        title="Warehouse Inventory" helpKey="inventory.warehouse"
                         icon={IC.warehouse}
                         action={<button className="btn btn-primary" onClick={() => setShowAddInventoryModal(true)}>+ Add Inventory</button>}
                     >
@@ -742,7 +745,7 @@ export default function InventoryPage({ user, onLogin }: PageProps) {
                 )}
 
                 <SectionCard
-                    title={isAdmin ? "Partner Store's Inventory" : "Supplied Stock from Owner"}
+                    title={isAdmin ? "Partner Store's Inventory" : "Supplied Stock from Owner"} helpKey="inventory.storeStock"
                     icon={IC.store}
                     action={isAdmin ? (
                         <button className="btn btn-primary" onClick={() => setShowAllotModal(true)}>+ Alot to Stores</button>
@@ -984,7 +987,7 @@ export default function InventoryPage({ user, onLogin }: PageProps) {
                     const totalExtraCost = extras.reduce((acc, e) => acc + e.extraQty * e.costPerPc, 0);
                     return (
                         <SectionCard
-                            title="Store Gifts & Extras"
+                            title="Store Gifts & Extras" helpKey="inventory.gifts"
                             icon={<svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d="M20 12v10H4V12"/><rect x="2" y="7" width="20" height="5"/><path d="M12 22V7"/><path d="M12 7H7.5a2.5 2.5 0 0 1 0-5C11 2 12 7 12 7z"/><path d="M12 7h4.5a2.5 2.5 0 0 0 0-5C13 2 12 7 12 7z"/></svg>}
                         >
                             <div className="table-wrap">

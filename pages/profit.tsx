@@ -3,6 +3,8 @@ import Login from "../components/Login";
 import DetailModal from "../components/DetailModal";
 import { PageProps, Order } from "../types";
 import { formatItemCode } from "../lib/catalog";
+import ContextHelp from "../components/ContextHelp";
+import { TableSkeleton } from "../components/Skeletons";
 
 const Rs = (n: number) => "Rs " + (Number(n) || 0).toLocaleString();
 const fmtDate = (d: string) => d ? new Date(d).toLocaleDateString("en-PK", { day: "2-digit", month: "short", year: "numeric" }) : "—";
@@ -206,6 +208,7 @@ export default function ProfitPage({ user, onLogin }: PageProps) {
             </svg>
           </div>
           <h1 style={{ margin: 0, fontSize: 22, fontWeight: 800 }}>Profit Analysis</h1>
+          <ContextHelp id="profit.page" />
         </div>
         <p style={{ margin: 0, color: "var(--text-muted)", fontSize: 13 }}>
           Detailed breakdown of revenue, costs, and net profit across all orders
@@ -291,7 +294,7 @@ export default function ProfitPage({ user, onLogin }: PageProps) {
       {/* ── Table ── */}
       <div style={{ background: "var(--surface)", borderRadius: "var(--radius-lg)", border: "1px solid var(--border)", boxShadow: "var(--shadow-sm)", overflow: "hidden" }}>
         {loading ? (
-          <div style={{ padding: 48, textAlign: "center", color: "var(--text-muted)" }}>Loading profit data…</div>
+          <TableSkeleton label="Loading profit data" />
         ) : sorted.length === 0 ? (
           <div style={{ textAlign: "center", padding: "60px 20px", color: "var(--text-muted)" }}>
             <svg xmlns="http://www.w3.org/2000/svg" width="44" height="44" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round" strokeLinejoin="round" style={{ marginBottom: 12, opacity: 0.35 }}>
