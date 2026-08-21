@@ -990,3 +990,254 @@ input[aria-invalid="true"],
     --ui-zoom: 0.75;
   }
 }
+
+/* ── 16. Popups, modals & dialogs (presentation only) ──────
+   Unified treatment for every overlay surface in the app:
+   modals, detail modals, delete confirmations, dropdown
+   popovers, toasts and the processing dialog. No markup,
+   behaviour or logic changes — styling only. */
+
+/* Scrim */
+.modal-overlay,
+.edit-sale-overlay {
+  background: rgba(11, 15, 25, 0.52);
+  -webkit-backdrop-filter: blur(3px);
+  backdrop-filter: blur(3px);
+  padding: 24px 16px;
+  animation: ds-fade 0.14s ease-out;
+}
+
+/* Panel */
+.modal-box,
+.detail-modal-box,
+.edit-sale-modal {
+  border-radius: var(--radius-xl);
+  border: 1px solid var(--border);
+  background: var(--surface);
+  box-shadow:
+    0 1px 2px rgba(11, 15, 25, 0.06),
+    0 24px 60px -12px rgba(11, 15, 25, 0.32);
+  animation: ds-modal-in 0.16s cubic-bezier(0.16, 1, 0.3, 1);
+  scrollbar-width: thin;
+}
+
+@keyframes ds-modal-in {
+  from {
+    opacity: 0;
+    transform: translateY(10px) scale(0.985);
+  }
+}
+
+/* Header: stays visible while the panel scrolls */
+.modal-box > .modal-head,
+.edit-sale-modal > .edit-sale-header {
+  position: sticky;
+  top: 0;
+  z-index: 5;
+  background: var(--surface);
+  border-bottom: 1px solid var(--border);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.modal-head h3,
+.edit-sale-header h2 {
+  font-size: 15px;
+  font-weight: 650;
+  letter-spacing: -0.01em;
+  color: var(--text-head);
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+/* Close control — square icon button instead of a stray glyph */
+.modal-head > button.btn-sm:last-child,
+.modal-head .modal-close {
+  width: 30px;
+  height: 30px;
+  min-width: 30px;
+  padding: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: var(--radius);
+  background: transparent;
+  color: var(--text-muted);
+  font-size: 15px !important;
+  line-height: 1;
+  flex-shrink: 0;
+  transition: background 0.12s ease, color 0.12s ease;
+}
+
+.modal-head > button.btn-sm:last-child:hover,
+.modal-head .modal-close:hover {
+  background: var(--surface-2);
+  color: var(--text-head);
+}
+
+.modal-head > button.btn-sm:last-child:focus-visible,
+.modal-head .modal-close:focus-visible {
+  outline: 2px solid var(--acc);
+  outline-offset: 2px;
+}
+
+/* Body */
+.modal-body {
+  padding: 20px 22px 22px;
+  scrollbar-width: thin;
+  scrollbar-color: var(--surface-3) transparent;
+}
+
+.modal-body::-webkit-scrollbar,
+.modal-box::-webkit-scrollbar {
+  width: 10px;
+}
+
+.modal-body::-webkit-scrollbar-thumb,
+.modal-box::-webkit-scrollbar-thumb {
+  background: var(--surface-3);
+  border-radius: 999px;
+  border: 3px solid var(--surface);
+}
+
+.modal-body > .input-group + .input-group {
+  margin-top: 14px;
+}
+
+.modal-body label {
+  letter-spacing: 0.01em;
+}
+
+/* Footer action rows */
+.modal-actions,
+.modal-actions-row,
+.delete-modal__actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.modal-body > .modal-actions,
+.modal-body > .modal-actions-row {
+  margin-top: 20px;
+  padding-top: 16px;
+  border-top: 1px solid var(--border);
+}
+
+/* Keyboard focus inside any dialog */
+.modal-box :focus-visible,
+.detail-modal-box :focus-visible {
+  outline: 2px solid var(--acc);
+  outline-offset: 2px;
+}
+
+/* Destructive dialog */
+.delete-modal {
+  max-width: 460px;
+}
+
+.delete-modal__eyebrow {
+  font-size: 10.5px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--danger);
+}
+
+.delete-modal__title {
+  font-size: 16px;
+  font-weight: 650;
+  color: var(--text-head);
+  margin: 4px 0 0;
+}
+
+.delete-modal__subtitle {
+  font-size: 13px;
+  line-height: 1.5;
+  color: var(--text-muted);
+  margin-top: 6px;
+}
+
+.delete-modal__icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 38px;
+  height: 38px;
+  border-radius: var(--radius);
+  background: var(--danger-soft);
+  color: var(--danger);
+  border: 1px solid var(--danger-border);
+  flex-shrink: 0;
+}
+
+/* Detail modal */
+.detail-modal-card {
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  background: var(--surface);
+}
+
+.detail-row-label {
+  color: var(--text-muted);
+  font-size: 12px;
+}
+
+/* Dropdown popovers (custom select, search suggestions) */
+.custom-select-dropdown {
+  border-radius: var(--radius-lg) !important;
+  border: 1px solid var(--border) !important;
+  box-shadow: 0 16px 40px -12px rgba(11, 15, 25, 0.26) !important;
+  padding: 4px !important;
+  animation: ds-pop 0.12s ease-out;
+}
+
+.custom-select-trigger:focus-visible {
+  outline: 2px solid var(--acc);
+  outline-offset: 2px;
+}
+
+/* Small screens: dialogs read as sheets */
+@media (max-width: 576px) {
+  .modal-overlay,
+  .edit-sale-overlay {
+    padding: 0;
+    align-items: flex-end;
+  }
+
+  .modal-box,
+  .detail-modal-box,
+  .edit-sale-modal {
+    margin: 0 !important;
+    width: 100% !important;
+    max-width: 100% !important;
+    border-radius: var(--radius-xl) var(--radius-xl) 0 0 !important;
+    max-height: 92dvh !important;
+    animation: ds-sheet-in 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+  }
+
+  .modal-body {
+    padding: 16px 16px 24px;
+  }
+
+  @keyframes ds-sheet-in {
+    from {
+      transform: translateY(24px);
+      opacity: 0;
+    }
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .modal-overlay,
+  .modal-box,
+  .detail-modal-box,
+  .edit-sale-modal,
+  .custom-select-dropdown {
+    animation: none !important;
+  }
+}
