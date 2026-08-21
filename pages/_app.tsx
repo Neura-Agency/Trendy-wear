@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState } from "react";
 import type { AppProps } from "next/app";
 import Head from "next/head";
 import "../styles/globals.css";
+import "../styles/design-system.css";
 import Layout from "../components/Layout";
 import { PopupProvider } from "../components/Popup";
 import { User } from "../types";
@@ -86,6 +87,8 @@ export default function App({ Component, pageProps }: ExtendedAppProps) {
       <link rel="icon" type="image/jpeg" href="/logo.jpg" />
       <link rel="apple-touch-icon" href="/logo.jpg" />
       <link href="https://fonts.googleapis.com/css2?family=Pacifico&display=swap" rel="stylesheet" />
+      <link rel="preconnect" href="https://fonts.gstatic.com" crossOrigin="anonymous" />
+      <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet" />
       <meta name="application-name" content="Trendy Wear" />
     </Head>
   );

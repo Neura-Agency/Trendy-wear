@@ -6,6 +6,8 @@ import SearchBar from '../components/SearchBar';
 import DetailModal from '../components/DetailModal';
 import { usePopup } from '../components/Popup';
 import { PageProps, Owner, OwnerPayout } from '../types';
+import ContextHelp from "../components/ContextHelp";
+import PageSkeleton from "../components/Skeletons";
 
 // ── Currency helpers ──────────────────────────────────────────────────────────
 const Rs = (n: number) =>
@@ -411,7 +413,7 @@ export default function OwnersPage({ user, onLogin }: PageProps) {
 
   // ── Guard ─────────────────────────────────────────────────────────────
   if (!user) return <Login onLogin={onLogin} />;
-  if (loading) return <div className="loading">Loading…</div>;
+  if (loading) return <PageSkeleton label="Loading profit partners" />;
   if (user.role !== 'admin' || user.scope !== 'all') {
     return <div style={{ padding: 40, textAlign: 'center', color: 'var(--text-muted)' }}>Access Denied — Super Admin only.</div>;
   }
@@ -602,7 +604,7 @@ export default function OwnersPage({ user, onLogin }: PageProps) {
         <header className="page-header">
           <div className="header-content">
             <div className="header-titles">
-              <h1 className="main-title">Profit Partners</h1>
+              <h1 className="main-title">Profit Partners <ContextHelp id="owners.page" /></h1>
               <p className="subtitle">
                 Manage ownership shares and track profit distributions for <span className="highlight">Bilal, Yahya & Hammad</span>
               </p>
@@ -659,7 +661,7 @@ export default function OwnersPage({ user, onLogin }: PageProps) {
 
         {/* ── Profit Split Overview ── */}
         {activeOwners.length > 0 && (
-          <SectionCard title="Profit Split Overview" icon={iconProfit}>
+          <SectionCard title="Profit Split Overview" icon={iconProfit} helpKey="owners.split">
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: 14 }}>
               {activeOwners.map((o, idx) => {
                 const clrs   = ['#7c3aed', '#2563eb', '#16a34a', '#ea580c'];
@@ -918,7 +920,7 @@ export default function OwnersPage({ user, onLogin }: PageProps) {
         </SectionCard>
 
         {/* ── All Payouts Table ── */}
-        <SectionCard title="All Payout Records" icon={iconPayout}
+        <SectionCard title="All Payout Records" icon={iconPayout} helpKey="owners.payouts"
           action={
             <button className="btn btn-primary btn-sm" onClick={() => openPayout()}>+ Record Payout</button>
           }
@@ -1041,7 +1043,7 @@ export default function OwnersPage({ user, onLogin }: PageProps) {
         </SectionCard>
 
         {/* ── Owner Transfers ── */}
-        <SectionCard title="Owner Transfers" icon={iconPayout}
+        <SectionCard title="Owner Transfers" icon={iconPayout} helpKey="owners.transfers"
           action={
             <button className="btn btn-primary btn-sm" onClick={() => setShowTransfer(true)}>+ Record Transfer</button>
           }

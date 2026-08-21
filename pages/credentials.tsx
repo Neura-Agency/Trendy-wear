@@ -5,6 +5,8 @@ import Login from '../components/Login';
 import SearchBar from '../components/SearchBar';
 import DetailModal from '../components/DetailModal';
 import { PageProps, Account, Store } from '../types';
+import ContextHelp from "../components/ContextHelp";
+import PageSkeleton from "../components/Skeletons";
 
 interface EditingAccount {
     username: string;
@@ -161,7 +163,7 @@ export default function ShopCredentials({ user, onLogin }: PageProps) {
     };
 
     if (!user) return <Login onLogin={onLogin} />;
-    if (loading) return <div className="loading">Loading...</div>;
+    if (loading) return <PageSkeleton label="Loading credentials" />;
     if (user.role !== 'admin') {
         return <div style={{ padding: 40, textAlign: 'center' }}>Access Denied. Admins only.</div>;
     }
@@ -181,7 +183,7 @@ export default function ShopCredentials({ user, onLogin }: PageProps) {
                 <header className="page-header">
                     <div className="header-content">
                         <div className="header-titles">
-                            <h1 className="main-title">Shop Credentials</h1>
+                            <h1 className="main-title">Shop Credentials <ContextHelp id="credentials.page" /></h1>
                             <p className="subtitle">
                                 Manage login access for <span className="highlight">{isSuperAdmin ? 'all' : 'your'}</span> shop partners
                             </p>

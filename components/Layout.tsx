@@ -3,8 +3,11 @@ import Link from "next/link";
 import { useRouter } from "next/router";
 import { LayoutProps } from "../types";
 
+type NavGroup = "Overview" | "Operations" | "Finance" | "Administration";
+
 interface NavItem {
   id: string;
+  group?: NavGroup;
   icon: string;
   label: string;
   path: string;
@@ -160,18 +163,21 @@ export default function Layout({ children, user, onLogout }: LayoutProps) {
   const navItems: NavItem[] = [
     {
       id: "home",
+      group: "Overview",
       icon: iconDashboard as any,
       label: "Main Dashboard",
       path: "/",
     },
     {
       id: "inventory",
+      group: "Operations",
       icon: iconInventory as any,
       label: "Stock & Inventory",
       path: "/inventory",
     },
     {
       id: "all-inventory",
+      group: "Operations",
       icon: iconInventory as any,
       label: "All inventory",
       path: "/all-inventory",
@@ -179,6 +185,7 @@ export default function Layout({ children, user, onLogout }: LayoutProps) {
     },
     {
       id: "credentials",
+      group: "Administration",
       icon: iconCredentials as any,
       label: "Shop Credentials",
       path: "/credentials",
@@ -186,6 +193,7 @@ export default function Layout({ children, user, onLogout }: LayoutProps) {
     },
     {
       id: "direct-sales",
+      group: "Operations",
       icon: iconDirectSales as any,
       label: "Direct Sales",
       path: "/direct-sales",
@@ -193,6 +201,7 @@ export default function Layout({ children, user, onLogout }: LayoutProps) {
     },
     {
       id: "owners",
+      group: "Finance",
       icon: iconOwners as any,
       label: "Profit Partners",
       path: "/owners",
@@ -200,6 +209,7 @@ export default function Layout({ children, user, onLogout }: LayoutProps) {
     },
     {
       id: "reports",
+      group: "Finance",
       icon: iconReports as any,
       label: "Reports",
       path: "/reports",
@@ -207,6 +217,7 @@ export default function Layout({ children, user, onLogout }: LayoutProps) {
     },
     {
       id: "expenses",
+      group: "Finance",
       icon: iconExpenses as any,
       label: "Expenses",
       path: "/expenses",
@@ -214,6 +225,7 @@ export default function Layout({ children, user, onLogout }: LayoutProps) {
     },
     {
       id: "returns",
+      group: "Operations",
       icon: iconReturns as any,
       label: "Returns",
       path: "/returns",
@@ -221,6 +233,7 @@ export default function Layout({ children, user, onLogout }: LayoutProps) {
     },
     {
       id: "refunds",
+      group: "Operations",
       icon: iconRefunds as any,
       label: "Refunds",
       path: "/refunds",
@@ -228,6 +241,7 @@ export default function Layout({ children, user, onLogout }: LayoutProps) {
     },
     {
       id: "profit",
+      group: "Finance",
       icon: iconProfit as any,
       label: "Profit",
       path: "/profit",
@@ -246,6 +260,8 @@ export default function Layout({ children, user, onLogout }: LayoutProps) {
     return true;
   });
 
+  const navGroups: NavGroup[] = ["Overview", "Operations", "Finance", "Administration"];
+
   const filteredNavItems = navItems.filter((item) => {
     if (item.superAdminOnly)
       return user?.role === "admin" && user?.scope === "all";
@@ -256,6 +272,7 @@ export default function Layout({ children, user, onLogout }: LayoutProps) {
 
   return (
     <div className="page-wrap">
+      <a className="skip-link" href="#main-content">Skip to main content</a>
       {/* ── MOBILE OVERLAY ── */}
       <div
         className={`mobile-overlay ${mobileNavOpen ? "show" : ""}`}
@@ -297,7 +314,15 @@ export default function Layout({ children, user, onLogout }: LayoutProps) {
         </button>
         <div style={{ width: 1 }} className="hide-mobile" />
         <div className="topbar-right">
-          <div className="topbar-user" onClick={() => setShowMenu((v) => !v)}>
+          <div
+            className="topbar-user"
+            role="button"
+            tabIndex={0}
+            aria-haspopup="menu"
+            aria-expanded={showMenu}
+            onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); setShowMenu((v) => !v); } }}
+            onClick={() => setShowMenu((v) => !v)}
+          >
             <div className="user-avatar">
               {user?.username?.charAt(0).toUpperCase()}
             </div>
@@ -367,31 +392,30 @@ export default function Layout({ children, user, onLogout }: LayoutProps) {
               Trendy Wear
             </div>
           </div>
-          <div
-            style={{
-              padding: "20px 20px 8px 20px",
-              fontSize: "10px",
-              fontWeight: 700,
-              color: "rgba(255,255,255,0.3)",
-              textTransform: "uppercase",
-              letterSpacing: "1.5px",
-            }}
-          >
-            Menu
-          </div>
           <div className="nav-items-container">
-            {filteredNavItems.map((item) => (
-              <Link
-                href={item.path}
-                key={item.id}
-                className={`nav-item ${currentPath === item.path ? "active" : ""}`}
-                style={{ textDecoration: "none" }}
-                onClick={() => setMobileNavOpen(false)}
-              >
-                <span className="nav-icon">{item.icon}</span>
-                <span className="nav-label">{item.label}</span>
-              </Link>
-            ))}
+            {navGroups.map((group) => {
+              const items = filteredNavItems.filter((i) => (i.group ?? "Overview") === group);
+              if (items.length === 0) return null;
+              return (
+                <div key={group}>
+                  <div className="nav-group-label hide-collapsed">{group}</div>
+                  {items.map((item) => (
+                    <Link
+                      href={item.path}
+                      key={item.id}
+                      title={item.label}
+                      aria-current={currentPath === item.path ? "page" : undefined}
+                      className={`nav-item ${currentPath === item.path ? "active" : ""}`}
+                      style={{ textDecoration: "none" }}
+                      onClick={() => setMobileNavOpen(false)}
+                    >
+                      <span className="nav-icon" aria-hidden="true">{item.icon}</span>
+                      <span className="nav-label">{item.label}</span>
+                    </Link>
+                  ))}
+                </div>
+              );
+            })}
           </div>
 
           <div className="sidebar-footer" style={{ color: "white" }}>
@@ -410,7 +434,7 @@ export default function Layout({ children, user, onLogout }: LayoutProps) {
         </nav>
 
          {/* ── MAIN CONTENT ── */}
-         <main className="main-area">{children}</main>
+         <main className="main-area" id="main-content">{children}</main>
        </div>
 
        {/* ── MOBILE BOTTOM NAV ── */}
@@ -420,6 +444,7 @@ export default function Layout({ children, user, onLogout }: LayoutProps) {
              <Link
                href={item.path}
                key={item.id}
+               aria-current={currentPath === item.path ? "page" : undefined}
                className={`mobile-bottom-nav-item ${currentPath === item.path ? "active" : ""}`}
                style={{ textDecoration: "none" }}
              >
