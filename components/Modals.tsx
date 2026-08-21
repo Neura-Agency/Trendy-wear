@@ -4798,7 +4798,31 @@ export const resolveRefundDecision = ({
     };
 };
 
+const numModal = (v: unknown): number => { const n = Number(v); return Number.isFinite(n) ? n : 0; };
+
 const REFUND_REASONS = ['Customer Dissatisfied', 'Wrong Item Sent', 'Damaged on Arrival', 'Goodwill Refund', 'Other'];
+
+// Small helpers for the wizard review step
+function SummaryRow({ label, value, color }: { label: string; value: string; color?: string }) {
+    return (
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', gap: 8, fontSize: 12 }}>
+            <span style={{ color: 'var(--text-muted)', flexShrink: 0 }}>{label}</span>
+            <span style={{ fontWeight: 700, color: color || 'var(--text)', textAlign: 'right' }}>{value}</span>
+        </div>
+    );
+}
+
+function PLRow({ label, value, isNeg, bold }: { label: string; value: number; isNeg?: boolean; bold?: boolean }) {
+    const display = Math.abs(value);
+    const sign = value < 0 || isNeg ? '−' : '+';
+    const color = value < 0 || isNeg ? '#dc2626' : value > 0 ? '#16a34a' : 'var(--text)';
+    return (
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', gap: 8, fontSize: bold ? 13 : 12, fontWeight: bold ? 800 : 500 }}>
+            <span style={{ color: 'var(--text-muted)', flexShrink: 0 }}>{label}</span>
+            <span style={{ color }}>{sign} Rs {display.toLocaleString()}</span>
+        </div>
+    );
+}
 
 export function SaleRefundModal({ order, onConfirm, onClose }: SaleRefundModalProps) {
     const alreadyReturnedQty = Math.max(0, Number(order.returnQuantity) || 0);
@@ -4962,242 +4986,438 @@ export function SaleRefundModal({ order, onConfirm, onClose }: SaleRefundModalPr
         }
     };
 
+    // ── Live P&L preview helpers ──────────────────────────────────────────
+    const chargeablePreviewQty = Math.max(0, order.quantity - alreadyReturnedQty - alreadyRefundedQty); // remaining chargeable units before this refund
+    const sellingP = numModal(order.sellingPrice);
+    const costP = numModal(order.costPrice);
+    const totalRevenue = sellingP * chargeablePreviewQty;
+    const totalCogs = costP * chargeablePreviewQty;
+
+    let previewNetRevenue: number;
+    let previewLostCogs: number;
+    let previewReplaceCogs = 0; // unknown at UI time — shows as estimate note
+
+    if (refundType === 'amount') {
+        previewNetRevenue = totalRevenue - fixedAmount;
+        previewLostCogs = totalCogs;
+    } else if (refundType === 'replacement') {
+        previewNetRevenue = totalRevenue;
+        previewLostCogs = originalItemReturned ? 0 : totalCogs;
+    } else {
+        previewNetRevenue = sellingP * Math.max(0, chargeablePreviewQty - effectiveRefundQty);
+        previewLostCogs = totalCogs; // customer keeps all items
+    }
+    const previewProfit = previewNetRevenue - previewLostCogs - previewReplaceCogs;
+
+    // Step indicator
+    const STEPS = ['Refund Type', 'Details', 'Review'] as const;
+    const [step, setStep] = useState<0|1|2>(0);
+
+    const canGoNext = () => {
+        if (step === 0) return true;
+        if (step === 1) {
+            if (refundType === 'amount') return fixedAmount > 0;
+            if (refundType === 'replacement') return !!selectedReplacementProductId;
+            return effectiveRefundQty >= 1;
+        }
+        return true;
+    };
+
+    const TYPE_CARDS: Array<{ type: RefundType; icon: string; title: string; desc: string; color: string }> = [
+        {
+            type: 'quantity',
+            icon: '💸',
+            title: 'Full / Partial Cash Refund',
+            desc: 'Customer keeps the item. You return the selling price for the refunded units.',
+            color: '#ef4444',
+        },
+        {
+            type: 'amount',
+            icon: '🔖',
+            title: 'Fixed Amount Refund',
+            desc: 'Customer keeps the item. You return only a specific rupee amount (not per-unit price).',
+            color: '#f97316',
+        },
+        {
+            type: 'replacement',
+            icon: '🔁',
+            title: 'Send Replacement Item',
+            desc: 'No cash returned. You send different or same items instead. Original may or may not come back.',
+            color: '#8b5cf6',
+        },
+    ];
+
+    const selectedCard = TYPE_CARDS.find(c => c.type === refundType)!;
+
     return (
         <div className="modal-overlay" onClick={onClose}>
-            <div className="modal-box" style={{ maxWidth: 620, width: '95%', maxHeight: '90vh', overflowY: 'auto' }} onClick={e => e.stopPropagation()}>
-                <div className="modal-head" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+            <div
+                className="modal-box"
+                style={{ maxWidth: 640, width: '95%', maxHeight: '93vh', overflowY: 'auto', borderRadius: 16 }}
+                onClick={e => e.stopPropagation()}
+            >
+                {/* ── Header ── */}
+                <div className="modal-head" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', padding: '18px 20px 14px', borderBottom: '1px solid var(--border)' }}>
                     <div>
-                        <h3 style={{ margin: 0, fontSize: 17, fontWeight: 800 }}>Refund Sale</h3>
-                        <div style={{ fontSize: 12, color: 'var(--text-muted)', marginTop: 3 }}>
-                            {order.productName} — {order.storeName}
+                        <h3 style={{ margin: 0, fontSize: 18, fontWeight: 800 }}>Process Refund / Replacement</h3>
+                        <div style={{ fontSize: 12, color: 'var(--text-muted)', marginTop: 4 }}>
+                            {order.productName} &mdash; {order.storeName} &nbsp;·&nbsp;
+                            <span style={{ fontWeight: 600 }}>Remaining: {remainingQty} pc{remainingQty !== 1 ? 's' : ''}</span>
                         </div>
                     </div>
-                    <button className="btn btn-sm" onClick={onClose} style={{ border: 'none', fontSize: 18 }}>&#x2715;</button>
+                    <button className="btn btn-sm" onClick={onClose} style={{ border: 'none', fontSize: 20, lineHeight: 1, padding: '0 4px', marginTop: 2 }}>&#x2715;</button>
                 </div>
-                <div className="modal-body" style={{ padding: '16px 20px 24px', display: 'flex', flexDirection: 'column', gap: 16 }}>
 
-                    {/* Warning info box */}
-                    <div style={{ padding: '10px 14px', background: '#fef2f2', border: '1px solid #fecaca', borderRadius: 8, fontSize: 12, color: '#991b1b', fontWeight: 600 }}>
-                        🔴 <strong>Refund — customer keeps the item.</strong> No stock is restored. The cost of goods is fully absorbed as a loss. Commission is clawed back on refunded units.
-                    </div>
-
-                    {/* Refund Qty */}
-                    <div className="input-group">
-                        <label style={{ fontSize: 12, fontWeight: 700, color: 'var(--text-muted)', display: 'block', marginBottom: 6 }}>
-                            Refund Quantity <span style={{ color: 'var(--text-muted)', fontWeight: 400 }}>(max {remainingQty})</span>
-                        </label>
-                        <input
-                            type="number" min={1} max={remainingQty}
-                            value={effectiveRefundQty}
-                            readOnly={hasVariantGrid}
-                            onChange={e => setRefundQty(Math.min(remainingQty, Math.max(1, Number(e.target.value))))}
-                            style={hasVariantGrid ? { width: '100%', background: 'var(--surface-2)', cursor: 'default' } : { width: '100%' }}
-                        />
-                    </div>
-
-                    {hasVariantGrid && (
-                        <VariantQuantityGrid
-                            colors={variantColors}
-                            sizes={variantSizes}
-                            values={variantInputs}
-                            maxValues={variantMax}
-                            title="Refund by Color & Size"
-                            onChange={setVariantInputs}
-                        />
-                    )}
-
-                    {hasSizes && (
-                        <div>
-                            <div style={{ fontSize: 12, fontWeight: 700, color: 'var(--text-muted)', marginBottom: 8 }}>Sizes Being Refunded</div>
-                            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(100px,1fr))', gap: 8 }}>
-                                {Object.keys(remainingSizeQuantities!).map(size => (
-                                    <div key={size}>
-                                        <label style={{ fontSize: 11, fontWeight: 600, display: 'block', marginBottom: 3 }}>{size}</label>
-                                        <input
-                                            type="number" min={0} max={remainingSizeQuantities![size]}
-                                            value={sizeInputs[size] ?? 0}
-                                            onChange={e => setSizeInputs(prev => ({ ...prev, [size]: Math.min(remainingSizeQuantities![size], Math.max(0, Number(e.target.value))) }))}
-                                            style={{ width: '100%' }}
-                                        />
-                                    </div>
-                                ))}
+                {/* ── Step indicator ── */}
+                <div style={{ display: 'flex', gap: 0, padding: '12px 20px 0', borderBottom: '1px solid var(--border)' }}>
+                    {STEPS.map((label, i) => (
+                        <div key={label} style={{ flex: 1, textAlign: 'center', paddingBottom: 10, borderBottom: `2px solid ${i === step ? 'var(--primary, #6366f1)' : 'transparent'}`, cursor: i < step ? 'pointer' : 'default', transition: 'border-color 0.2s' }} onClick={() => { if (i < step) setStep(i as 0|1|2); }}>
+                            <div style={{ fontSize: 11, fontWeight: i === step ? 800 : 500, color: i === step ? 'var(--primary, #6366f1)' : i < step ? 'var(--text-muted)' : 'var(--text-muted)', letterSpacing: '0.04em', textTransform: 'uppercase' }}>
+                                {i + 1}. {label}
                             </div>
                         </div>
-                    )}
+                    ))}
+                </div>
 
-                    {hasColors && (
-                        <div>
-                            <div style={{ fontSize: 12, fontWeight: 700, color: 'var(--text-muted)', marginBottom: 8 }}>Colors Being Refunded</div>
-                            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(110px,1fr))', gap: 8 }}>
-                                {Object.keys(remainingColorQuantities!).map(color => (
-                                    <div key={color}>
-                                        <label style={{ fontSize: 11, fontWeight: 600, display: 'block', marginBottom: 3 }}>{color}</label>
-                                        <input
-                                            type="number" min={0} max={remainingColorQuantities![color]}
-                                            value={colorInputs[color] ?? 0}
-                                            onChange={e => setColorInputs(prev => ({ ...prev, [color]: Math.min(remainingColorQuantities![color], Math.max(0, Number(e.target.value))) }))}
-                                            style={{ width: '100%' }}
-                                        />
-                                    </div>
-                                ))}
+                <div className="modal-body" style={{ padding: '20px 20px 24px', display: 'flex', flexDirection: 'column', gap: 16 }}>
+
+                    {/* ══════════════════════════════════════════════
+                        STEP 0 — Choose Refund Type
+                    ══════════════════════════════════════════════ */}
+                    {step === 0 && (
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+                            <div style={{ fontSize: 13, fontWeight: 700, color: 'var(--text-muted)', marginBottom: 2 }}>
+                                What do you want to do?
                             </div>
-                        </div>
-                    )}
-
-                    <div className="input-group">
-                        <label style={{ fontSize: 12, fontWeight: 700, color: 'var(--text-muted)', display: 'block', marginBottom: 6 }}>Refund Method</label>
-                        <select value={refundType} onChange={e => setRefundType(e.target.value as RefundType)} style={{ width: '100%' }}>
-                            <option value="quantity">Quantity refund (default)</option>
-                            <option value="amount">Fixed amount refund</option>
-                            <option value="replacement">Replacement item</option>
-                        </select>
-                    </div>
-
-                    {refundType === 'amount' && (
-                        <div className="input-group">
-                            <label style={{ fontSize: 12, fontWeight: 700, color: 'var(--text-muted)', display: 'block', marginBottom: 6 }}>Fixed Amount to Return</label>
-                            <input
-                                type="number"
-                                min={0}
-                                step={1}
-                                value={fixedAmount}
-                                onChange={e => setFixedAmount(Math.max(0, Number(e.target.value) || 0))}
-                                style={{ width: '100%' }}
-                                placeholder="50"
-                            />
-                        </div>
-                    )}
-
-                    {refundType === 'replacement' && (
-                        <>
-                            <div className="input-group">
-                                <label style={{ fontSize: 12, fontWeight: 700, color: 'var(--text-muted)', display: 'block', marginBottom: 6 }}>Replacement Product</label>
-                                <select
-                                    value={selectedReplacementProductId}
-                                    onChange={e => {
-                                        const id = e.target.value;
-                                        setSelectedReplacementProductId(id);
-                                        setReplacementVariantQuantities({});
-                                        const product = replacementProducts.find(p => p.productId === id);
-                                        setReplacementItem(product?.productName || '');
+                            {TYPE_CARDS.map(card => (
+                                <div
+                                    key={card.type}
+                                    onClick={() => setRefundType(card.type)}
+                                    style={{
+                                        display: 'flex', alignItems: 'flex-start', gap: 14,
+                                        padding: '14px 16px', borderRadius: 12,
+                                        border: `2px solid ${refundType === card.type ? card.color : 'var(--border)'}`,
+                                        background: refundType === card.type ? `${card.color}11` : 'var(--surface-2)',
+                                        cursor: 'pointer', transition: 'all 0.15s',
                                     }}
-                                    style={{ width: '100%', backgroundColor: 'var(--bg-1, #fff)' }}
                                 >
-                                    <option value="">{replacementLoading ? 'Loading products…' : 'Select a product'}</option>
-                                    {replacementProducts.map(p => (
-                                        <option key={p.productId} value={p.productId}>
-                                            {p.productName} ({Number(p.quantityRemaining) || 0} available)
-                                        </option>
-                                    ))}
-                                </select>
+                                    <span style={{ fontSize: 26, lineHeight: 1, marginTop: 2 }}>{card.icon}</span>
+                                    <div>
+                                        <div style={{ fontWeight: 800, fontSize: 14, color: refundType === card.type ? card.color : 'var(--text)' }}>{card.title}</div>
+                                        <div style={{ fontSize: 12, color: 'var(--text-muted)', marginTop: 3 }}>{card.desc}</div>
+                                    </div>
+                                    <div style={{ marginLeft: 'auto', width: 18, height: 18, borderRadius: '50%', border: `2px solid ${refundType === card.type ? card.color : 'var(--border)'}`, background: refundType === card.type ? card.color : 'transparent', flexShrink: 0, marginTop: 3 }} />
+                                </div>
+                            ))}
+                        </div>
+                    )}
+
+                    {/* ══════════════════════════════════════════════
+                        STEP 1 — Details
+                    ══════════════════════════════════════════════ */}
+                    {step === 1 && (
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+                            {/* Selected type pill */}
+                            <div style={{ display: 'inline-flex', alignItems: 'center', gap: 6, padding: '4px 10px', borderRadius: 20, background: `${selectedCard.color}18`, border: `1px solid ${selectedCard.color}40`, fontSize: 12, fontWeight: 700, color: selectedCard.color, alignSelf: 'flex-start' }}>
+                                {selectedCard.icon} {selectedCard.title}
                             </div>
 
-                            {hasReplacementVariantGrid && selectedReplacementProductId && (
+                            {/* ── Refund Quantity (all types except amount) ── */}
+                            {refundType !== 'amount' && (
                                 <div className="input-group">
-                                    <label style={{ fontSize: 12, fontWeight: 700, color: 'var(--text-muted)', display: 'block', marginBottom: 6 }}>Replacement Size / Color</label>
-                                    <table style={{ width: '100%', borderCollapse: 'collapse' }}>
-                                        <thead>
-                                            <tr>
-                                                <th style={{ border: '1px solid var(--border)', padding: 4, fontSize: 11 }}>Color \ Size</th>
-                                                {replacementVariantSizes.map(size => (
-                                                    <th key={size} style={{ border: '1px solid var(--border)', padding: 4, fontSize: 11 }}>{size}</th>
-                                                ))}
-                                            </tr>
-                                        </thead>
-                                        <tbody>
-                                            {replacementVariantColors.map(color => (
-                                                <tr key={color}>
-                                                    <td style={{ border: '1px solid var(--border)', padding: 4, fontSize: 11, fontWeight: 600 }}>{color}</td>
-                                                    {replacementVariantSizes.map(size => {
-                                                        const cap = Number(replacementVariantsRemaining?.[color]?.[size] ?? 0);
-                                                        return (
-                                                            <td key={size} style={{ border: '1px solid var(--border)', padding: 4 }}>
-                                                                <input
-                                                                    type="number"
-                                                                    min={0}
-                                                                    max={cap}
-                                                                    value={replacementVariantQuantities?.[color]?.[size] ?? ''}
-                                                                    onChange={e => updateReplacementVariant(color, size, Number(e.target.value))}
-                                                                    style={{ width: '100%', minWidth: 50 }}
-                                                                    placeholder={cap > 0 ? `${cap}` : '0'}
-                                                                />
-                                                            </td>
-                                                        );
-                                                    })}
-                                                </tr>
-                                            ))}
-                                        </tbody>
-                                    </table>
-                                </div>
-                            )}
-
-                            {!hasReplacementVariantGrid && !replacementHasFlatSizes && !replacementHasFlatColors && (
-                                <div className="input-group">
-                                    <label style={{ fontSize: 12, fontWeight: 700, color: 'var(--text-muted)', display: 'block', marginBottom: 6 }}>Replacement Quantity</label>
+                                    <label style={{ fontSize: 12, fontWeight: 700, color: 'var(--text-muted)', display: 'block', marginBottom: 6 }}>
+                                        How many pieces to refund? <span style={{ fontWeight: 400 }}>(max {remainingQty})</span>
+                                    </label>
                                     <input
-                                        type="number"
-                                        min={1}
-                                        step={1}
-                                        value={replacementQty}
-                                        onChange={e => setReplacementQty(Math.max(1, Math.floor(Number(e.target.value)) || 1))}
-                                        style={{ width: '100%' }}
-                                        placeholder="1"
+                                        type="number" min={1} max={remainingQty}
+                                        value={effectiveRefundQty}
+                                        readOnly={hasVariantGrid}
+                                        onChange={e => setRefundQty(Math.min(remainingQty, Math.max(1, Number(e.target.value))))}
+                                        style={hasVariantGrid ? { width: '100%', background: 'var(--surface-2)', cursor: 'default' } : { width: '100%' }}
                                     />
                                 </div>
                             )}
 
+                            {/* Variant grid */}
+                            {hasVariantGrid && refundType !== 'amount' && (
+                                <VariantQuantityGrid
+                                    colors={variantColors}
+                                    sizes={variantSizes}
+                                    values={variantInputs}
+                                    maxValues={variantMax}
+                                    title="Refund by Color & Size"
+                                    onChange={setVariantInputs}
+                                />
+                            )}
+
+                            {hasSizes && refundType !== 'amount' && (
+                                <div>
+                                    <div style={{ fontSize: 12, fontWeight: 700, color: 'var(--text-muted)', marginBottom: 8 }}>Sizes Being Refunded</div>
+                                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(100px,1fr))', gap: 8 }}>
+                                        {Object.keys(remainingSizeQuantities!).map(size => (
+                                            <div key={size}>
+                                                <label style={{ fontSize: 11, fontWeight: 600, display: 'block', marginBottom: 3 }}>{size}</label>
+                                                <input
+                                                    type="number" min={0} max={remainingSizeQuantities![size]}
+                                                    value={sizeInputs[size] ?? 0}
+                                                    onChange={e => setSizeInputs(prev => ({ ...prev, [size]: Math.min(remainingSizeQuantities![size], Math.max(0, Number(e.target.value))) }))}
+                                                    style={{ width: '100%' }}
+                                                />
+                                            </div>
+                                        ))}
+                                    </div>
+                                </div>
+                            )}
+
+                            {hasColors && refundType !== 'amount' && (
+                                <div>
+                                    <div style={{ fontSize: 12, fontWeight: 700, color: 'var(--text-muted)', marginBottom: 8 }}>Colors Being Refunded</div>
+                                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(110px,1fr))', gap: 8 }}>
+                                        {Object.keys(remainingColorQuantities!).map(color => (
+                                            <div key={color}>
+                                                <label style={{ fontSize: 11, fontWeight: 600, display: 'block', marginBottom: 3 }}>{color}</label>
+                                                <input
+                                                    type="number" min={0} max={remainingColorQuantities![color]}
+                                                    value={colorInputs[color] ?? 0}
+                                                    onChange={e => setColorInputs(prev => ({ ...prev, [color]: Math.min(remainingColorQuantities![color], Math.max(0, Number(e.target.value))) }))}
+                                                    style={{ width: '100%' }}
+                                                />
+                                            </div>
+                                        ))}
+                                    </div>
+                                </div>
+                            )}
+
+                            {/* ── Amount-specific: Fixed rupee amount ── */}
+                            {refundType === 'amount' && (
+                                <div className="input-group">
+                                    <label style={{ fontSize: 12, fontWeight: 700, color: 'var(--text-muted)', display: 'block', marginBottom: 6 }}>
+                                        How much cash are you returning? (Rs)
+                                    </label>
+                                    <input
+                                        type="number" min={0} step={1}
+                                        value={fixedAmount}
+                                        onChange={e => setFixedAmount(Math.max(0, Number(e.target.value) || 0))}
+                                        style={{ width: '100%', fontSize: 16, fontWeight: 700 }}
+                                        placeholder="e.g. 2000"
+                                    />
+                                    <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 4 }}>
+                                        Total revenue was Rs {(sellingP * chargeablePreviewQty).toLocaleString()}. You are keeping Rs {Math.max(0, sellingP * chargeablePreviewQty - fixedAmount).toLocaleString()}.
+                                    </div>
+                                </div>
+                            )}
+
+                            {/* ── Replacement-specific fields ── */}
+                            {refundType === 'replacement' && (
+                                <>
+                                    {/* Product picker */}
+                                    <div className="input-group">
+                                        <label style={{ fontSize: 12, fontWeight: 700, color: 'var(--text-muted)', display: 'block', marginBottom: 6 }}>
+                                            Which product are you sending as replacement?
+                                        </label>
+                                        <select
+                                            value={selectedReplacementProductId}
+                                            onChange={e => {
+                                                const id = e.target.value;
+                                                setSelectedReplacementProductId(id);
+                                                setReplacementVariantQuantities({});
+                                                const product = replacementProducts.find(p => p.productId === id);
+                                                setReplacementItem(product?.productName || '');
+                                            }}
+                                            style={{ width: '100%', backgroundColor: 'var(--bg-1, #fff)' }}
+                                        >
+                                            <option value="">{replacementLoading ? 'Loading products…' : 'Select a product from inventory'}</option>
+                                            {replacementProducts.map(p => (
+                                                <option key={p.productId} value={p.productId}>
+                                                    {p.productName} ({Number(p.quantityRemaining) || 0} in stock)
+                                                </option>
+                                            ))}
+                                        </select>
+                                    </div>
+
+                                    {/* Variant grid for replacement */}
+                                    {hasReplacementVariantGrid && selectedReplacementProductId && (
+                                        <div className="input-group">
+                                            <label style={{ fontSize: 12, fontWeight: 700, color: 'var(--text-muted)', display: 'block', marginBottom: 6 }}>Choose Color & Size to send</label>
+                                            <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+                                                <thead>
+                                                    <tr>
+                                                        <th style={{ border: '1px solid var(--border)', padding: 4, fontSize: 11 }}>Color \ Size</th>
+                                                        {replacementVariantSizes.map(size => (
+                                                            <th key={size} style={{ border: '1px solid var(--border)', padding: 4, fontSize: 11 }}>{size}</th>
+                                                        ))}
+                                                    </tr>
+                                                </thead>
+                                                <tbody>
+                                                    {replacementVariantColors.map(color => (
+                                                        <tr key={color}>
+                                                            <td style={{ border: '1px solid var(--border)', padding: 4, fontSize: 11, fontWeight: 600 }}>{color}</td>
+                                                            {replacementVariantSizes.map(size => {
+                                                                const cap = Number(replacementVariantsRemaining?.[color]?.[size] ?? 0);
+                                                                return (
+                                                                    <td key={size} style={{ border: '1px solid var(--border)', padding: 4 }}>
+                                                                        <input
+                                                                            type="number"
+                                                                            min={0} max={cap}
+                                                                            value={replacementVariantQuantities?.[color]?.[size] ?? ''}
+                                                                            onChange={e => updateReplacementVariant(color, size, Number(e.target.value))}
+                                                                            style={{ width: '100%', minWidth: 50 }}
+                                                                            placeholder={cap > 0 ? `${cap}` : '0'}
+                                                                        />
+                                                                    </td>
+                                                                );
+                                                            })}
+                                                        </tr>
+                                                    ))}
+                                                </tbody>
+                                            </table>
+                                        </div>
+                                    )}
+
+                                    {/* Flat qty if no variant grid */}
+                                    {!hasReplacementVariantGrid && !replacementHasFlatSizes && !replacementHasFlatColors && (
+                                        <div className="input-group">
+                                            <label style={{ fontSize: 12, fontWeight: 700, color: 'var(--text-muted)', display: 'block', marginBottom: 6 }}>How many replacement pieces?</label>
+                                            <input
+                                                type="number" min={1} step={1}
+                                                value={replacementQty}
+                                                onChange={e => setReplacementQty(Math.max(1, Math.floor(Number(e.target.value)) || 1))}
+                                                style={{ width: '100%' }}
+                                                placeholder="1"
+                                            />
+                                        </div>
+                                    )}
+
+                                    {/* Did original come back? */}
+                                    <div>
+                                        <div style={{ fontSize: 12, fontWeight: 700, color: 'var(--text-muted)', marginBottom: 8 }}>Did the customer return the original item to you?</div>
+                                        <div style={{ display: 'flex', gap: 10 }}>
+                                            {[true, false].map(val => (
+                                                <div
+                                                    key={String(val)}
+                                                    onClick={() => setOriginalItemReturned(val)}
+                                                    style={{
+                                                        flex: 1, padding: '12px 14px', borderRadius: 10,
+                                                        border: `2px solid ${originalItemReturned === val ? (val ? '#22c55e' : '#ef4444') : 'var(--border)'}`,
+                                                        background: originalItemReturned === val ? (val ? '#dcfce7' : '#fee2e2') : 'var(--surface-2)',
+                                                        cursor: 'pointer', textAlign: 'center', transition: 'all 0.15s',
+                                                    }}
+                                                >
+                                                    <div style={{ fontSize: 20 }}>{val ? '✅' : '❌'}</div>
+                                                    <div style={{ fontSize: 12, fontWeight: 700, marginTop: 4, color: originalItemReturned === val ? (val ? '#15803d' : '#b91c1c') : 'var(--text-muted)' }}>
+                                                        {val ? 'Yes, came back' : 'No, kept by customer'}
+                                                    </div>
+                                                    <div style={{ fontSize: 10, color: 'var(--text-muted)', marginTop: 2 }}>
+                                                        {val ? 'Stock restored' : 'You absorb COGS loss'}
+                                                    </div>
+                                                </div>
+                                            ))}
+                                        </div>
+                                    </div>
+                                </>
+                            )}
+
+                            {/* ── Refund reason ── */}
                             <div className="input-group">
-                                <label style={{ fontSize: 12, fontWeight: 700, color: 'var(--text-muted)', display: 'block', marginBottom: 6 }}>Was the original item returned?</label>
-                                <select value={originalItemReturned ? 'yes' : 'no'} onChange={e => setOriginalItemReturned(e.target.value === 'yes')} style={{ width: '100%' }}>
-                                    <option value="yes">Yes — original item came back</option>
-                                    <option value="no">No — customer kept the original item</option>
+                                <label style={{ fontSize: 12, fontWeight: 700, color: 'var(--text-muted)', display: 'block', marginBottom: 6 }}>Reason</label>
+                                <select value={reason} onChange={e => setReason(e.target.value)} style={{ width: '100%' }}>
+                                    {REFUND_REASONS.map(r => <option key={r} value={r}>{r}</option>)}
                                 </select>
                             </div>
-                        </>
+
+                            {/* ── Proof image ── */}
+                            <div className="input-group">
+                                <label style={{ fontSize: 12, fontWeight: 700, color: 'var(--text-muted)', display: 'block', marginBottom: 6 }}>Proof Image <span style={{ fontWeight: 400 }}>(optional)</span></label>
+                                <input type="file" accept="image/*" onChange={handleProofImageChange} style={{ width: '100%', fontSize: 12 }} />
+                                {proofImage && (
+                                    <div style={{ marginTop: 8, position: 'relative', display: 'inline-block' }}>
+                                        <img src={proofImage} alt="proof" style={{ maxHeight: 120, maxWidth: '100%', borderRadius: 8, border: '1px solid var(--border)' }} />
+                                        <button onClick={() => setProofImage(null)} style={{ position: 'absolute', top: 4, right: 4, background: '#dc2626', border: 'none', borderRadius: '50%', width: 20, height: 20, color: '#fff', cursor: 'pointer', fontSize: 12, lineHeight: '20px', textAlign: 'center', padding: 0 }}>&#x2715;</button>
+                                    </div>
+                                )}
+                            </div>
+                        </div>
                     )}
 
-                    <div className="input-group">
-                        <label style={{ fontSize: 12, fontWeight: 700, color: 'var(--text-muted)', display: 'block', marginBottom: 6 }}>Refund Reason</label>
-                        <select value={reason} onChange={e => setReason(e.target.value)} style={{ width: '100%' }}>
-                            {REFUND_REASONS.map(r => <option key={r} value={r}>{r}</option>)}
-                        </select>
-                    </div>
-
-                    {/* Proof Image Upload */}
-                    <div className="input-group">
-                        <label style={{ fontSize: 12, fontWeight: 700, color: 'var(--text-muted)', display: 'block', marginBottom: 6 }}>Proof Image <span style={{ fontWeight: 400 }}>(optional)</span></label>
-                        <input type="file" accept="image/*" onChange={handleProofImageChange} style={{ width: '100%', fontSize: 12 }} />
-                        {proofImage && (
-                            <div style={{ marginTop: 8, position: 'relative', display: 'inline-block' }}>
-                                <img src={proofImage} alt="proof" style={{ maxHeight: 120, maxWidth: '100%', borderRadius: 8, border: '1px solid var(--border)' }} />
-                                <button onClick={() => setProofImage(null)} style={{ position: 'absolute', top: 4, right: 4, background: '#dc2626', border: 'none', borderRadius: '50%', width: 20, height: 20, color: '#fff', cursor: 'pointer', fontSize: 12, lineHeight: '20px', textAlign: 'center', padding: 0 }}>&#x2715;</button>
+                    {/* ══════════════════════════════════════════════
+                        STEP 2 — Review / Confirm
+                    ══════════════════════════════════════════════ */}
+                    {step === 2 && (
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+                            {/* Summary row */}
+                            <div style={{ padding: '14px 16px', borderRadius: 12, background: 'var(--surface-2)', border: '1px solid var(--border)', display: 'flex', flexDirection: 'column', gap: 8 }}>
+                                <div style={{ fontSize: 13, fontWeight: 800, marginBottom: 4 }}>📋 Summary</div>
+                                <SummaryRow label="Type" value={selectedCard.title} color={selectedCard.color} />
+                                <SummaryRow label="Order" value={`${order.productName} (${order.storeName})`} />
+                                <SummaryRow label="Units affected" value={`${effectiveRefundQty} pc${effectiveRefundQty !== 1 ? 's' : ''}`} />
+                                {refundType === 'amount' && <SummaryRow label="Cash returned to customer" value={`Rs ${fixedAmount.toLocaleString()}`} color="#ef4444" />}
+                                {refundType === 'quantity' && <SummaryRow label="Cash returned to customer" value={`Rs ${(sellingP * effectiveRefundQty).toLocaleString()}`} color="#ef4444" />}
+                                {refundType === 'replacement' && (
+                                    <>
+                                        <SummaryRow label="Cash returned" value="None (replacement only)" />
+                                        <SummaryRow label="Replacement" value={`${replacementItemName || 'N/A'} × ${Math.max(1, replacementVariantTotal || normalizedReplacementQty)}`} />
+                                        <SummaryRow label="Original item returned" value={originalItemReturned ? 'Yes ✅' : 'No ❌'} color={originalItemReturned ? '#15803d' : '#b91c1c'} />
+                                    </>
+                                )}
+                                <SummaryRow label="Reason" value={reason} />
                             </div>
-                        )}
-                    </div>
 
-                    {/* Refund amount preview */}
-                    <div style={{ padding: '10px 14px', background: '#f0fdf4', border: '1px solid #bbf7d0', borderRadius: 8, fontSize: 12, color: '#14532d', fontWeight: 600 }}>
-                        {refundType === 'amount' && (
-                            <>💸 Fixed refund amount: <strong>${refundAmount.toLocaleString()}</strong> ({effectiveRefundQty} units selected)</>
-                        )}
-                        {refundType === 'replacement' && (
-                            <>🔁 Replacement: <strong>{replacementItemName || 'Not specified'}</strong> × {Math.max(1, replacementVariantTotal || normalizedReplacementQty)} — no cash refund ({originalItemReturned ? 'original item returned' : 'original item kept'})</>
-                        )}
-                        {refundType === 'quantity' && (
-                            <>💸 Refund amount: <strong>${refundAmount.toLocaleString()}</strong> ({effectiveRefundQty} × ${order.sellingPrice?.toLocaleString()})</>
-                        )}
-                    </div>
+                            {/* P&L Preview */}
+                            <div style={{ padding: '14px 16px', borderRadius: 12, background: previewProfit >= 0 ? '#f0fdf4' : '#fef2f2', border: `1px solid ${previewProfit >= 0 ? '#bbf7d0' : '#fecaca'}` }}>
+                                <div style={{ fontSize: 13, fontWeight: 800, marginBottom: 10, color: previewProfit >= 0 ? '#14532d' : '#991b1b' }}>📊 Estimated P&L After Refund</div>
+                                <div style={{ display: 'flex', flexDirection: 'column', gap: 5, fontSize: 12 }}>
+                                    <PLRow label="Revenue kept" value={previewNetRevenue} />
+                                    <PLRow label="Cost of goods (COGS)" value={-previewLostCogs} isNeg />
+                                    {refundType === 'replacement' && (
+                                        <div style={{ color: 'var(--text-muted)', fontSize: 11, fontStyle: 'italic', marginTop: 2 }}>
+                                            + Replacement COGS will be deducted based on actual stock cost
+                                        </div>
+                                    )}
+                                    <div style={{ borderTop: '1px solid currentColor', opacity: 0.2, margin: '4px 0' }} />
+                                    <PLRow label="Estimated profit" value={previewProfit} bold />
+                                </div>
+                            </div>
 
-                    <div style={{ display: 'flex', gap: 10, justifyContent: 'flex-end', marginTop: 4 }}>
-                        <button className="btn btn-sm btn-glass" onClick={onClose} disabled={saving}>Cancel</button>
-                        <button
-                            className="btn btn-sm"
-                            style={{ background: '#dc2626', borderColor: '#dc2626', color: '#fff' }}
-                            onClick={handleSubmit}
-                            disabled={saving || effectiveRefundQty < 1}
-                        >
-                            {saving ? 'Processing...' : `Refund ${effectiveRefundQty} piece${effectiveRefundQty !== 1 ? 's' : ''}`}
-                        </button>
+                            {/* Warning for quantity refund */}
+                            {refundType === 'quantity' && (
+                                <div style={{ padding: '10px 14px', background: '#fef2f2', border: '1px solid #fecaca', borderRadius: 8, fontSize: 12, color: '#991b1b', fontWeight: 600 }}>
+                                    🔴 Customer keeps the item. No stock is restored. Full COGS is absorbed as loss.
+                                </div>
+                            )}
+                        </div>
+                    )}
+
+                    {/* ── Navigation Buttons ── */}
+                    <div style={{ display: 'flex', gap: 10, justifyContent: 'space-between', marginTop: 4 }}>
+                        <div>
+                            {step > 0 && (
+                                <button className="btn btn-sm btn-glass" onClick={() => setStep((step - 1) as 0|1|2)} disabled={saving}>
+                                    ← Back
+                                </button>
+                            )}
+                        </div>
+                        <div style={{ display: 'flex', gap: 10 }}>
+                            <button className="btn btn-sm btn-glass" onClick={onClose} disabled={saving}>Cancel</button>
+                            {step < 2 ? (
+                                <button
+                                    className="btn btn-sm"
+                                    style={{ background: 'var(--primary, #6366f1)', borderColor: 'var(--primary, #6366f1)', color: '#fff' }}
+                                    onClick={() => setStep((step + 1) as 0|1|2)}
+                                    disabled={!canGoNext()}
+                                >
+                                    Next →
+                                </button>
+                            ) : (
+                                <button
+                                    className="btn btn-sm"
+                                    style={{ background: selectedCard.color, borderColor: selectedCard.color, color: '#fff' }}
+                                    onClick={handleSubmit}
+                                    disabled={saving || effectiveRefundQty < 1}
+                                >
+                                    {saving ? 'Processing…' : `Confirm — ${selectedCard.title}`}
+                                </button>
+                            )}
+                        </div>
                     </div>
                 </div>
             </div>

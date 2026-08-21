@@ -1008,7 +1008,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
           ? normalizedFixedAmount
           : refundMethod === 'replacement'
             ? 0
-            : num(order.selling_price) * newRefundQty;
+            : num(order.selling_price) * refQty;  // this batch only, not cumulative
 
         const resolvedRefundReason = refundMethod === 'replacement'
           ? `Replacement: ${normalizedReplacement}`
@@ -1048,22 +1048,51 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
           }
         }
 
-        // Remaining revenue = non-returned, non-refunded units only
-        // Cost absorbed for remaining originals only; already-returned units are not double-charged.
-        const remainingUnits = Math.max(0, originalQty - alreadyReturnedQty - newRefundQty);
-        const remainingGross = num(order.selling_price) * remainingUnits - num(order.shipment_cost);
-        // Commission clawed back on refunded units (Option A)
+        // ── Revenue & profit calculation per refund method ──────────────────
+        //
+        // 'quantity': Customer keeps the item. No physical return.
+        //   Revenue kept  = sellingPrice × (originalQty - returnedQty - refundedQty)
+        //   COGS absorbed = costPrice × (originalQty - returnedQty)  ← all un-returned units lost
+        //
+        // 'amount': Customer keeps ALL items. Partial cash paid back.
+        //   Revenue kept  = sellingPrice × (originalQty - returnedQty) - fixedRefundAmount
+        //   COGS absorbed = costPrice × (originalQty - returnedQty)  ← customer still has all items
+        //
+        // 'replacement' Scenario A (original returned): No cash out, replacement sent.
+        //   Revenue kept  = sellingPrice × (originalQty - returnedQty)  ← full sale revenue kept
+        //   COGS absorbed = costPrice × still-lost-originals + replacementCostTotal
+        //
+        // 'replacement' Scenario B (original kept): No cash out, replacement sent.
+        //   Revenue kept  = sellingPrice × (originalQty - returnedQty)  ← full sale revenue kept
+        //   COGS absorbed = costPrice × (originalQty - returnedQty) + replacementCostTotal
+
+        const chargeableUnits = Math.max(0, originalQty - alreadyReturnedQty); // units that generated revenue
+
+        let remainingGross: number;
+        if (refundMethod === 'amount') {
+          // Revenue = full sale revenue minus the fixed cash returned
+          remainingGross = num(order.selling_price) * chargeableUnits - num(order.shipment_cost) - normalizedFixedAmount;
+        } else if (refundMethod === 'replacement') {
+          // Revenue = full sale revenue (customer paid in full, no cash returned)
+          remainingGross = num(order.selling_price) * chargeableUnits - num(order.shipment_cost);
+        } else {
+          // 'quantity': revenue reduced by refunded units × selling price
+          const remainingUnitsQty = Math.max(0, chargeableUnits - newRefundQty);
+          remainingGross = num(order.selling_price) * remainingUnitsQty - num(order.shipment_cost);
+        }
+
+        // Commission clawed back proportionally based on retained gross
         const remainingCommission = Math.round(remainingGross * num(order.commission_percent)) / 100;
         const remainingAdminTake = remainingGross - remainingCommission;
 
-        // Absorb cost only for units that were actually lost (not returned).
-        // - Quantity / Amount: unchanged behavior (original lost units absorbed).
-        // - Replacement Scenario B (original kept): original lost units (current behavior) + replacement COGS.
-        // - Replacement Scenario A (original returned): restored originals are NOT lost,
-        //   so only still-lost originals absorb cost, plus replacement COGS.
-        let lostOriginalUnits = originalQty - alreadyReturnedQty
+        // COGS: absorb cost only for units actually lost (not returned to warehouse)
+        // - 'quantity'/'amount': all chargeable units stay with customer → full COGS absorbed
+        // - 'replacement' Scenario A: original came back → only still-lost units absorbed
+        // - 'replacement' Scenario B: original kept → full chargeable COGS + replacement COGS
+        let lostOriginalUnits = chargeableUnits;
         if (refundMethod === 'replacement' && normalizedOriginalReturned) {
-          lostOriginalUnits = Math.max(0, lostOriginalUnits - newRefundQty)
+          // Original items were returned; only un-returned originals remain as lost
+          lostOriginalUnits = Math.max(0, chargeableUnits - newRefundQty);
         }
         const remainingProfit = remainingAdminTake - (num(order.cost_price) * lostOriginalUnits) - replacementCostTotal;
 
