@@ -961,7 +961,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 
         const { data: order, error: fetchErr } = await supabaseAdmin
           .from(TABLES.ORDERS)
-          .select('id, quantity, store_id, size_quantities, color_quantities, variant_quantities, return_quantity, return_variant_quantities, refund_quantity, refund_size_quantities, refund_color_quantities, refund_variant_quantities, commission_percent, selling_price, shipment_cost, cost_price, store_inventory_id')
+          .select('id, quantity, store_id, size_quantities, color_quantities, variant_quantities, return_quantity, return_variant_quantities, refund_quantity, refund_size_quantities, refund_color_quantities, refund_variant_quantities, commission_percent, selling_price, shipment_cost, cost_price, store_inventory_id, refund_amount')
           .eq('id', id)
           .single();
 
@@ -1005,10 +1005,10 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
         const newRefundQty = alreadyRefundedQty + refQty;
 
         const refundAmount = refundMethod === 'amount'
-          ? normalizedFixedAmount
+          ? (num(order.refund_amount) || 0) + normalizedFixedAmount
           : refundMethod === 'replacement'
             ? 0
-            : num(order.selling_price) * refQty;  // this batch only, not cumulative
+            : num(order.selling_price) * newRefundQty;
 
         const resolvedRefundReason = refundMethod === 'replacement'
           ? `Replacement: ${normalizedReplacement}`
