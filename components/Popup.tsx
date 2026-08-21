@@ -123,11 +123,23 @@ export function PopupProvider({ children }: { children: React.ReactNode }) {
       {/* ── Confirm Dialog ──────────────────────────────── */}
       {confirm && (
         <div className="popup-confirm-backdrop" onClick={() => handleConfirm(false)}>
-          <div className="popup-confirm-box" onClick={e => e.stopPropagation()}>
-            <div className="popup-confirm-icon">
-              <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3Z"/><path d="M12 9v4"/><path d="M12 17h.01"/></svg>
+          <div
+            className="popup-confirm-box"
+            role="alertdialog"
+            aria-modal="true"
+            aria-labelledby="popup-confirm-title"
+            aria-describedby="popup-confirm-msg"
+            onClick={e => e.stopPropagation()}
+          >
+            <div className="popup-confirm-head">
+              <span className="popup-confirm-icon" aria-hidden="true">
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3Z"/><path d="M12 9v4"/><path d="M12 17h.01"/></svg>
+              </span>
+              <div className="popup-confirm-copy">
+                <p className="popup-confirm-title" id="popup-confirm-title">Please confirm</p>
+                <p className="popup-confirm-msg" id="popup-confirm-msg">{confirm.message}</p>
+              </div>
             </div>
-            <p className="popup-confirm-msg">{confirm.message}</p>
             <div className="popup-confirm-actions">
               <button className="btn btn-glass" onClick={() => handleConfirm(false)}>Cancel</button>
               <button className="btn btn-primary" autoFocus onClick={() => handleConfirm(true)}>Confirm</button>
@@ -151,101 +163,129 @@ export function PopupProvider({ children }: { children: React.ReactNode }) {
         /* ── Toast Stack ─────────────────────────────── */
         .popup-toast-stack {
           position: fixed;
-          top: 24px;
-          right: 24px;
+          top: 18px;
+          right: 18px;
           z-index: 10000;
           display: flex;
           flex-direction: column;
-          gap: 10px;
+          gap: 8px;
           pointer-events: none;
-          max-width: 420px;
+          max-width: 380px;
           width: 100%;
         }
         .popup-toast {
           pointer-events: all;
           display: flex;
-          align-items: center;
+          align-items: flex-start;
           gap: 10px;
-          padding: 12px 16px;
-          border-radius: 12px;
-          font-size: 14px;
-          font-weight: 600;
-          color: #fff;
-          backdrop-filter: blur(12px);
-          box-shadow: 0 8px 32px rgba(0,0,0,.18);
-          animation: popupSlideIn .3s cubic-bezier(.16,1,.3,1);
+          padding: 11px 12px 11px 13px;
+          border-radius: 10px;
+          font-size: 13px;
+          font-weight: 500;
+          line-height: 1.45;
+          color: #0b0f19;
+          background: #fff;
+          border: 1px solid #e4e6ea;
+          border-left: 3px solid #64748b;
+          box-shadow: 0 1px 2px rgba(11,15,25,.05), 0 12px 28px -10px rgba(11,15,25,.22);
+          animation: popupSlideIn .18s cubic-bezier(.16,1,.3,1);
         }
-        .popup-toast--success { background: linear-gradient(135deg, #16a34a, #15803d); }
-        .popup-toast--error   { background: linear-gradient(135deg, #dc2626, #b91c1c); }
-        .popup-toast--info    { background: linear-gradient(135deg, #4f46e5, #4338ca); }
-        .popup-toast-icon { display: flex; flex-shrink: 0; }
-        .popup-toast-msg  { flex: 1; line-height: 1.4; }
+        .popup-toast--success { border-left-color: #0f9d64; }
+        .popup-toast--error   { border-left-color: #dc2626; }
+        .popup-toast--info    { border-left-color: #4f46e5; }
+        .popup-toast-icon { display: flex; flex-shrink: 0; margin-top: 1px; }
+        .popup-toast--success .popup-toast-icon { color: #0f9d64; }
+        .popup-toast--error   .popup-toast-icon { color: #dc2626; }
+        .popup-toast--info    .popup-toast-icon { color: #4f46e5; }
+        .popup-toast-icon svg { width: 16px; height: 16px; }
+        .popup-toast-msg  { flex: 1; min-width: 0; overflow-wrap: anywhere; }
         .popup-toast-close {
-          background: none; border: none; color: rgba(255,255,255,.7); cursor: pointer;
-          font-size: 14px; padding: 2px 4px; line-height: 1; flex-shrink: 0;
+          background: none; border: none; color: #94a3b8; cursor: pointer;
+          font-size: 12px; line-height: 1; flex-shrink: 0;
+          width: 20px; height: 20px; border-radius: 6px;
+          display: inline-flex; align-items: center; justify-content: center;
+          transition: background .12s ease, color .12s ease;
         }
-        .popup-toast-close:hover { color: #fff; }
+        .popup-toast-close:hover { color: #0b0f19; background: #f4f5f7; }
+        .popup-toast-close:focus-visible { outline: 2px solid #4f46e5; outline-offset: 1px; }
 
         @keyframes popupSlideIn {
-          from { opacity: 0; transform: translateX(40px) scale(.95); }
-          to   { opacity: 1; transform: translateX(0) scale(1); }
+          from { opacity: 0; transform: translateX(16px); }
+          to   { opacity: 1; transform: translateX(0); }
+        }
+
+        @media (max-width: 576px) {
+          .popup-toast-stack { top: auto; bottom: 14px; left: 12px; right: 12px; max-width: none; width: auto; }
         }
 
         /* ── Confirm Dialog ──────────────────────────── */
         .popup-confirm-backdrop {
           position: fixed; inset: 0; z-index: 10001;
-          background: rgba(0,0,0,.45); backdrop-filter: blur(4px);
-          display: grid; place-items: center;
-          animation: popupFadeIn .2s ease;
+          background: rgba(11,15,25,.52); backdrop-filter: blur(3px);
+          display: grid; place-items: center; padding: 20px;
+          animation: popupFadeIn .14s ease;
         }
         .popup-confirm-box {
-          background: #fff; border-radius: 16px; padding: 32px 28px 24px;
-          max-width: 400px; width: 90%; text-align: center;
-          box-shadow: 0 20px 60px rgba(0,0,0,.2);
-          animation: popupScaleIn .25s cubic-bezier(.16,1,.3,1);
+          background: #fff; border: 1px solid #e4e6ea; border-radius: 14px;
+          padding: 20px; max-width: 440px; width: 100%; text-align: left;
+          box-shadow: 0 1px 2px rgba(11,15,25,.06), 0 24px 60px -12px rgba(11,15,25,.32);
+          animation: popupScaleIn .16s cubic-bezier(.16,1,.3,1);
         }
+        .popup-confirm-head { display: flex; gap: 12px; align-items: flex-start; }
+        .popup-confirm-copy { min-width: 0; }
         .popup-confirm-icon {
           display: inline-flex; align-items: center; justify-content: center;
-          width: 56px; height: 56px; border-radius: 50%;
-          background: #fef3c7; color: #d97706; margin-bottom: 16px;
+          width: 34px; height: 34px; border-radius: 9px; flex-shrink: 0;
+          background: #fff7ed; color: #c2620a; border: 1px solid #fde3c2;
+        }
+        .popup-confirm-title {
+          margin: 1px 0 4px; font-size: 14.5px; font-weight: 650; color: #0b0f19;
+          letter-spacing: -.01em;
         }
         .popup-confirm-msg {
-          font-size: 15px; font-weight: 600; color: #1e293b;
-          margin: 0 0 24px; line-height: 1.5;
+          font-size: 13.5px; font-weight: 400; color: #4b5565;
+          margin: 0; line-height: 1.5; overflow-wrap: anywhere;
         }
         .popup-confirm-actions {
-          display: flex; gap: 10px; justify-content: center;
+          display: flex; gap: 8px; justify-content: flex-end;
+          margin-top: 18px; padding-top: 14px; border-top: 1px solid #eef0f3;
         }
-        .popup-confirm-actions .btn { min-width: 100px; height: 40px; font-weight: 700; }
+        .popup-confirm-actions .btn { min-width: 92px; height: 36px; font-weight: 600; }
+        .popup-confirm-box :focus-visible { outline: 2px solid #4f46e5; outline-offset: 2px; }
 
         /* ── Processing Dialog ──────────────────────── */
         .popup-processing-backdrop {
           position: fixed; inset: 0; z-index: 10002;
-          background: rgba(15, 23, 42, 0.55); backdrop-filter: blur(6px);
+          background: rgba(11,15,25,.52); backdrop-filter: blur(3px);
           display: grid; place-items: center; padding: 20px;
-          animation: popupFadeIn .2s ease;
+          animation: popupFadeIn .14s ease;
         }
         .popup-processing-box {
-          background: rgba(255,255,255,0.98); border-radius: 18px;
-          width: min(420px, 92vw); padding: 28px 22px 24px; text-align: center;
-          box-shadow: 0 24px 80px rgba(15, 23, 42, 0.24);
-          animation: popupScaleIn .25s cubic-bezier(.16,1,.3,1);
+          background: #fff; border: 1px solid #e4e6ea; border-radius: 14px;
+          width: min(380px, 92vw); padding: 22px; text-align: center;
+          box-shadow: 0 1px 2px rgba(11,15,25,.06), 0 24px 60px -12px rgba(11,15,25,.32);
+          animation: popupScaleIn .16s cubic-bezier(.16,1,.3,1);
         }
         .popup-processing-spinner {
-          width: 52px; height: 52px; margin: 0 auto 16px;
-          border-radius: 50%; border: 4px solid rgba(79, 70, 229, 0.18);
-          border-top-color: #4f46e5; animation: popupSpin .9s linear infinite;
+          width: 30px; height: 30px; margin: 0 auto 14px;
+          border-radius: 50%; border: 2.5px solid #e4e6ea;
+          border-top-color: #4f46e5; animation: popupSpin .8s linear infinite;
         }
         .popup-processing-title {
-          margin: 0 0 8px; font-size: 1.05rem; font-weight: 800; color: #0f172a;
+          margin: 0 0 5px; font-size: 14.5px; font-weight: 650; color: #0b0f19;
         }
         .popup-processing-subtitle {
-          margin: 0; font-size: 0.92rem; color: #475569; line-height: 1.5;
+          margin: 0; font-size: 13px; color: #6b7280; line-height: 1.5;
         }
 
         @keyframes popupFadeIn  { from { opacity: 0; } to { opacity: 1; } }
-        @keyframes popupScaleIn { from { opacity: 0; transform: scale(.9); } to { opacity: 1; transform: scale(1); } }
+        @keyframes popupScaleIn { from { opacity: 0; transform: translateY(8px) scale(.985); } to { opacity: 1; transform: none; } }
         @keyframes popupSpin { to { transform: rotate(360deg); } }
+
+        @media (prefers-reduced-motion: reduce) {
+          .popup-toast, .popup-confirm-box, .popup-processing-box,
+          .popup-confirm-backdrop, .popup-processing-backdrop { animation: none !important; }
+        }
       `}</style>
     </PopupContext.Provider>
   );
