@@ -116,6 +116,13 @@ export interface OrderItem {
   returnedAt?: string | null;
   refundQuantity?: number | null;
   refundAmount?: number | null;
+  refundType?: 'quantity' | 'amount' | 'replacement' | null;
+  replacementItem?: string | null;
+  replacementProductId?: string | null;
+  replacementQuantity?: number | null;
+  replacementSize?: string | null;
+  replacementColor?: string | null;
+  originalItemReturned?: boolean | null;
   refundReason?: string | null;
   refundSizeQuantities?: Record<string, number> | null;
   refundColorQuantities?: Record<string, number> | null;

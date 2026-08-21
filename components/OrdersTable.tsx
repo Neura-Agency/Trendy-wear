@@ -158,9 +158,49 @@ export default function OrdersTable({ orders, onRefresh }: { orders: any[]; onRe
                       <span className={`badge ${o.includedInPayout ? 'badge-success' : 'badge-pending'}`}>{o.includedInPayout ? 'Yes' : 'No'}</span>
                     </td>
                     <td>
-                      {(orderReturnedQty > 0 || orderRefundedQty > 0)
-                        ? <span className="badge badge-pending" style={{fontSize:11}}>{orderReturnedQty} returned · {orderRefundedQty} refunded</span>
-                        : <span className="badge badge-success" style={{fontSize:11}}>Active</span>}
+                      {(() => {
+                        const retQty = orderReturnedQty;
+                        const refQty = orderRefundedQty;
+                        const refType = o.refundType;
+                        const refAmt = Number(o.refundAmount) || 0;
+                        const refDate = o.refundedAt ? new Date(o.refundedAt).toLocaleDateString() : null;
+
+                        if (retQty === 0 && refQty === 0) {
+                          return <span className="badge badge-success" style={{ fontSize: 11 }}>Active</span>;
+                        }
+
+                        return (
+                          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4 }}>
+                            {retQty > 0 && (
+                              <span
+                                className="badge"
+                                title={`${retQty} unit${retQty !== 1 ? 's' : ''} returned to warehouse`}
+                                style={{ fontSize: 10, background: '#dbeafe', color: '#1d4ed8', border: '1px solid #93c5fd', cursor: 'help' }}
+                              >
+                                🔄 {retQty} returned
+                              </span>
+                            )}
+                            {refQty > 0 && refType === 'replacement' && (
+                              <span
+                                className="badge"
+                                title={`${refQty} unit${refQty !== 1 ? 's' : ''} replaced${o.replacementItem ? ` → ${o.replacementItem}` : ''}${refDate ? ` · ${refDate}` : ''}`}
+                                style={{ fontSize: 10, background: '#ede9fe', color: '#6d28d9', border: '1px solid #c4b5fd', cursor: 'help' }}
+                              >
+                                🔁 {refQty} replaced
+                              </span>
+                            )}
+                            {refQty > 0 && refType !== 'replacement' && (
+                              <span
+                                className="badge"
+                                title={`${refQty} unit${refQty !== 1 ? 's' : ''} refunded${refAmt > 0 ? ` · Rs ${refAmt.toLocaleString()} returned` : ''}${refDate ? ` · ${refDate}` : ''}`}
+                                style={{ fontSize: 10, background: '#ffedd5', color: '#c2410c', border: '1px solid #fdba74', cursor: 'help' }}
+                              >
+                                💸 {refQty} refunded{refAmt > 0 ? ` · Rs ${refAmt.toLocaleString()}` : ''}
+                              </span>
+                            )}
+                          </div>
+                        );
+                      })()}
                     </td>
                     <td style={{ textAlign: 'center' }}>
                       <div style={{ display: 'flex', gap: 4, justifyContent: 'center', flexWrap: 'wrap' }}>
@@ -209,16 +249,18 @@ export default function OrdersTable({ orders, onRefresh }: { orders: any[]; onRe
                                       <td>Rs {(Number(item.sellingPrice) * itemSold).toLocaleString()}</td>
                                       <td style={{ color: (item.profit || 0) > 0 ? 'var(--success)' : 'var(--danger)', fontWeight: 600 }}>Rs {Number(item.profit || 0).toLocaleString()}</td>
                                       <td>
-                                        {itemRet >= itemSold
-                                          ? <span className="badge badge-red" style={{fontSize:10}}>Returned{item.returnReason ? ` — ${item.returnReason}` : ''}</span>
-                                          : itemRef >= (itemSold - itemRet)
-                                            ? <span className="badge badge-red" style={{fontSize:10}}>Refunded{item.refundReason ? ` — ${item.refundReason}` : ''}</span>
-                                            : itemRet > 0
-                                              ? <span className="badge badge-pending" style={{fontSize:10}}>Partial return — {itemRet}/{itemSold}</span>
-                                              : itemRef > 0
-                                                ? <span className="badge badge-pending" style={{fontSize:10}}>Partial refund — {itemRef}/{itemSold}</span>
-                                                : <span className="badge badge-success" style={{fontSize:10}}>Active</span>
-                                        }
+                                         {itemRet >= itemSold
+                                           ? <span className="badge" title={item.returnReason || ''} style={{ fontSize: 10, background: '#dbeafe', color: '#1d4ed8', border: '1px solid #93c5fd', cursor: item.returnReason ? 'help' : 'default' }}>🔄 Returned{item.returnReason ? ` — ${item.returnReason}` : ''}</span>
+                                           : item.refundType === 'replacement' && itemRef > 0
+                                             ? <span className="badge" title={item.refundReason || ''} style={{ fontSize: 10, background: '#ede9fe', color: '#6d28d9', border: '1px solid #c4b5fd', cursor: item.refundReason ? 'help' : 'default' }}>🔁 Replaced ({itemRef}/{itemSold})</span>
+                                             : itemRef >= (itemSold - itemRet)
+                                               ? <span className="badge" title={item.refundReason || ''} style={{ fontSize: 10, background: '#ffedd5', color: '#c2410c', border: '1px solid #fdba74', cursor: item.refundReason ? 'help' : 'default' }}>💸 Refunded{item.refundReason ? ` — ${item.refundReason}` : ''}</span>
+                                               : itemRet > 0
+                                                 ? <span className="badge" style={{ fontSize: 10, background: '#dbeafe', color: '#1d4ed8', border: '1px solid #93c5fd' }}>🔄 Partial return {itemRet}/{itemSold}</span>
+                                                 : itemRef > 0
+                                                   ? <span className="badge" style={{ fontSize: 10, background: '#ffedd5', color: '#c2410c', border: '1px solid #fdba74' }}>💸 Partial refund {itemRef}/{itemSold}</span>
+                                                   : <span className="badge badge-success" style={{ fontSize: 10 }}>Active</span>
+                                         }
                                       </td>
                                       <td style={{ textAlign: 'center' }}>
                                         {(() => {
