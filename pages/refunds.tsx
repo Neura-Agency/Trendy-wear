@@ -2,6 +2,7 @@ import { useEffect, useState, useCallback } from "react";
 import Login from "../components/Login";
 import DetailModal from "../components/DetailModal";
 import { PageProps } from "../types";
+import ContextHelp from "../components/ContextHelp";
 
 const Rs = (n: number) => "Rs " + (Number(n) || 0).toLocaleString();
 const fmtDate = (d: string) => d ? new Date(d).toLocaleDateString("en-PK", { day: "2-digit", month: "short", year: "numeric" }) : "—";
@@ -163,6 +164,7 @@ export default function RefundsPage({ user, onLogin, onLogout }: PageProps) {
             <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 22V12"/><path d="m9 5 3-3 3 3"/><path d="M3 7h18"/><path d="M5 7c0 7.73 6 11 7 11s7-3.27 7-11"/></svg>
           </div>
           <h1 style={{ margin: 0, fontSize: 22, fontWeight: 800 }}>Refunds</h1>
+          <ContextHelp id="refunds.page" />
         </div>
         <p style={{ margin: 0, color: "var(--text-muted)", fontSize: 13 }}>Orders where money was refunded (item kept by customer)</p>
       </div>

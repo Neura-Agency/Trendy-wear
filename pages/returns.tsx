@@ -2,6 +2,7 @@ import { useEffect, useState, useCallback } from "react";
 import Login from "../components/Login";
 import DetailModal from "../components/DetailModal";
 import { PageProps } from "../types";
+import ContextHelp from "../components/ContextHelp";
 
 const Rs = (n: number) => "Rs " + (Number(n) || 0).toLocaleString();
 const fmtDate = (d: string) => d ? new Date(d).toLocaleDateString("en-PK", { day: "2-digit", month: "short", year: "numeric" }) : "—";
@@ -162,6 +163,7 @@ export default function ReturnsPage({ user, onLogin, onLogout }: PageProps) {
             <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M9 14 4 9l5-5"/><path d="M4 9h10.5a5.5 5.5 0 0 1 0 11H11"/></svg>
           </div>
           <h1 style={{ margin: 0, fontSize: 22, fontWeight: 800 }}>Returns</h1>
+          <ContextHelp id="returns.page" />
         </div>
         <p style={{ margin: 0, color: "var(--text-muted)", fontSize: 13 }}>All orders where items were returned to warehouse</p>
       </div>

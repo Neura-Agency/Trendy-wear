@@ -6,6 +6,7 @@ import SearchBar from '../components/SearchBar';
 import DetailModal from '../components/DetailModal';
 import { InventoryItem, PageProps } from '../types';
 import { formatItemCode } from '../lib/catalog';
+import ContextHelp from "../components/ContextHelp";
 
 const IC = {
   warehouse: <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d="M6 22V4a2 2 0 0 1 2-2h8a2 2 0 0 1 2 2v18Z"/><path d="M6 12H4a2 2 0 0 0-2 2v6a2 2 0 0 0 2 2h2"/><path d="M18 9h2a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2h-2"/><path d="M10 6h4"/><path d="M10 10h4"/><path d="M10 14h4"/><path d="M10 18h4"/></svg>
@@ -57,13 +58,13 @@ export default function AllInventoryPage({ user, onLogin }: PageProps) {
       <header className="page-header">
         <div className="header-content">
           <div className="header-titles">
-            <h1 className="main-title">All Warehouse Inventory</h1>
+            <h1 className="main-title">All Warehouse Inventory <ContextHelp id="inventory.allInventory" /></h1>
             <p className="subtitle">Read-only view of every warehouse batch available in the system.</p>
           </div>
         </div>
       </header>
 
-      <SectionCard title="Warehouse Inventory" icon={IC.warehouse}>
+      <SectionCard title="Warehouse Inventory" icon={IC.warehouse} helpKey="inventory.warehouse">
         <SearchBar value={search} onChange={setSearch} placeholder="Search by name, brand, type, item ID…" resultCount={filtered.length} />
         <div className="table-wrap">
           <table className="desktop-table-view">

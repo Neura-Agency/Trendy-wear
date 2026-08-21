@@ -13,6 +13,7 @@ import { User, Order, Store, InventoryItem, Expense, Client, StoreInventoryItem,
 import { usePopup } from "../components/Popup";
 import SearchBar from "../components/SearchBar";
 import { formatItemCode } from "../lib/catalog";
+import ContextHelp from "../components/ContextHelp";
 
 // ── SVG Icon Components (mono-color, inherits currentColor) ──
 const IC = {
@@ -2339,7 +2340,11 @@ export default function Home({ user, onLogin }: PageProps) {
   return (
     <>
       <div className="home-dashboard">
-        <section className="kpi-grid" style={{ marginBottom: 16 }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 10 }}>
+          <h1 className="main-title" style={{ fontSize: 18, margin: 0 }}>Overview</h1>
+          <ContextHelp id="dashboard.kpis" />
+        </div>
+        <section className="kpi-grid" style={{ marginBottom: 16 }} aria-label="Key figures">
           <div className="kpi-card purple">
             <div className="kpi-icon">{IC.wallet}</div>
             <div className="kpi-label">{isAdmin ? "Revenue" : "My Revenue"}</div>
@@ -2439,6 +2444,11 @@ export default function Home({ user, onLogin }: PageProps) {
               + Record Sale
             </button>
           )}
+          {(isStoreManager || user.role === 'store') && (
+            <span style={{ marginRight: 8, display: 'inline-flex', alignItems: 'center' }}>
+              <ContextHelp id="dashboard.recordSale" align="right" />
+            </span>
+          )}
           <button className="btn btn-secondary" onClick={() => {
             // Pass dashboardOrders (all time, scope-filtered) so the modal applies its own period filter
             let ordersForReport = dashboardOrders;
@@ -2468,7 +2478,7 @@ export default function Home({ user, onLogin }: PageProps) {
 
         {(isAdmin || user.role === 'store') && (
           <SectionCard
-            title={isAdmin ? "Store Partners" : "My Store Performance"}
+            title={isAdmin ? "Store Partners" : "My Store Performance"} helpKey="dashboard.storePartners"
             icon={IC.store}
             action={
               isSuperAdmin ? (
@@ -2496,7 +2506,7 @@ export default function Home({ user, onLogin }: PageProps) {
 
         <div className="vertical-stack" style={{ display: 'flex', flexDirection: 'column', gap: 32, marginBottom: 32 }}>
           <SectionCard
-            title={isAdmin ? "Partner Store Sales" : "Sales History"}
+            title={isAdmin ? "Partner Store Sales" : "Sales History"} helpKey="dashboard.partnerSales"
             icon={IC.handshake}
             action={
               <div className="section-action-wrap">
@@ -2593,7 +2603,7 @@ export default function Home({ user, onLogin }: PageProps) {
 
         {isAdmin && (
           <div style={{ marginBottom: 32 }}>
-            <SectionCard title="Expenses (Money Spent)" icon={IC.receipt} action={
+            <SectionCard title="Expenses (Money Spent)" icon={IC.receipt} helpKey="dashboard.expensesSection" action={
               <button className="btn btn-primary" style={{ padding: '0.5rem 1rem' }} onClick={() => setShowExpenseModal(true)}>+ Add Expense</button>
             }>
               <div style={{ overflowX: 'auto', width: '100%' }}>

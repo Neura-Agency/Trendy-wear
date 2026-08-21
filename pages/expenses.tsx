@@ -2,6 +2,7 @@ import { useEffect, useState, useCallback } from "react";
 import Login from "../components/Login";
 import DetailModal from "../components/DetailModal";
 import { PageProps, Expense } from "../types";
+import ContextHelp from "../components/ContextHelp";
 
 const Rs = (n: number) => "Rs " + (Number(n) || 0).toLocaleString();
 const fmtDate = (d: string) => d ? new Date(d).toLocaleDateString("en-PK", { day: "2-digit", month: "short", year: "numeric" }) : "—";
@@ -232,6 +233,7 @@ export default function ExpensesPage({ user, onLogin }: PageProps) {
             </svg>
           </div>
           <h1 style={{ margin: 0, fontSize: 22, fontWeight: 800 }}>Expenses</h1>
+          <ContextHelp id="expenses.page" />
         </div>
         <p style={{ margin: 0, color: "var(--text-muted)", fontSize: 13 }}>
           All costs derived from orders — COGS, store commissions, and shipment charges

@@ -8,6 +8,7 @@ import { CartModal, SaleReturnModal, SaleRefundModal } from "../components/Modal
 import { usePopup } from "../components/Popup";
 import { formatItemCode } from "../lib/catalog";
 import { PageProps, InventoryItem } from "../types";
+import ContextHelp from "../components/ContextHelp";
 
 // ── Helpers ──────────────────────────────────────────────────────────
 const Rs = (n: number) => "Rs " + (Number(n) || 0).toLocaleString();
@@ -344,7 +345,7 @@ export default function DirectSalesPage({ user, onLogin }: PageProps) {
         <header className="page-header">
           <div className="header-content">
             <div className="header-titles">
-              <h1 className="main-title">Direct Sales</h1>
+              <h1 className="main-title">Direct Sales <ContextHelp id="directSales.page" /></h1>
               <p className="subtitle">Sales made directly by the owner from the main warehouse — no store partner involved</p>
             </div>
           </div>
@@ -378,7 +379,7 @@ export default function DirectSalesPage({ user, onLogin }: PageProps) {
         </section>
 
         <SectionCard
-          title="Direct Sales History"
+          title="Direct Sales History" helpKey="directSales.page"
           icon={IC.receipt}
           action={
             <button className="btn btn-primary" onClick={() => setShowSaleModal(true)}>
