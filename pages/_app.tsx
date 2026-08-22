@@ -6,6 +6,7 @@ import "../styles/design-system.css";
 import "../styles/density.css";
 import "../styles/dark.css";
 import "../styles/dark-fixes.css";
+import "../styles/login.css";
 import Layout from "../components/Layout";
 import { PopupProvider } from "../components/Popup";
 import { User } from "../types";
