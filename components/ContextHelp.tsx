@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useRef, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { getHelp } from "../lib/help/content";
 import {
   getActiveId,
@@ -58,8 +58,41 @@ const StopIcon = (
   </svg>
 );
 
+const UI_TEXT: Record<
+  "en" | "roman-ur",
+  {
+    trigger: string;
+    steps: string;
+    why: string;
+    listen: string;
+    stop: string;
+    showMe: string;
+    noVoice: string;
+  }
+> = {
+  en: {
+    trigger: "Guide",
+    steps: "Step by step",
+    why: "Why?",
+    listen: "Listen",
+    stop: "Stop",
+    showMe: "Show me",
+    noVoice: "Voice isn't available on this device.",
+  },
+  "roman-ur": {
+    trigger: "Rehnumai",
+    steps: "Qadam ba qadam",
+    why: "Kyun?",
+    listen: "Sunein",
+    stop: "Rokein",
+    showMe: "Dikhayein",
+    noVoice: "Is device par awaaz mojood nahi hai.",
+  },
+};
+
 /**
- * Small ⓘ trigger + contextual popover with optional voice playback.
+ * Visible help trigger + contextual popover with step-by-step guidance,
+ * an English / Roman Urdu switch and optional voice playback.
  * Purely additive: it never changes the behaviour of the page it sits on.
  */
 export default function ContextHelp({
@@ -68,7 +101,11 @@ export default function ContextHelp({
   label,
   lang = "en",
 }: ContextHelpProps) {
-  const entry = getHelp(id, lang);
+  const [uiLang, setUiLang] = useState<"en" | "roman-ur">(
+    lang === "roman-ur" ? "roman-ur" : "en",
+  );
+  const entry = getHelp(id, uiLang);
+  const t = UI_TEXT[uiLang];
   const [open, setOpen] = useState(false);
   const [showWhy, setShowWhy] = useState(false);
   const [speakingId, setSpeakingId] = useState<string | null>(null);
@@ -98,11 +135,22 @@ export default function ContextHelp({
     if (!open && getActiveId() === id) stop();
   }, [open, id]);
 
-  useEffect(() => () => {
-    if (getActiveId() === id) stop();
-  }, [id]);
+  useEffect(
+    () => () => {
+      if (getActiveId() === id) stop();
+    },
+    [id],
+  );
 
   const isSpeaking = speakingId === id;
+
+  const spokenText = useMemo(() => {
+    if (!entry) return "";
+    const steps = (entry.steps ?? []).map((s, i) => `${i + 1}. ${s}`);
+    return [entry.what, ...steps, showWhy && entry.why ? entry.why : ""]
+      .filter(Boolean)
+      .join(" ");
+  }, [entry, showWhy]);
 
   const onListen = useCallback(() => {
     if (!entry) return;
@@ -110,12 +158,9 @@ export default function ContextHelp({
       stop();
       return;
     }
-    const text = [entry.what, showWhy && entry.why ? entry.why : ""]
-      .filter(Boolean)
-      .join(" ");
-    const ok = speak(id, text, lang);
+    const ok = speak(id, spokenText, uiLang);
     setVoiceFailed(!ok);
-  }, [entry, id, isSpeaking, lang, showWhy]);
+  }, [entry, id, isSpeaking, spokenText, uiLang]);
 
   const onShowMe = useCallback(() => {
     if (!entry?.target) return;
@@ -125,6 +170,16 @@ export default function ContextHelp({
     el.classList.add("ctx-help-highlight");
     window.setTimeout(() => el.classList.remove("ctx-help-highlight"), 2400);
   }, [entry]);
+
+  const switchLang = useCallback(
+    (next: "en" | "roman-ur") => {
+      if (next === uiLang) return;
+      if (getActiveId() === id) stop();
+      setUiLang(next);
+      setVoiceFailed(false);
+    },
+    [id, uiLang],
+  );
 
   if (!entry) return null;
 
@@ -145,6 +200,7 @@ export default function ContextHelp({
         }}
       >
         {InfoIcon}
+        <span className="ctx-help-trigger-text">{t.trigger}</span>
       </button>
 
       {open && (
@@ -154,8 +210,45 @@ export default function ContextHelp({
           aria-label={entry.title ?? "Contextual help"}
           onClick={(e) => e.stopPropagation()}
         >
-          <p className="ctx-help-title">{entry.title ?? "What do I do here?"}</p>
+          <div className="ctx-help-head">
+            <p className="ctx-help-title">{entry.title ?? "What do I do here?"}</p>
+            <div className="ctx-help-lang" role="group" aria-label="Help language">
+              <button
+                type="button"
+                className={`ctx-help-lang-btn${uiLang === "en" ? " is-active" : ""}`}
+                onClick={() => switchLang("en")}
+                aria-pressed={uiLang === "en"}
+              >
+                EN
+              </button>
+              <button
+                type="button"
+                className={`ctx-help-lang-btn${uiLang === "roman-ur" ? " is-active" : ""}`}
+                onClick={() => switchLang("roman-ur")}
+                aria-pressed={uiLang === "roman-ur"}
+              >
+                UR
+              </button>
+            </div>
+          </div>
+
           <p className="ctx-help-text">{entry.what}</p>
+
+          {entry.steps && entry.steps.length > 0 && (
+            <div className="ctx-help-steps">
+              <p className="ctx-help-steps-label">{t.steps}</p>
+              <ol className="ctx-help-step-list">
+                {entry.steps.map((step, i) => (
+                  <li key={i} className="ctx-help-step">
+                    <span className="ctx-help-step-num" aria-hidden="true">
+                      {i + 1}
+                    </span>
+                    <span className="ctx-help-step-text">{step}</span>
+                  </li>
+                ))}
+              </ol>
+            </div>
+          )}
 
           {entry.why && (
             <div className="ctx-help-why">
@@ -167,7 +260,7 @@ export default function ContextHelp({
                   className="ctx-help-why-btn"
                   onClick={() => setShowWhy(true)}
                 >
-                  Why?
+                  {t.why}
                 </button>
               )}
             </div>
@@ -182,19 +275,17 @@ export default function ContextHelp({
                 aria-label={isSpeaking ? "Stop reading this help aloud" : "Listen to this help"}
               >
                 {isSpeaking ? StopIcon : SpeakerIcon}
-                {isSpeaking ? "Stop" : "Listen"}
+                {isSpeaking ? t.stop : t.listen}
               </button>
             )}
             {entry.target && (
               <button type="button" className="ctx-help-btn" onClick={onShowMe}>
-                Show me
+                {t.showMe}
               </button>
             )}
           </div>
 
-          {voiceFailed && (
-            <p className="ctx-help-note">Voice isn&apos;t available on this device.</p>
-          )}
+          {voiceFailed && <p className="ctx-help-note">{t.noVoice}</p>}
         </div>
       )}
     </span>
