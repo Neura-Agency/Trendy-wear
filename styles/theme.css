@@ -1,0 +1,156 @@
+/* ------------------------------------------------------------------
+   Theme switcher + app boot loader — presentation only.
+   Loaded last so it can refine earlier theme sheets.
+   ------------------------------------------------------------------ */
+
+/* Smooth, fast theme transition (respects reduced-motion). */
+html[data-theme] body,
+html[data-theme] .sidebar,
+html[data-theme] .topbar,
+html[data-theme] .main-area,
+html[data-theme] .section-card,
+html[data-theme] .kpi-card {
+  transition:
+    background-color 160ms ease,
+    border-color 160ms ease,
+    color 160ms ease;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  html[data-theme] * {
+    transition-duration: 0.01ms !important;
+    animation-duration: 0.01ms !important;
+  }
+}
+
+/* ---------------- Segmented theme switch ---------------- */
+.theme-switch {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  padding: 3px;
+  border-radius: 999px;
+  border: 1px solid var(--border, rgba(148, 163, 184, 0.28));
+  background: var(--surface-2, rgba(148, 163, 184, 0.1));
+}
+
+.theme-switch__btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  min-width: 34px;
+  height: 30px;
+  padding: 0 10px;
+  border: 0;
+  border-radius: 999px;
+  background: transparent;
+  color: var(--text-muted, #94a3b8);
+  font-size: 12.5px;
+  font-weight: 600;
+  line-height: 1;
+  cursor: pointer;
+  transition:
+    background-color 140ms ease,
+    color 140ms ease,
+    transform 140ms ease;
+}
+
+.theme-switch__btn:hover {
+  color: var(--text-body, #e2e8f0);
+  background: rgba(148, 163, 184, 0.14);
+}
+
+.theme-switch__btn:active {
+  transform: scale(0.96);
+}
+
+.theme-switch__btn[aria-pressed="true"] {
+  background: var(--surface, #1e293b);
+  color: var(--text-strong, #f1f5f9);
+  box-shadow: 0 1px 2px rgba(15, 23, 42, 0.24);
+}
+
+html[data-theme="light"] .theme-switch__btn[aria-pressed="true"] {
+  background: #ffffff;
+  color: #0f172a;
+  box-shadow: 0 1px 2px rgba(15, 23, 42, 0.12);
+}
+
+.theme-switch__btn:focus-visible {
+  outline: 2px solid var(--focus-ring, #6366f1);
+  outline-offset: 2px;
+}
+
+.theme-switch__btn svg {
+  width: 15px;
+  height: 15px;
+  flex: 0 0 auto;
+}
+
+/* Labels collapse to icons on tighter screens. */
+.theme-switch__label {
+  display: inline;
+}
+
+@media (max-width: 1200px) {
+  .theme-switch__label {
+    display: none;
+  }
+  .theme-switch__btn {
+    padding: 0 8px;
+  }
+}
+
+@media (max-width: 640px) {
+  .theme-switch {
+    padding: 2px;
+  }
+  .theme-switch__btn {
+    height: 28px;
+    min-width: 30px;
+  }
+}
+
+/* ---------------- App boot loader ---------------- */
+.app-boot {
+  position: fixed;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  background: var(--bg, #0f172a);
+  z-index: 9999;
+}
+
+html[data-theme="light"] .app-boot {
+  background: #f7f8fb;
+}
+
+.app-boot__inner {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 14px;
+}
+
+.app-boot__mark {
+  width: 44px;
+  height: 44px;
+  border-radius: 12px;
+  border: 2px solid var(--border, rgba(148, 163, 184, 0.3));
+  border-top-color: var(--brand, #6366f1);
+  animation: app-boot-spin 720ms linear infinite;
+}
+
+.app-boot__text {
+  font-size: 13px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  color: var(--text-muted, #94a3b8);
+}
+
+@keyframes app-boot-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
