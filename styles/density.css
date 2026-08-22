@@ -1,0 +1,34 @@
+/* ── Laptop density ────────────────────────────────────────
+   Loaded after design-system.css. Makes 100% browser zoom on a
+   laptop match the comfortable ~80% zoom density, on every
+   laptop width. Presentation only — no layout or logic changes. */
+
+@media (min-width: 769px) {
+  html {
+    zoom: var(--ui-zoom, 1);
+  }
+  .page-wrap,
+  .login-page-wrap,
+  .login-card {
+    min-height: calc(100vh / var(--ui-zoom, 1));
+  }
+  .sidebar {
+    height: calc(100vh / var(--ui-zoom, 1));
+  }
+}
+
+@media (min-width: 769px) and (max-width: 1919px) {
+  html { --ui-zoom: 0.85; }
+}
+@media (min-width: 769px) and (max-width: 1650px) {
+  html { --ui-zoom: 0.82; }
+}
+@media (min-width: 769px) and (max-width: 1500px) {
+  html { --ui-zoom: 0.8; }
+}
+@media (min-width: 769px) and (max-width: 1380px) {
+  html { --ui-zoom: 0.78; }
+}
+@media (min-width: 769px) and (max-width: 1180px) {
+  html { --ui-zoom: 0.74; }
+}

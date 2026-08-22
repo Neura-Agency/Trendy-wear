@@ -3,6 +3,7 @@ import type { AppProps } from "next/app";
 import Head from "next/head";
 import "../styles/globals.css";
 import "../styles/design-system.css";
+import "../styles/density.css";
 import Layout from "../components/Layout";
 import { PopupProvider } from "../components/Popup";
 import { User } from "../types";
