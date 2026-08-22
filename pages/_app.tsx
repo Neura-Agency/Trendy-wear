@@ -7,6 +7,7 @@ import "../styles/density.css";
 import "../styles/dark.css";
 import "../styles/dark-fixes.css";
 import "../styles/login.css";
+import "../styles/theme.css";
 import Layout from "../components/Layout";
 import { PopupProvider } from "../components/Popup";
 import { User } from "../types";
@@ -33,14 +34,36 @@ export default function App({ Component, pageProps }: ExtendedAppProps) {
     return () => document.removeEventListener('focusin', handler);
   }, []);
 
-  // Theme (dark by default). Presentation only — no data or logic depends on it.
+  // Theme: "light" | "dark" | "system". Presentation only — no data or logic
+  // depends on it. The pre-paint script in pages/_document.tsx sets the initial
+  // value; this effect only keeps it in sync with OS changes.
   useEffect(() => {
-    try {
-      const saved = localStorage.getItem("theme");
-      document.documentElement.setAttribute("data-theme", saved === "light" ? "light" : "dark");
-    } catch {
-      document.documentElement.setAttribute("data-theme", "dark");
-    }
+    const apply = () => {
+      let pref = "dark";
+      try {
+        pref = localStorage.getItem("theme") || "dark";
+      } catch {}
+      const resolved =
+        pref === "system"
+          ? window.matchMedia("(prefers-color-scheme: light)").matches
+            ? "light"
+            : "dark"
+          : pref === "light"
+            ? "light"
+            : "dark";
+      document.documentElement.setAttribute("data-theme", resolved);
+      document.documentElement.setAttribute("data-theme-pref", pref);
+      document.documentElement.style.colorScheme = resolved;
+    };
+    apply();
+    const mq = window.matchMedia("(prefers-color-scheme: light)");
+    const onChange = () => apply();
+    mq.addEventListener("change", onChange);
+    window.addEventListener("themepreferencechange", onChange);
+    return () => {
+      mq.removeEventListener("change", onChange);
+      window.removeEventListener("themepreferencechange", onChange);
+    };
   }, []);
 
   useEffect(() => {
@@ -107,7 +130,18 @@ export default function App({ Component, pageProps }: ExtendedAppProps) {
     </Head>
   );
 
-  if (!hydrated) return <>{favicon}<div className="loading">Loading...</div></>;
+  if (!hydrated)
+    return (
+      <>
+        {favicon}
+        <div className="app-boot" role="status" aria-live="polite">
+          <div className="app-boot__inner">
+            <div className="app-boot__mark" aria-hidden="true" />
+            <span className="app-boot__text">Loading Trendy Wear\u2026</span>
+          </div>
+        </div>
+      </>
+    );
 
   const page = (
     <Component

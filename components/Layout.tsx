@@ -270,22 +270,65 @@ export default function Layout({ children, user, onLogout }: LayoutProps) {
     return true;
   });
 
-  // Theme toggle (presentation only).
-  const [theme, setTheme] = useState<string>("dark");
+  // Theme switcher (presentation only): Light / Dark / System.
+  type ThemePref = "light" | "dark" | "system";
+  const [themePref, setThemePref] = useState<ThemePref>("dark");
   useEffect(() => {
     try {
       const saved = localStorage.getItem("theme");
-      setTheme(saved === "light" ? "light" : "dark");
+      if (saved === "light" || saved === "dark" || saved === "system") setThemePref(saved);
     } catch {}
   }, []);
-  const toggleTheme = () => {
-    setTheme((prev) => {
-      const next = prev === "dark" ? "light" : "dark";
-      try { localStorage.setItem("theme", next); } catch {}
-      if (typeof document !== "undefined") document.documentElement.setAttribute("data-theme", next);
-      return next;
-    });
+  const chooseTheme = (pref: ThemePref) => {
+    setThemePref(pref);
+    try {
+      localStorage.setItem("theme", pref);
+    } catch {}
+    if (typeof document !== "undefined") {
+      const resolved =
+        pref === "system"
+          ? window.matchMedia("(prefers-color-scheme: light)").matches
+            ? "light"
+            : "dark"
+          : pref;
+      document.documentElement.setAttribute("data-theme", resolved);
+      document.documentElement.setAttribute("data-theme-pref", pref);
+      document.documentElement.style.colorScheme = resolved;
+      window.dispatchEvent(new Event("themepreferencechange"));
+    }
   };
+
+  const themeOptions: { id: ThemePref; label: string; icon: JSX.Element }[] = [
+    {
+      id: "light",
+      label: "Light",
+      icon: (
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" aria-hidden="true">
+          <circle cx="12" cy="12" r="4" />
+          <path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4" />
+        </svg>
+      ),
+    },
+    {
+      id: "dark",
+      label: "Dark",
+      icon: (
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+          <path d="M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8z" />
+        </svg>
+      ),
+    },
+    {
+      id: "system",
+      label: "System",
+      icon: (
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+          <rect x="2" y="4" width="20" height="13" rx="2" />
+          <path d="M8 21h8M12 17v4" />
+        </svg>
+      ),
+    },
+  ];
 
   return (
     <div className="page-wrap">
@@ -331,24 +374,21 @@ export default function Layout({ children, user, onLogout }: LayoutProps) {
         </button>
         <div style={{ width: 1 }} className="hide-mobile" />
         <div className="topbar-right">
-          <button
-            type="button"
-            className="theme-toggle"
-            aria-label={theme === "dark" ? "Switch to light mode" : "Switch to dark mode"}
-            title={theme === "dark" ? "Switch to light mode" : "Switch to dark mode"}
-            onClick={toggleTheme}
-          >
-            {theme === "dark" ? (
-              <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" aria-hidden="true">
-                <circle cx="12" cy="12" r="4" />
-                <path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4" />
-              </svg>
-            ) : (
-              <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-                <path d="M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8z" />
-              </svg>
-            )}
-          </button>
+          <div className="theme-switch" role="group" aria-label="Color theme">
+            {themeOptions.map((opt) => (
+              <button
+                key={opt.id}
+                type="button"
+                className="theme-switch__btn"
+                aria-pressed={themePref === opt.id}
+                title={`${opt.label} theme`}
+                onClick={() => chooseTheme(opt.id)}
+              >
+                {opt.icon}
+                <span className="theme-switch__label">{opt.label}</span>
+              </button>
+            ))}
+          </div>
           <div
             className="topbar-user"
             role="button"
