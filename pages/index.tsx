@@ -2450,7 +2450,7 @@ export default function Home({ user, onLogin }: PageProps) {
               <ContextHelp id="dashboard.recordSale" align="right" />
             </span>
           )}
-          <button className="btn btn-secondary" onClick={() => {
+          <button className="btn btn-secondary" style={{ display: 'inline-flex', alignItems: 'center', padding: '10px 18px', whiteSpace: 'nowrap', flex: '0 0 auto' }} onClick={() => {
             // Pass dashboardOrders (all time, scope-filtered) so the modal applies its own period filter
             let ordersForReport = dashboardOrders;
             let storesForReport = data.stores || {};

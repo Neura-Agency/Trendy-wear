@@ -196,7 +196,7 @@ export default function ProfitPage({ user, onLogin }: PageProps) {
   const TDNum: React.CSSProperties = { ...TD, textAlign: "right", whiteSpace: "nowrap", fontVariantNumeric: "tabular-nums" };
 
   return (
-    <div style={{ padding: "28px 32px", maxWidth: 1400, margin: "0 auto" }}>
+    <div className="page-shell">
 
       {/* ── Header ── */}
       <div style={{ marginBottom: 24 }}>
