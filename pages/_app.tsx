@@ -4,6 +4,7 @@ import Head from "next/head";
 import "../styles/globals.css";
 import "../styles/design-system.css";
 import "../styles/density.css";
+import "../styles/dark.css";
 import Layout from "../components/Layout";
 import { PopupProvider } from "../components/Popup";
 import { User } from "../types";
@@ -28,6 +29,16 @@ export default function App({ Component, pageProps }: ExtendedAppProps) {
     };
     document.addEventListener('focusin', handler);
     return () => document.removeEventListener('focusin', handler);
+  }, []);
+
+  // Theme (dark by default). Presentation only — no data or logic depends on it.
+  useEffect(() => {
+    try {
+      const saved = localStorage.getItem("theme");
+      document.documentElement.setAttribute("data-theme", saved === "light" ? "light" : "dark");
+    } catch {
+      document.documentElement.setAttribute("data-theme", "dark");
+    }
   }, []);
 
   useEffect(() => {
