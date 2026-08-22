@@ -1,0 +1,55 @@
+/* ── Fix: surfaces still hardcoded #fff in globals.css ──────────────── */
+html[data-theme="dark"] .section-head,
+html[data-theme="dark"] .section-card,
+html[data-theme="dark"] .main-area,
+html[data-theme="dark"] .kpi-mini-card,
+html[data-theme="dark"] .btn-icon,
+html[data-theme="dark"] .sticky-actions th:last-child,
+html[data-theme="dark"] .sticky-actions td:last-child {
+  background: var(--surface) !important;
+  color: var(--text-body);
+  border-color: var(--border);
+}
+
+html[data-theme="dark"] .main-area {
+  background: var(--bg) !important;
+}
+
+html[data-theme="dark"] .section-head:hover {
+  background: var(--surface-2) !important;
+}
+
+html[data-theme="dark"] .section-head .section-title {
+  color: var(--text-head);
+}
+
+html[data-theme="dark"] .btn-icon:hover {
+  background: var(--surface-2) !important;
+}
+
+html[data-theme="dark"] input:hover,
+html[data-theme="dark"] select:hover,
+html[data-theme="dark"] textarea:hover,
+html[data-theme="dark"] input:focus,
+html[data-theme="dark"] select:focus,
+html[data-theme="dark"] textarea:focus {
+  background: var(--surface-2) !important;
+  color: var(--text-head);
+}
+
+/* ── Softer table text: pure white bold reads too harsh on dark ─────── */
+html[data-theme="dark"] table tbody td {
+  color: #cdd6e4;
+}
+
+html[data-theme="dark"] table tbody td.font-bold,
+html[data-theme="dark"] table tbody td .font-bold,
+html[data-theme="dark"] .mobile-card-value {
+  color: #dde5f0;
+  font-weight: 620;
+}
+
+html[data-theme="dark"] table tbody td.text-muted,
+html[data-theme="dark"] table tbody td .text-muted {
+  color: var(--text-muted) !important;
+}
