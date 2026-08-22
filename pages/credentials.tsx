@@ -410,7 +410,7 @@ export default function ShopCredentials({ user, onLogin }: PageProps) {
                 }
                 .store-name-cell {
                     font-weight: 700;
-                    color: var(--pri-900);
+                    color: var(--text-head);
                 }
                 .credential-code {
                     font-family: 'JetBrains Mono', 'IBM Plex Mono', 'Cascadia Code', monospace;
