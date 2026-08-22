@@ -112,6 +112,210 @@ html[data-theme="light"] .theme-switch__btn[aria-pressed="true"] {
   }
 }
 
+/* ---------------- Product thumbnails: dark-mode blend ---------------- */
+/* Remove harsh white/light photo-preview backgrounds. Give the image cell a
+   subtle translucent dark slate container (≈ Tailwind bg-slate-800/50 with a
+   border-slate-700/50 outline) so product photos sit on the panel without
+   bright glare. Re-asserts the dark-fixes brightness filter and drops any
+   #fff/light surface behind the image. */
+html[data-theme="dark"] .inv-thumb,
+html[data-theme="dark"] .item-thumb {
+  background: rgba(51, 65, 85, 0.5) !important;   /* slate-800/50 */
+  border: 1px solid rgba(51, 65, 85, 0.5) !important;   /* slate-700/50 */
+}
+
+html[data-theme="dark"] .inv-thumb img,
+html[data-theme="dark"] .item-thumb img {
+  filter: brightness(0.86) contrast(0.98) !important;
+  background: transparent !important;
+  mix-blend-mode: normal;
+}
+
+/* Edit/add-inventory modal photo preview: soften raw photo whites so they
+   sit on the dark surface without a harsh white disc. */
+html[data-theme="dark"] .modal-box img {
+  filter: brightness(0.85) contrast(1.0) !important;
+}
+
+/* ---------------- Dark-mode text / foreground contrast ---------------- */
+/* Any cell/mobile value that was set from a near-black palette token
+   (pri-600/700/900 correspond to #1d2536/#141a26/#080b12 in dark mode)
+   must fall back to the high-contrast text tokens instead of rendering
+   near-black-on-dark. Applies to table cells, shop/store name columns,
+   item-codes and other "strong" labels. */
+html[data-theme="dark"] td[style*="color: var(--pri-900)"],
+html[data-theme="dark"] td[style*="color:var(--pri-900)"],
+html[data-theme="dark"] .store-name-cell,
+html[data-theme="dark"] [style*="color: var(--pri-900)"],
+html[data-theme="dark"] [style*="color:var(--pri-900)"] {
+  color: var(--text-head) !important;
+}
+
+html[data-theme="dark"] td[style*="color: var(--pri-700)"],
+html[data-theme="dark"] td[style*="color:var(--pri-700)"],
+html[data-theme="dark"] [style*="color: var(--pri-700)"],
+html[data-theme="dark"] [style*="color:var(--pri-700)"] {
+  color: var(--text-body) !important;
+}
+
+/* Item-code / mono store-owner cells using the `--pri-600` brand token.
+   In dark theme that token is also near-black; use muted-but-legible. */
+html[data-theme="dark"] [style*="color: var(--pri-600)"],
+html[data-theme="dark"] [style*="color:var(--pri-600)"] {
+  color: var(--text-muted) !important;
+}
+
+/* inventory.tsx stock-alert rows hardcode the very-dark #1e293b/#64748b. */
+html[data-theme="dark"] [style*="color: #1e293b"],
+html[data-theme="dark"] [style*="color:#1e293b"] {
+  color: var(--text-head) !important;
+}
+html[data-theme="dark"] [style*="color: #64748b"],
+html[data-theme="dark"] [style*="color:#64748b"] {
+  color: var(--text-muted) !important;
+}
+
+/* reports.tsx table helpers use fixed light backgrounds + dark slate text
+   (#374151 on white/#f1f5f9). Retheme to the dark surface + light text. */
+html[data-theme="dark"] .desktop-table-view thead th {
+  background: var(--surface-2) !important;
+  color: var(--text-head) !important;
+  border-color: var(--border) !important;
+}
+html[data-theme="dark"] table.desktop-table-view td,
+html[data-theme="dark"] .desktop-table-view tbody td,
+html[data-theme="dark"] .desktop-table-view tfoot td {
+  background: var(--surface) !important;
+  color: var(--text-head) !important;
+  border-color: var(--border) !important;
+}
+html[data-theme="dark"] .desktop-table-view tbody tr:nth-child(2n) td,
+html[data-theme="dark"] table.desktop-table-view tbody tr:nth-child(2n) td {
+  background: var(--surface-2) !important;
+}
+/* Reports container wrapper + "showing X of Y" footnote row. */
+html[data-theme="dark"] [style*="border: 1px solid #d1d5db"],
+html[data-theme="dark"] [style*="border:1px solid #d1d5db"],
+html[data-theme="dark"] [style*="background: #f9fafb"],
+html[data-theme="dark"] [style*="background:#f9fafb"] {
+  background: var(--surface) !important;
+  border-color: var(--border) !important;
+  color: var(--text-muted) !important;
+}
+
+/* KPI card primary value uses #374151 fallback — brighten in dark mode. */
+html[data-theme="dark"] [style*="color: #374151"],
+html[data-theme="dark"] [style*="color:#374151"] {
+  color: var(--text-head) !important;
+}
+
+/* Refunds page pastel "Replaced" / "Fixed Amt" pills were hardcoded with
+   light lavender/amber + dark text. Retint them translucent for dark mode. */
+html[data-theme="dark"] [style*="background: #ede9fe"],
+html[data-theme="dark"] [style*="background:#ede9fe"] {
+  background: rgba(139, 92, 246, 0.16) !important;
+}
+html[data-theme="dark"] [style*="color: #6d28d9"],
+html[data-theme="dark"] [style*="color:#6d28d9"] {
+  color: #c4b5fd !important;
+}
+html[data-theme="dark"] [style*="border: 1px solid #c4b5fd"],
+html[data-theme="dark"] [style*="border:1px solid #c4b5fd"] {
+  border-color: rgba(139, 92, 246, 0.32) !important;
+}
+html[data-theme="dark"] [style*="background: #ffedd5"],
+html[data-theme="dark"] [style*="background:#ffedd5"] {
+  background: rgba(245, 158, 11, 0.16) !important;
+}
+html[data-theme="dark"] [style*="color: #c2410c"],
+html[data-theme="dark"] [style*="color:#c2410c"] {
+  color: #fcd34d !important;
+}
+html[data-theme="dark"] [style*="border: 1px solid #fdba74"],
+html[data-theme="dark"] [style*="border:1px solid #fdba74"] {
+  border-color: rgba(245, 158, 11, 0.32) !important;
+}
+
+/* Inventory stock-alert rows hardcode light red/amber panels + dark chips.
+   Convert to dark translucent danger/warning surfaces and bright text. */
+html[data-theme="dark"] [style*="background: #fef2f2"],
+html[data-theme="dark"] [style*="background:#fef2f2"] {
+  background: rgba(239, 68, 68, 0.12) !important;
+}
+html[data-theme="dark"] [style*="border: 1px solid #fecaca"],
+html[data-theme="dark"] [style*="border:1px solid #fecaca"] {
+  border-color: rgba(239, 68, 68, 0.28) !important;
+}
+html[data-theme="dark"] [style*="background: #fffbeb"],
+html[data-theme="dark"] [style*="background:#fffbeb"] {
+  background: rgba(245, 158, 11, 0.12) !important;
+}
+html[data-theme="dark"] [style*="border: 1px solid #fde68a"],
+html[data-theme="dark"] [style*="border:1px solid #fde68a"] {
+  border-color: rgba(245, 158, 11, 0.28) !important;
+}
+html[data-theme="dark"] [style*="background: #fee2e2"],
+html[data-theme="dark"] [style*="background:#fee2e2"] {
+  background: rgba(239, 68, 68, 0.16) !important;
+}
+html[data-theme="dark"] [style*="background: #fef3c7"],
+html[data-theme="dark"] [style*="background:#fef3c7"] {
+  background: rgba(245, 158, 11, 0.16) !important;
+}
+html[data-theme="dark"] [style*="color: #b91c1c"],
+html[data-theme="dark"] [style*="color:#b91c1c"] {
+  color: #fca5a5 !important;
+}
+html[data-theme="dark"] [style*="color: #92400e"],
+html[data-theme="dark"] [style*="color:#92400e"] {
+  color: #fcd34d !important;
+}
+
+/* Dashboard order cards: store name pulled from the near-black --pri-700. */
+html[data-theme="dark"] .order-card-store {
+  color: var(--text-body) !important;
+}
+
+/* Pastel chip / card surfaces (expenses type pills, profit summary,
+   owners profit-split cards) were hardcoded as light tints that glare in
+   dark mode. Convert to translucent dark tints; the nearby colored text is
+   already lifted by dark.css except the expense green #15803d below. */
+html[data-theme="dark"] [style*="background:#eef2ff"],
+html[data-theme="dark"] [style*="background: #eef2ff"] {
+  background: rgba(99, 102, 241, 0.14) !important;
+}
+html[data-theme="dark"] [style*="background:#eff6ff"],
+html[data-theme="dark"] [style*="background: #eff6ff"] {
+  background: rgba(59, 130, 246, 0.14) !important;
+}
+html[data-theme="dark"] [style*="background:#fdf4ff"],
+html[data-theme="dark"] [style*="background: #fdf4ff"] {
+  background: rgba(139, 92, 246, 0.16) !important;
+}
+html[data-theme="dark"] [style*="background:#f0fdf4"],
+html[data-theme="dark"] [style*="background: #f0fdf4"] {
+  background: rgba(16, 185, 129, 0.14) !important;
+}
+html[data-theme="dark"] [style*="background:#fff7ed"],
+html[data-theme="dark"] [style*="background: #fff7ed"] {
+  background: rgba(245, 158, 11, 0.14) !important;
+}
+html[data-theme="dark"] [style*="background:#f5f3ff"],
+html[data-theme="dark"] [style*="background: #f5f3ff"] {
+  background: rgba(139, 92, 246, 0.16) !important;
+}
+html[data-theme="dark"] [style*="color: #15803d"],
+html[data-theme="dark"] [style*="color:#15803d"] {
+  color: #6ee7b7 !important;
+}
+
+/* General safety net: any leftover near-black slate text inside table
+   cells becomes the high-contrast body tone in dark mode. */
+html[data-theme="dark"] td[style*="color: #1e293b"],
+html[data-theme="dark"] td[style*="color:#1e293b"] {
+  color: var(--text-head) !important;
+}
+
 /* ---------------- App boot loader ---------------- */
 .app-boot {
   position: fixed;

@@ -553,6 +553,7 @@ export default function InventoryPage({ user, onLogin }: PageProps) {
                                                 <td className="font-bold">
                                                     <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
                                                         <div
+                                                            className="inv-thumb"
                                                             style={{
                                                                 width: 44,
                                                                 height: 44,
@@ -781,7 +782,7 @@ export default function InventoryPage({ user, onLogin }: PageProps) {
                                             <tr><td colSpan={isAdmin ? 10 : 8} style={{ textAlign: 'center', padding: 40 }} className="text-muted">{storeSearch ? 'No stock matches your search.' : 'No stock available currently.'}</td></tr>
                                         ) : rows.map((item, idx) => (
                                         <tr key={item.id || idx} id={`store-inv-row-${item.id || idx}`}>
-                                            {isAdmin && <td className="font-bold" style={{ color: 'var(--pri-900)' }}>{item.storeName}</td>}
+                                            {isAdmin && <td className="font-bold" style={{ color: 'var(--text-head)' }}>{item.storeName}</td>}
                                             <td className="font-bold">{item.productName}</td>
                                             <td className="muted" style={{fontWeight:600, fontFamily:'monospace', fontSize:11}}>{formatItemCode(item.batchNumber || item.inventoryId)}</td>
                                             <td className="text-muted font-mono" style={{ fontWeight: 600 }}>
@@ -906,7 +907,7 @@ export default function InventoryPage({ user, onLogin }: PageProps) {
                                         <div className="mobile-card" key={item.id || idx} id={`store-inv-row-${item.id || idx}`}>
                                             <div className="mobile-card-header">
                                                 <span className="mobile-card-title">{item.productName}</span>
-                                                <span className="mobile-card-badge" style={{ fontSize: 10, fontWeight: 700, color: 'var(--pri-900)' }}>{item.storeName}</span>
+                                                <span className="mobile-card-badge" style={{ fontSize: 10, fontWeight: 700, color: 'var(--text-head)' }}>{item.storeName}</span>
                                             </div>
                                             <div className="mobile-card-row">
                                                 <span className="mobile-card-label">Item ID</span>
@@ -1007,7 +1008,7 @@ export default function InventoryPage({ user, onLogin }: PageProps) {
                                         {extras.map((e, i) => (
                                             <tr key={i}>
                                                 <td className="text-muted" style={{ fontSize: '0.75rem' }}>{e.date}</td>
-                                                <td className="font-bold" style={{ color: 'var(--pri-700)' }}>{e.storeName}</td>
+                                                <td className="font-bold" style={{ color: 'var(--text-body)' }}>{e.storeName}</td>
                                                 <td className="font-bold">{e.productName}</td>
                                                 <td className="muted" style={{fontWeight:600, fontFamily:'monospace', fontSize:11}}>{formatItemCode(e.batchNumber)}</td>
                                                 <td><Badge type="orange">{e.extraQty}</Badge></td>
@@ -1029,7 +1030,7 @@ export default function InventoryPage({ user, onLogin }: PageProps) {
                                             </div>
                                             <div className="mobile-card-row">
                                                 <span className="mobile-card-label">Store</span>
-                                                <span className="mobile-card-value" style={{ color: 'var(--pri-700)' }}>{e.storeName}</span>
+                                                <span className="mobile-card-value" style={{ color: 'var(--text-body)' }}>{e.storeName}</span>
                                             </div>
                                             <div className="mobile-card-row">
                                                 <span className="mobile-card-label">Item ID</span>
@@ -1345,8 +1346,8 @@ export default function InventoryPage({ user, onLogin }: PageProps) {
                                         {alert.type === 'out' || alert.type === 'store-out' ? 'ðŸš«' : '⚠ï¸'}
                                     </span>
                                     <div style={{ flex: 1, minWidth: 0 }}>
-                                        <div style={{ fontWeight: 700, fontSize: 13, color: '#1e293b' }}>{alert.product}</div>
-                                        <div style={{ fontSize: 11, color: '#64748b', marginTop: 2 }}>{alert.detail}</div>
+                                        <div style={{ fontWeight: 700, fontSize: 13, color: 'var(--text-head)' }}>{alert.product}</div>
+                                        <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 2 }}>{alert.detail}</div>
                                     </div>
                                     <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexShrink: 0 }}>
                                         <span style={{
