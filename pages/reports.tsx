@@ -436,7 +436,7 @@ export default function ReportsPage({ user, onLogin }: PageProps) {
         .report-print-title { display: none; }
       `}</style>
 
-      <div ref={printRef} style={{ maxWidth: 1400, margin: '0 auto', padding: '0 0 48px 0' }}>
+      <div ref={printRef} className="page-shell">
         {/* ── Print title ── */}
         <div className="report-print-title">
           Trendy Wear — {isStoreOwner ? 'My Store Report' : 'Business Report'} · {periodLabel}
