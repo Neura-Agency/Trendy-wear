@@ -157,7 +157,7 @@ export default function RefundsPage({ user, onLogin, onLogout }: PageProps) {
   const TD: React.CSSProperties = { padding: "12px 14px", fontSize: 13, color: "var(--text-body)", verticalAlign: "top", borderBottom: "1px solid var(--border)" };
 
   return (
-    <div style={{ padding: "28px 32px", maxWidth: 1300, margin: "0 auto" }}>
+    <div className="page-shell">
       {/* ── Header ── */}
       <div style={{ marginBottom: 24 }}>
         <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 4 }}>
