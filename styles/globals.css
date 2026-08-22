@@ -1930,6 +1930,31 @@ input[type="number"] {
   border-color: #ddd6fe;
 }
 
+/* ── Type column (inventory tables) ───────────────────────
+   Long category values should wrap cleanly onto up to 2 lines instead of
+   pushing the column/table wider (the base .badge uses white-space: nowrap).
+   Readability in both themes is inherited from .badge-gray + dark-fixes. */
+.type-cell {
+  width: 220px;
+  max-width: 220px;
+}
+
+.type-cell .badge {
+  max-width: 100%;
+  white-space: normal;
+}
+
+.type-cell .badge .type-cell__text {
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  white-space: normal;
+  word-break: break-word;
+  overflow-wrap: anywhere;
+  min-width: 0;
+}
+
 /* ── Modal ──────────────────────────────────────────── */
 .modal-overlay {
   position: fixed;

@@ -592,7 +592,7 @@ export default function InventoryPage({ user, onLogin }: PageProps) {
                                                         </div>
                                                     </div>
                                                 </td>
-                                                <td><Badge type="gray">{item.category}</Badge></td>
+                                                <td className="type-cell"><Badge type="gray"><span className="type-cell__text">{item.category}</span></Badge></td>
                                                 <td className="text-muted font-mono" style={{ fontWeight: 700 }}>{formatItemCode(item.batchNumber)}</td>
                                                 <td>{Rs(item.costPrice)}</td>
                                                 <td className="font-bold" style={{ fontSize: '1.05rem' }}>{availableQty}</td>
@@ -632,7 +632,7 @@ export default function InventoryPage({ user, onLogin }: PageProps) {
                                                             className="btn btn-sm btn-glass"
                                                             style={{
                                                                 fontWeight: 800,
-                                                                color: 'var(--pri-700)',
+                                                                color: 'var(--acc)',
                                                                 borderColor: 'rgba(99, 102, 241, 0.22)',
                                                                 background: 'rgba(99, 102, 241, 0.07)',
                                                                 boxShadow: '0 8px 18px rgba(99, 102, 241, 0.08)',
@@ -733,7 +733,7 @@ export default function InventoryPage({ user, onLogin }: PageProps) {
                                             )}
                                             <div className="mobile-card-actions">
                                                 <button className="btn btn-sm" style={{ fontSize: 10, padding: '4px 10px', background: 'rgba(16,185,129,0.1)', color: '#059669', border: '1.5px solid rgba(16,185,129,0.25)' }} onClick={() => setDetailInventoryItem(item)}>Detail</button>
-                                                <button className="btn btn-sm btn-glass" style={{ fontWeight: 800, color: 'var(--pri-700)', borderColor: 'rgba(99, 102, 241, 0.22)', background: 'rgba(99, 102, 241, 0.07)' }} onClick={() => { setEditingInventoryItem(item); setShowEditInventoryModal(true); }}>Edit</button>
+                                                <button className="btn btn-sm btn-glass" style={{ fontWeight: 800, color: 'var(--acc)', borderColor: 'rgba(99, 102, 241, 0.22)', background: 'rgba(99, 102, 241, 0.07)' }} onClick={() => { setEditingInventoryItem(item); setShowEditInventoryModal(true); }}>Edit</button>
                                                 <button className="btn btn-sm btn-glass" onClick={() => handleDeleteInventory(item)} style={{ color: 'var(--danger)', borderColor: 'rgba(239, 68, 68, 0.25)', background: 'rgba(239, 68, 68, 0.08)', width: 36, padding: 0, display: 'inline-flex', alignItems: 'center', justifyContent: 'center' }}>{IC.trash}</button>
                                             </div>
                                         </div>
@@ -814,7 +814,7 @@ export default function InventoryPage({ user, onLogin }: PageProps) {
                                                             <button
                                                                 type="button"
                                                                 className="btn btn-sm"
-                                                                style={{ fontWeight: 800, color: 'var(--pri-700)', borderColor: 'rgba(99, 102, 241, 0.22)', background: 'rgba(99, 102, 241, 0.07)', boxShadow: '0 8px 18px rgba(99, 102, 241, 0.08)' }}
+                                                                style={{ fontWeight: 800, color: 'var(--acc)', borderColor: 'rgba(99, 102, 241, 0.22)', background: 'rgba(99, 102, 241, 0.07)', boxShadow: '0 8px 18px rgba(99, 102, 241, 0.08)' }}
                                                                 onClick={() => {
                                                                     const warehouseItem = data.inventory.find((i: any) => i.id === item.inventoryId);
                                                                     const warehouseVariants = warehouseItem?.variantQuantities || {};
@@ -941,7 +941,7 @@ export default function InventoryPage({ user, onLogin }: PageProps) {
                                             <div className="mobile-card-actions">
                                                 <button className="btn btn-sm" style={{ fontSize: 10, padding: '4px 10px', background: 'rgba(16,185,129,0.1)', color: '#059669', border: '1.5px solid rgba(16,185,129,0.25)' }} onClick={() => setDetailStoreInventoryItem(item)}>Detail</button>
                                                 {isAdmin && (
-                                                    <button className="btn btn-sm" style={{ fontWeight: 800, color: 'var(--pri-700)', borderColor: 'rgba(99, 102, 241, 0.22)', background: 'rgba(99, 102, 241, 0.07)' }} onClick={() => {
+                                                    <button className="btn btn-sm" style={{ fontWeight: 800, color: 'var(--acc)', borderColor: 'rgba(99, 102, 241, 0.22)', background: 'rgba(99, 102, 241, 0.07)' }} onClick={() => {
                                                         const warehouseItem = data.inventory.find((i: any) => i.id === item.inventoryId);
                                                         setEditingRow({
                                                             ...item,
