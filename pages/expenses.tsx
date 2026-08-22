@@ -222,7 +222,7 @@ export default function ExpensesPage({ user, onLogin }: PageProps) {
   };
 
   return (
-    <div style={{ padding: "28px 32px", maxWidth: 1300, margin: "0 auto" }}>
+    <div className="page-shell">
 
       {/* ── Header ── */}
       <div style={{ marginBottom: 24 }}>
