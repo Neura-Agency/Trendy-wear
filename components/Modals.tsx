@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { usePopup } from './Popup';
 import Badge from './Badge';
+import ContextHelp from './ContextHelp';
 import { SaleModalProps, CreateStoreModalProps, ReportModalProps, AddInventoryModalProps, AllotToStoreModalProps, InventoryItem, Order, Product, Store, Expense } from '../types';
 import { buildDeterministicProductId, findMatchingProduct, formatItemCode, formatItemCodeFromUuid, resolveCanonicalBrand } from '../lib/catalog';
 import { adjustVariantQuantities, rollupVariantQuantities, scaleVariantQuantitiesToTotal, VariantQuantities } from '../lib/variantQuantities';
@@ -4050,7 +4051,7 @@ export function AllotToStoreModal({ onSave, onClose, stores, inventory, allotedQ
         <div className="modal-overlay">
             <div className="modal-box" style={{ maxWidth: '780px', width: '95%', maxHeight: '90vh', overflowY: 'auto' }}>
                 <div className="modal-head" style={{ padding: '16px 20px' }}>
-                    <h3 style={{ fontSize: '18px', fontWeight: 800 }}>Alot to Store</h3>
+                    <h3 style={{ fontSize: '18px', fontWeight: 800, display: 'flex', alignItems: 'center', gap: 10 }}>Alot to Store <ContextHelp id="inventory.allot" /></h3>
                     <button className="btn btn-sm" onClick={onClose} style={{ border: 'none', fontSize: '18px' }}>✕</button>
                 </div>
                 <div className="modal-body" style={{ padding: '22px 20px' }}>

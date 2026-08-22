@@ -1241,3 +1241,270 @@ input[aria-invalid="true"],
     animation: none !important;
   }
 }
+
+/* ── 17. Readability pass ──────────────────────────────────
+   Larger, more legible type across the app, roomier controls
+   and bigger dialogs. Presentation only. */
+
+/* Softer laptop scaling: keep density, stop shrinking the text. */
+@media (min-width: 769px) and (max-width: 1650px) {
+  html { --ui-zoom: 0.95; }
+}
+@media (min-width: 769px) and (max-width: 1500px) {
+  html { --ui-zoom: 0.92; }
+}
+@media (min-width: 769px) and (max-width: 1380px) {
+  html { --ui-zoom: 0.88; }
+}
+@media (min-width: 769px) and (max-width: 1180px) {
+  html { --ui-zoom: 0.84; }
+}
+
+/* Type scale */
+body { font-size: 15.5px; line-height: 1.55; }
+.main-title { font-size: 25px; }
+.subtitle { font-size: 14.5px; }
+.section-title { font-size: 15.5px; }
+.kpi-value, .stat-value { font-size: 27px; }
+.kpi-label, .stat-label { font-size: 13px; }
+
+table, .table, .data-table { font-size: 14.5px; }
+th, .table th, thead td { font-size: 12.5px; letter-spacing: 0.04em; }
+td, .table td { font-size: 14.5px; }
+
+label,
+.input-group label,
+.form-label { font-size: 13.5px; font-weight: 600; }
+
+input, select, textarea, .custom-select-trigger {
+  font-size: 15px;
+  padding: 11px 13px;
+  line-height: 1.4;
+}
+
+.badge, .pill, .status, .tag { font-size: 12.5px; padding: 4px 11px; }
+
+/* Buttons: consistent, comfortable padding at every size */
+button,
+.btn,
+.btn-primary,
+.btn-secondary,
+.btn-danger,
+.btn-success,
+.custom-select-trigger {
+  font-size: 14.5px;
+}
+
+.btn,
+.btn-primary,
+.btn-secondary,
+.btn-danger,
+.btn-success {
+  padding: 10px 18px;
+  min-height: 40px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  line-height: 1.15;
+  border-radius: var(--radius);
+}
+
+.btn-sm {
+  padding: 7px 13px;
+  min-height: 32px;
+  font-size: 13.5px;
+  gap: 6px;
+  line-height: 1.15;
+}
+
+.btn-lg { padding: 13px 24px; min-height: 46px; font-size: 15.5px; }
+
+/* Icon-only controls stay square, not squashed */
+.btn-icon,
+.icon-btn {
+  padding: 0;
+  width: 36px;
+  height: 36px;
+  min-height: 36px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+/* Sidebar readability */
+.sidebar a, .nav-item, .sidebar-link { font-size: 14.5px; padding: 10px 14px; }
+.nav-group-label { font-size: 11px; }
+
+/* ── Dialogs: bigger and easier to read ─────────────────── */
+@media (min-width: 577px) {
+  .modal-box,
+  .detail-modal-box,
+  .edit-sale-modal {
+    width: min(860px, 94vw) !important;
+    min-width: min(560px, 94vw);
+    max-width: min(1120px, 94vw) !important;
+    max-height: 92vh !important;
+    overflow-y: auto;
+  }
+
+  /* Wide, data-heavy dialogs get more room */
+  .modal-box.modal-lg,
+  .modal-box.modal-wide,
+  .edit-sale-modal {
+    width: min(1080px, 96vw) !important;
+  }
+
+  .delete-modal,
+  .modal-box.modal-sm {
+    width: min(560px, 92vw) !important;
+    min-width: 0;
+  }
+}
+
+.modal-box > .modal-head,
+.edit-sale-modal > .edit-sale-header { padding: 18px 24px; }
+
+.modal-head h3,
+.edit-sale-header h2 { font-size: 19px; }
+
+.modal-body { padding: 24px 26px 26px; font-size: 15px; }
+.modal-body label { font-size: 13.5px; }
+.modal-body input,
+.modal-body select,
+.modal-body textarea { font-size: 15px; padding: 11px 13px; }
+.modal-body table { font-size: 14.5px; }
+.modal-body th { font-size: 12.5px; }
+
+.delete-modal__title { font-size: 19px; }
+.delete-modal__subtitle { font-size: 14.5px; }
+
+/* ── Contextual help: visible trigger + step guidance ───── */
+.ctx-help-trigger {
+  width: auto;
+  height: auto;
+  min-height: 28px;
+  border-radius: 999px;
+  gap: 6px;
+  padding: 4px 11px 4px 8px;
+  border: 1px solid var(--acc);
+  background: var(--acc-soft);
+  color: var(--acc);
+  font-size: 12.5px;
+  font-weight: 700;
+  letter-spacing: 0.01em;
+}
+
+.ctx-help-trigger svg { width: 15px; height: 15px; }
+
+.ctx-help-trigger-text { line-height: 1; }
+
+.ctx-help-trigger:hover,
+.ctx-help-trigger[aria-expanded="true"] {
+  background: var(--acc);
+  border-color: var(--acc);
+  color: #fff;
+}
+
+.ctx-help-trigger:focus-visible {
+  outline: 2px solid var(--acc);
+  outline-offset: 2px;
+}
+
+.ctx-help-pop {
+  width: min(360px, calc(100vw - 32px));
+  padding: 16px 18px;
+}
+
+.ctx-help-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  margin-bottom: 8px;
+}
+
+.ctx-help-title { font-size: 14px; margin: 0; }
+.ctx-help-text { font-size: 14px; line-height: 1.55; }
+
+.ctx-help-lang {
+  display: inline-flex;
+  border: 1px solid var(--border-2);
+  border-radius: 999px;
+  overflow: hidden;
+  flex-shrink: 0;
+}
+
+.ctx-help-lang-btn {
+  border: none;
+  background: var(--surface);
+  color: var(--text-muted);
+  font-size: 11.5px;
+  font-weight: 700;
+  padding: 4px 10px;
+  min-height: 24px;
+  cursor: pointer;
+}
+
+.ctx-help-lang-btn.is-active {
+  background: var(--acc);
+  color: #fff;
+}
+
+.ctx-help-steps {
+  margin-top: 12px;
+  border-top: 1px solid var(--border);
+  padding-top: 10px;
+}
+
+.ctx-help-steps-label {
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.07em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+  margin: 0 0 8px;
+}
+
+.ctx-help-step-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 8px;
+}
+
+.ctx-help-step {
+  display: flex;
+  align-items: flex-start;
+  gap: 9px;
+}
+
+.ctx-help-step-num {
+  flex-shrink: 0;
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  background: var(--acc-soft);
+  color: var(--acc);
+  font-size: 11.5px;
+  font-weight: 700;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  margin-top: 1px;
+}
+
+.ctx-help-step-text {
+  font-size: 13.5px;
+  line-height: 1.5;
+  color: var(--text-body);
+}
+
+.ctx-help-btn { font-size: 13px; padding: 6px 12px; min-height: 30px; }
+.ctx-help-btn svg { width: 14px; height: 14px; }
+
+@media (max-width: 576px) {
+  .ctx-help-pop { width: min(320px, calc(100vw - 24px)); }
+  .modal-body { padding: 18px 16px 24px; }
+}
