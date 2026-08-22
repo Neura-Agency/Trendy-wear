@@ -1,0 +1,8 @@
+__tests__/api/return-to-warehouse.test.ts(146,16): error TS2339: Property 'quantityAssigned' does not exist on type 'unknown'.
+__tests__/api/return-to-warehouse.test.ts(147,16): error TS2339: Property 'quantityRemaining' does not exist on type 'unknown'.
+__tests__/api/return-to-warehouse.test.ts(187,16): error TS2339: Property 'quantityAssigned' does not exist on type 'unknown'.
+__tests__/api/return-to-warehouse.test.ts(188,16): error TS2339: Property 'quantityRemaining' does not exist on type 'unknown'.
+__tests__/api/return-to-warehouse.test.ts(189,20): error TS2339: Property 'variantQuantitiesAssigned' does not exist on type 'unknown'.
+__tests__/api/return-to-warehouse.test.ts(190,20): error TS2339: Property 'variantQuantitiesAssigned' does not exist on type 'unknown'.
+__tests__/api/warehouse-stock-model.test.ts(41,42): error TS2322: Type 'unknown' is not assignable to type 'number'.
+__tests__/api/warehouse-stock-model.test.ts(42,39): error TS2322: Type 'unknown' is not assignable to type 'number'.

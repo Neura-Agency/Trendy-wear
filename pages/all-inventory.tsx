@@ -122,7 +122,7 @@ export default function AllInventoryPage({ user, onLogin }: PageProps) {
                           </div>
                         </div>
                       </td>
-                      <td><Badge type="gray">{item.category}</Badge></td>
+                      <td className="type-cell"><Badge type="gray"><span className="type-cell__text">{item.category}</span></Badge></td>
                       <td className="text-muted font-mono batch-number">{formatItemCode(item.batchNumber)}</td>
                       <td>{Rs(item.costPrice)}</td>
                       <td className="font-bold qty-cell">{availableQty}</td>
