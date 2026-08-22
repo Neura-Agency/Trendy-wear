@@ -32,3 +32,26 @@
 @media (min-width: 769px) and (max-width: 1180px) {
   html { --ui-zoom: 0.74; }
 }
+
+/* ── Unified page padding (matches Stock & Inventory) ───────
+   Every page relies on .main-area padding (20px 24px 48px).
+   Page-level wrappers must not add extra padding/centering. */
+.page-shell {
+  width: 100%;
+  max-width: none;
+  margin: 0;
+  padding: 0;
+}
+
+.owners-page,
+.inventory-page,
+.home-dashboard,
+.reports-page,
+.credentials-page,
+.direct-sales-page,
+.all-inventory-page {
+  max-width: none;
+  margin: 0;
+  padding: 0;
+  width: 100%;
+}
