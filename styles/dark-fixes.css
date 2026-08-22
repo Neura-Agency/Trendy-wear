@@ -53,3 +53,96 @@ html[data-theme="dark"] table tbody td.text-muted,
 html[data-theme="dark"] table tbody td .text-muted {
   color: var(--text-muted) !important;
 }
+
+/* ── Sidebar: match the rest of the dark shell ──────────────────── */
+html[data-theme="dark"] .sidebar,
+html[data-theme="dark"] .sidebar-brand,
+html[data-theme="dark"] .sidebar-footer {
+  background: var(--surface) !important;
+  border-color: var(--border) !important;
+}
+
+html[data-theme="dark"] .sidebar {
+  border-right: 1px solid var(--border) !important;
+}
+
+html[data-theme="dark"] .nav-group-label,
+html[data-theme="dark"] .sidebar-footer .label {
+  color: var(--text-faint) !important;
+}
+
+html[data-theme="dark"] .nav-item {
+  color: var(--text-muted) !important;
+}
+
+html[data-theme="dark"] .nav-item:hover {
+  background: var(--surface-2) !important;
+  color: var(--text-head) !important;
+}
+
+html[data-theme="dark"] .nav-item.active {
+  background: var(--surface-3) !important;
+  color: var(--text-head) !important;
+}
+
+html[data-theme="dark"] .sidebar-footer .value,
+html[data-theme="dark"] .sidebar .brand-text {
+  color: var(--text-head) !important;
+}
+
+/* ── Chart legend / small caption text was too dim to read ──────── */
+html[data-theme="dark"] [style*="color:#94a3b8"],
+html[data-theme="dark"] [style*="color: #94a3b8"],
+html[data-theme="dark"] [style*="color:#cbd5e1"],
+html[data-theme="dark"] [style*="color: #cbd5e1"] {
+  color: var(--text-body) !important;
+}
+
+/* ── Size / color / brand chips on item rows ────────────────────── */
+html[data-theme="dark"] .badge-blue {
+  color: #93c5fd !important;
+  background: rgba(59, 130, 246, 0.14) !important;
+  border-color: rgba(59, 130, 246, 0.32) !important;
+}
+
+html[data-theme="dark"] .badge-purple {
+  color: #c4b5fd !important;
+  background: rgba(139, 92, 246, 0.14) !important;
+  border-color: rgba(139, 92, 246, 0.32) !important;
+}
+
+html[data-theme="dark"] .badge-green {
+  color: #6ee7b7 !important;
+  background: rgba(16, 185, 129, 0.14) !important;
+  border-color: rgba(16, 185, 129, 0.32) !important;
+}
+
+html[data-theme="dark"] .badge-red {
+  color: #fca5a5 !important;
+  background: rgba(239, 68, 68, 0.14) !important;
+  border-color: rgba(239, 68, 68, 0.32) !important;
+}
+
+html[data-theme="dark"] .badge-amber {
+  color: #fcd34d !important;
+  background: rgba(245, 158, 11, 0.14) !important;
+  border-color: rgba(245, 158, 11, 0.32) !important;
+}
+
+html[data-theme="dark"] .badge-gray {
+  color: var(--text-muted) !important;
+  background: var(--surface-2) !important;
+  border-color: var(--border-2) !important;
+}
+
+/* ── Product thumbnails: soften harsh white photo backgrounds ───── */
+html[data-theme="dark"] td img,
+html[data-theme="dark"] .mobile-card img,
+html[data-theme="dark"] .item-thumb img {
+  filter: brightness(0.84) contrast(0.95);
+  background: var(--surface-2);
+}
+
+html[data-theme="dark"] td img:hover {
+  filter: none;
+}
