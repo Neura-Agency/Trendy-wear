@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import React, { useState, useEffect } from "react";
 import Link from "next/link";
 import { useRouter } from "next/router";
 import { LayoutProps } from "../types";
@@ -298,7 +298,7 @@ export default function Layout({ children, user, onLogout }: LayoutProps) {
     }
   };
 
-  const themeOptions: { id: ThemePref; label: string; icon: JSX.Element }[] = [
+  const themeOptions: { id: ThemePref; label: string; icon: React.ReactNode }[] = [
     {
       id: "light",
       label: "Light",
