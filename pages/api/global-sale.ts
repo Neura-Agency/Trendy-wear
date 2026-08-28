@@ -5,13 +5,13 @@ import { requireSession } from '../../lib/api/session'
 
 const INVENTORY_ENGINE_VERSION = 2
 
-function stableRequestKey(req: NextApiRequest, body: any): string {
+function stableRequestKey(accountId: string, req: NextApiRequest, body: any): string {
   const supplied = String(req.headers['idempotency-key'] || body?.requestKey || body?.orderCode || '').trim()
-  if (supplied) return supplied
+  if (supplied) return `${accountId}:${supplied}`
   // The UI should provide an idempotency key for retries. The deterministic fallback
-  // prevents accidental duplicate processing for the same account/body during a retry.
+  // is scoped to the authenticated account so concurrent retries collapse safely.
   return crypto.createHash('sha256').update(JSON.stringify({
-    account: (req as any).sessionAccountId || req.headers.cookie || '',
+    accountId,
     productId: body?.productId || null,
     productName: body?.productName || null,
     quantity: body?.quantity || null,
@@ -91,7 +91,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       productId = data[0].id
     }
 
-    const requestKey = stableRequestKey(req, body)
+    const requestKey = stableRequestKey(session.accountId, req, body)
     const { data, error } = await supabaseAdmin.rpc('sell_from_inventory', {
       p_payload: {
         request_key: requestKey,
