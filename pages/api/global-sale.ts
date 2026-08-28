@@ -114,6 +114,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
         size_quantities: body.sizeQuantities || null,
         color_quantities: body.colorQuantities || null,
         variant_quantities: body.variantQuantities || null,
+        created_by: session.accountId,
       },
     })
 
