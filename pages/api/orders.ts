@@ -770,7 +770,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
         return res.json({ success: true, updated: ids.length })
       }
 
-      // ── Mark order as returned (Scenario A — Sale Return) ──────────────────
+      // ── Mark order as returned — global inventory ───────────────────────────
       if (req.body?.isReturn === true) {
         const {
           id,
@@ -783,135 +783,27 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
         } = req.body;
         if (!id) return res.status(400).json({ error: 'id is required' });
 
-        // Fetch order details
-        const { data: order, error: fetchErr } = await supabaseAdmin
-          .from(TABLES.ORDERS)
-          .select('id, quantity, size_quantities, color_quantities, variant_quantities, return_quantity, return_size_quantities, return_color_quantities, return_variant_quantities, store_inventory_id, order_returned, commission_percent, selling_price, shipment_cost, cost_price')
-          .eq('id', id)
-          .single();
-
-        if (fetchErr || !order) return res.status(404).json({ error: 'Order not found' });
-
-        const originalQty = num(order.quantity);
-        const alreadyReturnedQty = Math.max(0, num(order.return_quantity));
-        const remainingQty = Math.max(0, originalQty - alreadyReturnedQty);
-        if (remainingQty < 1) return res.status(400).json({ error: 'Order already fully returned' });
-
-        const retQty = returnQuantity != null ? Math.min(num(returnQuantity), remainingQty) : remainingQty;
-        if (retQty < 1) return res.status(400).json({ error: 'returnQuantity must be at least 1' });
-        const normalizedReturnVariants = normalizeVariantQuantities(returnVariantQuantities)
-        const returnVariantRollups = rollupVariantQuantities(normalizedReturnVariants)
-        const effectiveReturnSizeQuantities = returnVariantRollups.sizeQuantities ?? normalizeFlatQuantities(returnSizeQuantities)
-        const effectiveReturnColorQuantities = returnVariantRollups.colorQuantities ?? normalizeFlatQuantities(returnColorQuantities)
-        const remainingVariantQuantities = adjustVariantQuantities(order.variant_quantities, order.return_variant_quantities, -1)
-
-        if (normalizedReturnVariants) {
-          const variantValidationError = validateVariantRequest(normalizedReturnVariants, remainingVariantQuantities)
-          if (variantValidationError) {
-            return res.status(400).json({ error: `returnVariantQuantities exceed remaining quantity: ${variantValidationError}` })
-          }
-        }
-
-        const mergeFlatQuantities = (base: unknown, incoming: unknown) => {
-          const next = { ...(normalizeFlatQuantities(base) || {}) }
-          const additions = normalizeFlatQuantities(incoming) || {}
-          Object.entries(additions).forEach(([key, value]) => {
-            next[key] = (next[key] || 0) + num(value)
-          })
-          return Object.keys(next).length ? next : null
-        }
-
-        const mergedReturnSizeQuantities = mergeFlatQuantities(order.return_size_quantities, effectiveReturnSizeQuantities)
-        const mergedReturnColorQuantities = mergeFlatQuantities(order.return_color_quantities, effectiveReturnColorQuantities)
-        const mergedReturnVariantQuantities = mergeVariantQuantities(order.return_variant_quantities, normalizedReturnVariants)
-        const newReturnQty = alreadyReturnedQty + retQty
-        const fullyReturned = newReturnQty >= originalQty
-
-        const remainingUnits = Math.max(0, originalQty - newReturnQty)
-        const remainingGross = num(order.selling_price) * remainingUnits - num(order.shipment_cost)
-        const remainingCommission = Math.round(remainingGross * num(order.commission_percent)) / 100
-        const remainingAdminTake = remainingGross - remainingCommission
-        const remainingProfit = remainingAdminTake - (num(order.cost_price) * remainingUnits)
-
-        // 1. Update return progress and remaining financials
-        const { error: updErr } = await supabaseAdmin
-          .from(TABLES.ORDERS)
-          .update({
-            order_returned: fullyReturned,
-            profit: Math.max(0, remainingProfit),
-            admin_take: Math.max(0, remainingAdminTake),
-            commission_amount: Math.max(0, remainingCommission),
-            return_quantity: newReturnQty,
+        const { data, error } = await supabaseAdmin.rpc('process_global_order_return', {
+          p_payload: {
+            order_id: id,
+            return_quantity: returnQuantity ?? null,
             return_reason: returnReason || null,
-            return_size_quantities: mergedReturnSizeQuantities,
-            return_color_quantities: mergedReturnColorQuantities,
-            return_variant_quantities: mergedReturnVariantQuantities,
-            returned_at: new Date().toISOString(),
+            return_size_quantities: returnSizeQuantities || null,
+            return_color_quantities: returnColorQuantities || null,
+            return_variant_quantities: returnVariantQuantities || null,
             return_proof_url: returnProofUrl || null,
-          })
-          .eq('id', id);
+          },
+        });
 
-        if (updErr) {
-          console.error('Return update error:', updErr);
-          const message = updErr.message || JSON.stringify(updErr);
-          return res.status(500).json({ error: `Failed to mark order as returned: ${message}` });
+        if (error) {
+          const message = error.message || 'Failed to process return';
+          if (message.includes('ORDER_NOT_FOUND')) return res.status(404).json({ error: 'Order not found' });
+          if (message.includes('RETURN_QUANTITY_MUST_BE_POSITIVE')) return res.status(400).json({ error: 'returnQuantity must be at least 1' });
+          if (message.includes('RETURN_EXCEEDS_SOLD_ALLOCATION')) return res.status(400).json({ error: 'Return quantity exceeds the inventory consumed by this order' });
+          return res.status(500).json({ error: message });
         }
 
-        // 2. Restore store_inventory quantities
-        if (order.store_inventory_id) {
-          const { data: inv, error: invFetchErr } = await supabaseAdmin
-            .from(TABLES.STORE_INVENTORY)
-            .select('quantity_remaining, size_quantities_remaining, color_quantities_remaining, variant_quantities_remaining, pending_return_qty, pending_return_size_quantities, pending_return_color_quantities, pending_return_variant_quantities')
-            .eq('id', order.store_inventory_id)
-            .single();
-
-          if (!invFetchErr && inv) {
-            // Rebuild size/color remaining
-            const newSizeRem = { ...(inv.size_quantities_remaining || {}) } as Record<string, number>;
-            if (effectiveReturnSizeQuantities) {
-              Object.entries(effectiveReturnSizeQuantities).forEach(([size, qty]) => {
-                newSizeRem[size] = (newSizeRem[size] || 0) + num(qty);
-              });
-            }
-            const newColorRem = { ...(inv.color_quantities_remaining || {}) } as Record<string, number>;
-            if (effectiveReturnColorQuantities) {
-              Object.entries(effectiveReturnColorQuantities).forEach(([color, qty]) => {
-                newColorRem[color] = (newColorRem[color] || 0) + num(qty);
-              });
-            }
-
-            // Pending return tracking (for Scenario B)
-            const newPendingSize = { ...(inv.pending_return_size_quantities || {}) } as Record<string, number>;
-            if (effectiveReturnSizeQuantities) {
-              Object.entries(effectiveReturnSizeQuantities).forEach(([size, qty]) => {
-                newPendingSize[size] = (newPendingSize[size] || 0) + num(qty);
-              });
-            }
-            const newPendingColor = { ...(inv.pending_return_color_quantities || {}) } as Record<string, number>;
-            if (effectiveReturnColorQuantities) {
-              Object.entries(effectiveReturnColorQuantities).forEach(([color, qty]) => {
-                newPendingColor[color] = (newPendingColor[color] || 0) + num(qty);
-              });
-            }
-
-            const { error: invUpdErr } = await supabaseAdmin
-              .from(TABLES.STORE_INVENTORY)
-              .update({
-                quantity_remaining: num(inv.quantity_remaining) + retQty,
-                size_quantities_remaining: Object.keys(newSizeRem).length ? newSizeRem : null,
-                color_quantities_remaining: Object.keys(newColorRem).length ? newColorRem : null,
-                variant_quantities_remaining: adjustVariantQuantities(inv.variant_quantities_remaining, normalizedReturnVariants, 1) ?? inv.variant_quantities_remaining,
-                pending_return_qty: (num(inv.pending_return_qty) || 0) + retQty,
-                pending_return_size_quantities: Object.keys(newPendingSize).length ? newPendingSize : null,
-                pending_return_color_quantities: Object.keys(newPendingColor).length ? newPendingColor : null,
-                pending_return_variant_quantities: adjustVariantQuantities(inv.pending_return_variant_quantities, normalizedReturnVariants, 1) ?? inv.pending_return_variant_quantities,
-              })
-              .eq('id', order.store_inventory_id);
-            if (invUpdErr) console.error('Inventory return error:', invUpdErr);
-          }
-        }
-
-        return res.json({ success: true });
+        return res.json({ success: true, returned: data?.returned ?? null });
       }
 
       // ── Refund ──────────────────────────────────────────────────────────────
