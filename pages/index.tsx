@@ -628,7 +628,7 @@ function InlineCommEdit({ value, onSave }) {
 }
 
 // ─── STORES OVERVIEW SECTION (Reworked for Table View) ───────────────
-function StoresOverviewSection({ stores, orders, storeInventory, filter, getFiltered, onPayOrders, onAssignItem, inventory, isAdmin, isSuperAdmin, onDeleteStore }) {
+function StoresOverviewSection({ stores, orders, storeInventory, filter, getFiltered, onPayOrders, inventory, isAdmin, isSuperAdmin, onDeleteStore }) {
   const { confirmDialog } = usePopup();
   const storeNames = Object.keys(stores);
   const [selected, setSelected] = useState(storeNames[0] || "");
@@ -2478,7 +2478,6 @@ export default function Home({ user, onLogin }: PageProps) {
               filter="All"
               getFiltered={getFiltered}
               onPayOrders={handlePayOrders}
-              onAssignItem={(name) => router.push(`/inventory?assign=${name}`)}
               isSuperAdmin={isSuperAdmin}
               onDeleteStore={handleDeleteStore}
               isAdmin={isAdmin}
