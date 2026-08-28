@@ -918,10 +918,6 @@ function StoresOverviewSection({ stores, orders, storeInventory, filter, getFilt
             >
               {paying === 'ALL' ? 'Processing...' : `Confirm & Mark All Paid (${Rs(totalUnpaid)})`}
             </button>
-          )}
-          <button className="btn btn-primary" style={{ flex: '1 1 200px', height: 48 }} onClick={() => onAssignItem(name)}>
-            Stock Management (Send Goods)
-          </button>
         </div>
       )}
     </div>
