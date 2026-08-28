@@ -247,7 +247,7 @@ begin
   loop
     exit when v_remaining <= 0;
     v_take := least(
-      quantity + bonus_quantity - returned_quantity,
+      v_row.quantity + v_row.bonus_quantity - v_row.returned_quantity,
       v_remaining
     );
 
