@@ -5,14 +5,16 @@ import { requireSession } from '../../lib/api/session'
 
 const INVENTORY_ENGINE_VERSION = 2
 
-function stableRequestKey(accountId: string, req: NextApiRequest, body: any): string {
-  const supplied = String(req.headers['idempotency-key'] || body?.requestKey || body?.orderCode || '').trim()
-  if (supplied) return `${accountId}:${supplied}`
-  // The UI should provide an idempotency key for retries. The deterministic fallback
-  // is scoped to the authenticated account so concurrent retries collapse safely.
+function stableRequestKey(accountId: string, req: NextApiRequest, body: any, productId: string): string {
+  const explicit = String(req.headers['idempotency-key'] || body?.requestKey || '').trim()
+  if (explicit) return `${accountId}:${explicit}`
+
+  // orderCode identifies a cart/order, not an individual item. Include product and
+  // the item-level request payload so a multi-item cart cannot collapse into one sale.
   return crypto.createHash('sha256').update(JSON.stringify({
     accountId,
-    productId: body?.productId || null,
+    orderCode: body?.orderCode || null,
+    productId,
     productName: body?.productName || null,
     quantity: body?.quantity || null,
     extraQty: body?.extraQty || 0,
@@ -21,6 +23,7 @@ function stableRequestKey(accountId: string, req: NextApiRequest, body: any): st
     extraCharges: body?.extraCharges || 0,
     clientName: body?.clientName || null,
     occurredAt: body?.occurredAt || null,
+    variantQuantities: body?.variantQuantities || null,
   })).digest('hex')
 }
 
@@ -91,7 +94,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       productId = data[0].id
     }
 
-    const requestKey = stableRequestKey(session.accountId, req, body)
+    const requestKey = stableRequestKey(session.accountId, req, body, productId)
     const { data, error } = await supabaseAdmin.rpc('sell_from_inventory', {
       p_payload: {
         request_key: requestKey,
