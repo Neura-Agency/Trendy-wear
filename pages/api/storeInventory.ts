@@ -181,6 +181,14 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     }
 
     if (req.method === 'POST') {
+      return res.status(410).json({
+        error: 'Inventory allotment is retired. Stores sell from global inventory.',
+        code: 'STORE_ALLOTMENT_RETIRED',
+      })
+    }
+
+    /* Legacy POST implementation retained below only for staged retirement/recovery.
+       It is unreachable through the supported API path. */
       const { storeName, batchNumber, quantity, sizeQuantitiesAssigned, colorQuantitiesAssigned, variantQuantitiesAssigned, ownerSupplyPrice, commissionPercent, extraQty: rawExtra } = req.body || {}
       const extraQty = num(rawExtra)
 
