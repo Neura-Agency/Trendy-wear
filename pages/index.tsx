@@ -663,7 +663,7 @@ function StoresOverviewSection({ stores, orders, storeInventory, filter, getFilt
 
   const products = Array.from(new Set([
     ...sOrders.map(o => o.productName),
-    ...Object.values(storeInventory[name] || {}).map(si => (si as StoreInventoryItem).productName)
+    ...inventory.map(i => i.productName)
   ])).filter(Boolean);
 
   // All unpaid orders for this store
@@ -737,7 +737,7 @@ function StoresOverviewSection({ stores, orders, storeInventory, filter, getFilt
             ) : (
               products.filter(p => !search || p.toLowerCase().includes(search.toLowerCase())).map(productName => {
                 const catOrders = sOrders.filter(o => o.productName === productName);
-                const catInventory = Object.values(storeInventory[name] || {}).filter(si => (si as StoreInventoryItem).productName === productName);
+                const catInventory = inventory.filter(i => i.productName === productName);
 
                 const unpaidOrders = catOrders.filter(o => o.paymentStatus !== true && (o.commissionAmount || 0) > 0);
                 const paidOrders = catOrders.filter(o => o.paymentStatus === true);
@@ -746,7 +746,7 @@ function StoresOverviewSection({ stores, orders, storeInventory, filter, getFilt
                 const totalPayout = catOrders.reduce((acc, o) => acc + (o.commissionAmount || 0), 0);
 
                 const itemsSold = catOrders.reduce((acc: number, o) => acc + effectiveQty(o), 0);
-                const leftover = catInventory.reduce((acc: number, si) => acc + ((si as StoreInventoryItem).quantityRemaining as number), 0) as number;
+                const leftover = catInventory.reduce((acc: number, i: any) => acc + Math.max(0, Number(i.quantityAvailable) || 0), 0);
                 const expenses = catOrders.reduce((acc, o) => acc + (o.shipmentCost || 0), 0);
                 const partnerCut = totalPayout;
                 const profit = catOrders.reduce((acc, o) => acc + (o.profit || 0), 0);
@@ -758,7 +758,7 @@ function StoresOverviewSection({ stores, orders, storeInventory, filter, getFilt
                     <td className="font-bold">{productName}</td>
                     <td className="muted" style={{fontWeight:600, fontFamily:'monospace', fontSize:11}}>
                       {(() => {
-                        const batchNumbers = [...new Set(catInventory.map((si: any) => si.batchNumber).filter(Boolean))];
+                        const batchNumbers = [...new Set(catInventory.map((i: any) => i.batchNumber).filter(Boolean))];
                         return batchNumbers.length > 0 ? batchNumbers.map((b: string) => formatItemCode(b)).join(', ') : '—';
                       })()}
                     </td>
@@ -1893,31 +1893,12 @@ export default function Home({ user, onLogin }: PageProps) {
   const totalExpenses = isAdmin ? adminExpenses : 0;
   // Net Profit = Revenue - All Expenses
   const totalProfitValue = isAdmin ? (totalGross - adminExpenses) : totalShopCut;
-  const totalStockQty = (() => {
-    if (isSuperAdmin) {
-      return data.inventory.reduce((s, i) => s + (i.quantityAvailable || 0), 0)
-    }
-
-    // Store manager (admin with managed stores): stock = sum of store_inventory.quantity_remaining across managed stores
-    if (isStoreManager) {
-      const names = Object.keys(availableStores || {})
-      return names.reduce((sum, storeName) => {
-        const items = Object.values(data.storeInventory[storeName] || {}) as any[]
-        return sum + items.reduce((s, si) => s + (Number(si.quantityRemaining) || 0), 0)
-      }, 0)
-    }
-
-    // Regular admin (no managed stores): keep existing warehouse behavior
-    if (isAdmin) {
-      return data.inventory.reduce((s, i) => s + (i.quantityAvailable || 0), 0)
-    }
-
-    // Store owner: stock = own store quantity_remaining
-    return Object.values(data.storeInventory[user.storeName] || {}).reduce(
-      (s, si: any) => s + (Number(si.quantityRemaining) || 0),
-      0
-    )
-  })();
+  // Global inventory is shared by every store. Store identity affects sales/reporting,
+  // never the physical stock pool.
+  const totalStockQty = data.inventory.reduce(
+    (s, i) => s + Math.max(0, Number(i.quantityAvailable) || 0),
+    0
+  );
 
   const stockAsOfIso = (() => {
     const meta = data.storeInventoryMeta
