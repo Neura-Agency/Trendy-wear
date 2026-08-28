@@ -1082,112 +1082,26 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
         });
       }
 
-      // ── Undo Return ─────────────────────────────────────────────────────────
+      // ── Undo Return — reverse the exact global batch movements ───────────────
       if (req.body?.isUndoReturn === true) {
         const { id } = req.body;
         if (!id) return res.status(400).json({ error: 'id is required' });
 
-        const { data: order, error: fetchErr } = await supabaseAdmin
-          .from(TABLES.ORDERS)
-          .select('id, quantity, selling_price, shipment_cost, cost_price, commission_percent, store_inventory_id, order_returned, return_quantity, refund_quantity, return_size_quantities, return_color_quantities, return_variant_quantities')
-          .eq('id', id)
-          .single();
+        const { data, error } = await supabaseAdmin.rpc('undo_global_order_return', {
+          p_order_id: id,
+        });
 
-        if (fetchErr || !order) return res.status(404).json({ error: 'Order not found' });
-        if (!num(order.return_quantity)) return res.status(400).json({ error: 'Order has no return to undo' });
-
-        // Recalculate original financials (accounting for any refunds that remain)
-        const qty = num(order.quantity);
-        const price = num(order.selling_price);
-        const ship = num(order.shipment_cost);
-        const cost = num(order.cost_price);
-        const pct = num(order.commission_percent);
-        const alreadyRefundedQty = Math.max(0, num(order.refund_quantity));
-        const effectiveQty = Math.max(0, qty - alreadyRefundedQty);
-        const gross = price * effectiveQty - ship;
-        const commission = Math.round(gross * pct / 100);
-        const adminTake = gross - commission;
-        const profit = adminTake - cost * effectiveQty;
-
-        // 1. Restore order financials and clear return flags
-        const { error: updErr } = await supabaseAdmin
-          .from(TABLES.ORDERS)
-          .update({
-            order_returned: false,
-            profit,
-            admin_take: adminTake,
-            commission_amount: commission,
-            return_quantity: null,
-            return_reason: null,
-            return_size_quantities: null,
-            return_color_quantities: null,
-            return_variant_quantities: null,
-            returned_at: null,
-          })
-          .eq('id', id);
-
-        if (updErr) {
-          console.error('Undo return update error:', updErr);
-          return res.status(500).json({ error: 'Failed to undo return' });
-        }
-
-        // 2. Subtract the returned qty back from store_inventory
-        if (order.store_inventory_id) {
-          const { data: inv, error: invFetchErr } = await supabaseAdmin
-            .from(TABLES.STORE_INVENTORY)
-            .select('quantity_remaining, size_quantities_remaining, color_quantities_remaining, variant_quantities_remaining, pending_return_qty, pending_return_size_quantities, pending_return_color_quantities, pending_return_variant_quantities')
-            .eq('id', order.store_inventory_id)
-            .single();
-
-          if (!invFetchErr && inv) {
-            const retQty = num(order.return_quantity) || qty;
-            const retSizes = order.return_size_quantities as Record<string, number> | null;
-            const retColors = order.return_color_quantities as Record<string, number> | null;
-            const retVariants = normalizeVariantQuantities(order.return_variant_quantities);
-
-            const newSizeRem = { ...(inv.size_quantities_remaining || {}) } as Record<string, number>;
-            if (retSizes) {
-              Object.entries(retSizes).forEach(([size, q]) => {
-                newSizeRem[size] = Math.max(0, (newSizeRem[size] || 0) - num(q));
-              });
-            }
-            const newColorRem = { ...(inv.color_quantities_remaining || {}) } as Record<string, number>;
-            if (retColors) {
-              Object.entries(retColors).forEach(([color, q]) => {
-                newColorRem[color] = Math.max(0, (newColorRem[color] || 0) - num(q));
-              });
-            }
-            const newPendingSize = { ...(inv.pending_return_size_quantities || {}) } as Record<string, number>;
-            if (retSizes) {
-              Object.entries(retSizes).forEach(([size, q]) => {
-                newPendingSize[size] = Math.max(0, (newPendingSize[size] || 0) - num(q));
-              });
-            }
-            const newPendingColor = { ...(inv.pending_return_color_quantities || {}) } as Record<string, number>;
-            if (retColors) {
-              Object.entries(retColors).forEach(([color, q]) => {
-                newPendingColor[color] = Math.max(0, (newPendingColor[color] || 0) - num(q));
-              });
-            }
-
-            const { error: invUpdErr } = await supabaseAdmin
-              .from(TABLES.STORE_INVENTORY)
-              .update({
-                quantity_remaining: Math.max(0, num(inv.quantity_remaining) - retQty),
-                size_quantities_remaining: Object.keys(newSizeRem).length ? newSizeRem : null,
-                color_quantities_remaining: Object.keys(newColorRem).length ? newColorRem : null,
-                variant_quantities_remaining: adjustVariantQuantities(inv.variant_quantities_remaining, retVariants, -1),
-                pending_return_qty: Math.max(0, (num(inv.pending_return_qty) || 0) - retQty),
-                pending_return_size_quantities: Object.keys(newPendingSize).length ? newPendingSize : null,
-                pending_return_color_quantities: Object.keys(newPendingColor).length ? newPendingColor : null,
-                pending_return_variant_quantities: adjustVariantQuantities(inv.pending_return_variant_quantities, retVariants, -1),
-              })
-              .eq('id', order.store_inventory_id);
-            if (invUpdErr) console.error('Undo return inventory error:', invUpdErr);
+        if (error) {
+          const message = error.message || 'Failed to undo return';
+          if (message.includes('ORDER_NOT_FOUND')) return res.status(404).json({ error: 'Order not found' });
+          if (message.includes('ORDER_HAS_NO_RETURN')) return res.status(400).json({ error: 'Order has no return to undo' });
+          if (message.includes('UNDO_RETURN_INSUFFICIENT_GLOBAL_STOCK')) {
+            return res.status(409).json({ error: 'Global inventory no longer has enough stock to undo this return' });
           }
+          return res.status(500).json({ error: message });
         }
 
-        return res.json({ success: true });
+        return res.json({ success: true, undone: data?.undone ?? null });
       }
 
       // ── Undo Refund ─────────────────────────────────────────────────────────
