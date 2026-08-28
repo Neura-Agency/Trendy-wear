@@ -7,6 +7,7 @@ create table if not exists public.order_inventory_allocations (
   inventory_id uuid not null references public.inventory(id) on delete restrict,
   quantity integer not null default 0 check (quantity >= 0),
   bonus_quantity integer not null default 0 check (bonus_quantity >= 0),
+  returned_quantity integer not null default 0 check (returned_quantity >= 0),
   unit_cost numeric(12,2) not null default 0,
   variant_quantities jsonb,
   created_at timestamptz not null default now(),
@@ -14,6 +15,12 @@ create table if not exists public.order_inventory_allocations (
 );
 create index if not exists idx_order_inventory_allocations_order on public.order_inventory_allocations(order_id);
 create index if not exists idx_order_inventory_allocations_inventory on public.order_inventory_allocations(inventory_id);
+
+alter table public.orders
+  add column if not exists extra_qty integer not null default 0;
+
+alter table public.order_inventory_allocations
+  add column if not exists returned_quantity integer not null default 0;
 
 create table if not exists public.inventory_sale_idempotency (
   request_key text primary key,
@@ -53,11 +60,13 @@ declare
   v_gross numeric;
   v_admin_take numeric;
   v_cost_sold numeric := 0;
+  v_cost_physical numeric := 0;
   v_available integer := 0;
   v_remaining integer;
   v_remaining_sold integer;
   v_remaining_bonus integer;
   v_order_id uuid;
+  v_created_by uuid := nullif(p_payload->>'created_by','')::uuid;
   v_existing_order uuid;
   v_primary_inventory_id uuid;
   v_row record;
@@ -115,6 +124,7 @@ begin
     if v_available < v_quantity then
       v_cost_sold := v_cost_sold + (v_row.cost_price * least(v_take, v_quantity-v_available));
     end if;
+    v_cost_physical := v_cost_physical + (v_row.cost_price * v_take);
     if v_primary_inventory_id is null then
       v_primary_inventory_id := v_row.id;
     end if;
@@ -135,18 +145,18 @@ begin
   insert into public.orders(
     order_code,store_id,product_id,inventory_id,store_inventory_id,product_name,quantity,size_quantities,color_quantities,variant_quantities,
     selling_price,shipment_cost,client_name,order_type,occurred_at,included_in_payout,
-    commission_percent,cost_price,commission_amount,admin_take,profit
+    commission_percent,cost_price,commission_amount,admin_take,profit,extra_qty,created_by
   ) values (
     v_order_code,v_store_id,v_product_id,v_primary_inventory_id,null,v_product_name,v_quantity,
     p_payload->'size_quantities',p_payload->'color_quantities',p_payload->'variant_quantities',
     v_price,v_deductions,v_client,v_order_type,v_occurred_at,false,v_commission,
     case when v_quantity > 0 then round(v_cost_sold/v_quantity,2) else 0 end,
-    v_commission_amount,v_admin_take,v_admin_take-v_cost_sold
+    v_commission_amount,v_admin_take-v_cost_physical,v_bonus,v_created_by
   ) returning id into v_order_id;
 
   -- Phase 2: consume the same locked FIFO set and record exact sold/bonus quantities.
-  -- Sold units consume the FIFO cost basis first; bonus units are physical deductions
-  -- but are not included in the billed COGS snapshot, preserving existing extraQty semantics.
+  -- Every physically consumed unit contributes to COGS. Bonus units are still free
+  -- revenue-wise, but they are real stock movements and therefore remain in COGS.
   v_remaining := v_total;
   v_remaining_sold := v_quantity;
   v_remaining_bonus := v_bonus;
@@ -205,3 +215,68 @@ $$;
 
 revoke all on function public.sell_from_inventory(jsonb) from public;
 grant execute on function public.sell_from_inventory(jsonb) to service_role;
+
+-- Atomically return physical units to the exact batches previously consumed by an order.
+-- Partial returns consume allocation quantities oldest-first; undoing a return reverses
+-- that movement from the same allocations. This keeps COGS/batch traceability intact.
+create or replace function public.return_order_to_global_inventory(
+  p_order_id uuid,
+  p_return_qty integer
+) returns jsonb
+language plpgsql
+security definer
+set search_path = public
+as $
+declare
+  v_remaining integer := greatest(0, coalesce(p_return_qty,0));
+  v_returned integer := 0;
+  v_row record;
+  v_take integer;
+begin
+  if v_remaining < 1 then
+    raise exception using errcode='P0001', message='RETURN_QUANTITY_MUST_BE_POSITIVE';
+  end if;
+
+  for v_row in
+    select id, inventory_id, quantity, bonus_quantity, returned_quantity
+    from public.order_inventory_allocations
+    where order_id = p_order_id
+      and (quantity + bonus_quantity - returned_quantity) > 0
+    order by created_at asc, id asc
+    for update
+  loop
+    exit when v_remaining <= 0;
+    v_take := least(
+      quantity + bonus_quantity - returned_quantity,
+      v_remaining
+    );
+
+    update public.inventory
+    set quantity_available = quantity_available + v_take,
+        updated_at = now()
+    where id = v_row.inventory_id;
+
+    if not found then
+      raise exception using errcode='P0001', message='INVENTORY_BATCH_NOT_FOUND';
+    end if;
+
+    update public.order_inventory_allocations
+    set returned_quantity = returned_quantity + v_take
+    where id = v_row.id;
+
+    v_remaining := v_remaining - v_take;
+    v_returned := v_returned + v_take;
+  end loop;
+
+  if v_remaining > 0 then
+    raise exception using errcode='P0001', message=format('RETURN_EXCEEDS_SOLD_ALLOCATION: remaining=%s',v_remaining);
+  end if;
+
+  return jsonb_build_object('returned', v_returned);
+end;
+$;
+
+revoke all on function public.return_order_to_global_inventory(uuid, integer) from public;
+grant execute on function public.return_order_to_global_inventory(uuid, integer) to service_role;
+
+
