@@ -57,6 +57,7 @@ declare
   v_remaining_bonus integer;
   v_order_id uuid;
   v_existing_order uuid;
+  v_primary_inventory_id uuid;
   v_row record;
   v_take integer;
   v_bonus_take integer;
@@ -112,6 +113,9 @@ begin
     if v_available < v_quantity then
       v_cost_sold := v_cost_sold + (v_row.cost_price * least(v_take, v_quantity-v_available));
     end if;
+    if v_primary_inventory_id is null then
+      v_primary_inventory_id := v_row.id;
+    end if;
     v_available := v_available + v_take;
   end loop;
 
@@ -127,19 +131,21 @@ begin
   end if;
 
   -- One PostgreSQL transaction: order, stock and allocation rows commit together.
+  -- inventory_id remains populated with the primary FIFO batch for compatibility;
+  -- exact multi-batch traceability lives in order_inventory_allocations.
   insert into public.orders(
-    order_code,store_id,product_id,product_name,quantity,size_quantities,color_quantities,variant_quantities,
+    order_code,store_id,product_id,inventory_id,store_inventory_id,product_name,quantity,size_quantities,color_quantities,variant_quantities,
     selling_price,shipment_cost,client_name,order_type,occurred_at,included_in_payout,
     commission_percent,cost_price,commission_amount,admin_take,profit
   ) values (
-    v_order_code,v_store_id,v_product_id,v_product_name,v_quantity,
+    v_order_code,v_store_id,v_product_id,v_primary_inventory_id,null,v_product_name,v_quantity,
     p_payload->'size_quantities',p_payload->'color_quantities',p_payload->'variant_quantities',
     v_price,v_deductions,v_client,v_order_type,v_occurred_at,false,v_commission,
     case when v_quantity > 0 then round(v_cost_sold/v_quantity,2) else 0 end,
     v_commission_amount,v_admin_take,v_admin_take-v_cost_sold
   ) returning id into v_order_id;
 
-  -- Phase 2: consume the same locked FIFO set and record exact batch allocations.
+  -- Phase 2: consume the same locked FIFO set and record exact batch quantities.
   v_remaining := v_total;
   v_remaining_bonus := v_bonus;
   for v_row in
@@ -166,7 +172,7 @@ begin
       order_id, inventory_id, quantity, bonus_quantity, unit_cost, variant_quantities
     ) values (
       v_order_id, v_row.id, v_sold_take, v_bonus_take, v_row.cost_price,
-      case when v_remaining = v_total then p_payload->'variant_quantities' else null end
+      case when v_row.id = v_primary_inventory_id then p_payload->'variant_quantities' else null end
     );
 
     v_remaining := v_remaining - v_take;
