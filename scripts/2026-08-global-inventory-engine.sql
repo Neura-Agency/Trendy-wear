@@ -414,3 +414,50 @@ $$;
 
 revoke all on function public.undo_global_order_return(uuid) from public;
 grant execute on function public.undo_global_order_return(uuid) to service_role;
+
+
+-- Restock the physical original item for a replacement without changing the order's
+-- normal return counters. The replacement flow keeps its own refund metadata.
+create or replace function public.restock_order_original_for_replacement(
+  p_order_id uuid,
+  p_quantity integer
+) returns jsonb
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  v_remaining integer := greatest(0,coalesce(p_quantity,0));
+  v_total integer := 0;
+  v_row record;
+  v_take integer;
+begin
+  if v_remaining < 1 then raise exception using errcode='P0001', message='RESTOCK_QUANTITY_MUST_BE_POSITIVE'; end if;
+
+  for v_row in
+    select id, inventory_id, quantity, bonus_quantity, returned_quantity
+    from public.order_inventory_allocations
+    where order_id=p_order_id
+    order by created_at desc, id desc
+    for update
+  loop
+    exit when v_remaining <= 0;
+    -- Prefer sold units; bonus units are also physical stock and may be used if needed.
+    v_take := least(v_remaining, greatest(0,v_row.quantity+v_row.bonus_quantity-v_row.returned_quantity));
+    if v_take > 0 then
+      update public.inventory
+      set quantity_available=quantity_available+v_take, updated_at=now()
+      where id=v_row.inventory_id;
+      if not found then raise exception using errcode='P0001', message='INVENTORY_BATCH_NOT_FOUND'; end if;
+      v_remaining := v_remaining-v_take;
+      v_total := v_total+v_take;
+    end if;
+  end loop;
+
+  if v_remaining > 0 then raise exception using errcode='P0001', message='RESTOCK_ALLOCATION_NOT_FOUND'; end if;
+  return jsonb_build_object('success',true,'restocked',v_total);
+end;
+$$;
+
+revoke all on function public.restock_order_original_for_replacement(uuid, integer) from public;
+grant execute on function public.restock_order_original_for_replacement(uuid, integer) to service_role;
