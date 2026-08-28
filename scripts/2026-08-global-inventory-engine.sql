@@ -54,6 +54,7 @@ declare
   v_cost_sold numeric := 0;
   v_available integer := 0;
   v_remaining integer;
+  v_remaining_sold integer;
   v_remaining_bonus integer;
   v_order_id uuid;
   v_existing_order uuid;
@@ -145,8 +146,11 @@ begin
     v_commission_amount,v_admin_take,v_admin_take-v_cost_sold
   ) returning id into v_order_id;
 
-  -- Phase 2: consume the same locked FIFO set and record exact batch quantities.
+  -- Phase 2: consume the same locked FIFO set and record exact sold/bonus quantities.
+  -- Sold units consume the FIFO cost basis first; bonus units are physical deductions
+  -- but are not included in the billed COGS snapshot, preserving existing extraQty semantics.
   v_remaining := v_total;
+  v_remaining_sold := v_quantity;
   v_remaining_bonus := v_bonus;
   for v_row in
     select id, quantity_available, cost_price
@@ -157,8 +161,8 @@ begin
   loop
     exit when v_remaining <= 0;
     v_take := least(v_row.quantity_available, v_remaining);
-    v_bonus_take := least(v_remaining_bonus, v_take);
-    v_sold_take := v_take - v_bonus_take;
+    v_sold_take := least(v_remaining_sold, v_take);
+    v_bonus_take := v_take - v_sold_take;
 
     update public.inventory
     set quantity_available = quantity_available - v_take,
@@ -176,10 +180,11 @@ begin
     );
 
     v_remaining := v_remaining - v_take;
+    v_remaining_sold := v_remaining_sold - v_sold_take;
     v_remaining_bonus := v_remaining_bonus - v_bonus_take;
   end loop;
 
-  if v_remaining > 0 then
+  if v_remaining > 0 or v_remaining_sold > 0 or v_remaining_bonus > 0 then
     raise exception using errcode='P0001', message='INVENTORY_DEDUCTION_INCOMPLETE';
   end if;
 
