@@ -87,62 +87,6 @@ async function deductGlobalInventoryFIFO(
   return { consumedIds, replacementCostTotal };
 }
 
-/**
- * Restore a refunded original item back onto its store allotment for
- * replacement Scenario A (original_item_returned = true). Uses the SAME
- * mechanism and inventory-allocation data as the existing sale-return flow:
- * the order's own store_inventory_id, incrementing quantity_remaining and
- * pending_return_* breakdowns. No new batch-selection rule.
- */
-async function restoreOrderInventoryToStore(
-  order: any,
-  sizeQuantities: Record<string, number> | null,
-  colorQuantities: Record<string, number> | null,
-  variants: VariantQuantities | null,
-  addQty: number,
-): Promise<void> {
-  if (!order.store_inventory_id) return
-
-  const { data: inv, error: invFetchErr } = await supabaseAdmin
-    .from(TABLES.STORE_INVENTORY)
-    .select('quantity_remaining, size_quantities_remaining, color_quantities_remaining, variant_quantities_remaining, pending_return_qty, pending_return_size_quantities, pending_return_color_quantities, pending_return_variant_quantities')
-    .eq('id', order.store_inventory_id)
-    .single()
-
-  if (invFetchErr || !inv) return
-
-  const newSizeRem = { ...(inv.size_quantities_remaining || {}) } as Record<string, number>
-  if (sizeQuantities) {
-    Object.entries(sizeQuantities).forEach(([size, qty]) => { newSizeRem[size] = (newSizeRem[size] || 0) + qty })
-  }
-  const newColorRem = { ...(inv.color_quantities_remaining || {}) } as Record<string, number>
-  if (colorQuantities) {
-    Object.entries(colorQuantities).forEach(([color, qty]) => { newColorRem[color] = (newColorRem[color] || 0) + qty })
-  }
-  const newPendingSize = { ...(inv.pending_return_size_quantities || {}) } as Record<string, number>
-  if (sizeQuantities) {
-    Object.entries(sizeQuantities).forEach(([size, qty]) => { newPendingSize[size] = (newPendingSize[size] || 0) + qty })
-  }
-  const newPendingColor = { ...(inv.pending_return_color_quantities || {}) } as Record<string, number>
-  if (colorQuantities) {
-    Object.entries(colorQuantities).forEach(([color, qty]) => { newPendingColor[color] = (newPendingColor[color] || 0) + qty })
-  }
-
-  await supabaseAdmin
-    .from(TABLES.STORE_INVENTORY)
-    .update({
-      quantity_remaining: num(inv.quantity_remaining) + addQty,
-      size_quantities_remaining: Object.keys(newSizeRem).length ? newSizeRem : null,
-      color_quantities_remaining: Object.keys(newColorRem).length ? newColorRem : null,
-      variant_quantities_remaining: adjustVariantQuantities(inv.variant_quantities_remaining, variants, 1) ?? inv.variant_quantities_remaining,
-      pending_return_qty: (num(inv.pending_return_qty) || 0) + addQty,
-      pending_return_size_quantities: Object.keys(newPendingSize).length ? newPendingSize : null,
-      pending_return_color_quantities: Object.keys(newPendingColor).length ? newPendingColor : null,
-      pending_return_variant_quantities: adjustVariantQuantities(inv.pending_return_variant_quantities, variants, 1) ?? inv.pending_return_variant_quantities,
-    })
-    .eq('id', order.store_inventory_id)
-}
-
 
 export default async function handler(req: NextApiRequest, res: NextApiResponse) {
   try {
@@ -912,12 +856,19 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
           replacementCostTotal = deduction.replacementCostTotal
           replacementConsumedInventoryIds = deduction.consumedIds
 
-          // Scenario A: the original item came back. Restore it onto the order's
-          // own store allotment using the same mechanism the sale-return flow uses.
+          // Scenario A: the original item physically came back. Restock it into
+          // the same global inventory batches represented by this order's allocations.
           if (normalizedOriginalReturned) {
-            await restoreOrderInventoryToStore(order, effectiveRefundSizeQuantities, effectiveRefundColorQuantities, normalizedRefundVariants, refQty)
+            const { error: restockError } = await supabaseAdmin.rpc('restock_order_original_for_replacement', {
+              p_order_id: order.id,
+              p_quantity: refQty,
+            })
+            if (restockError) {
+              return res.status(409).json({ error: restockError.message || 'Failed to restock returned replacement item' })
+            }
           }
-        }
+
+
 
         // ── Revenue & profit calculation per refund method ──────────────────
         //
