@@ -378,44 +378,19 @@ export default function InventoryPage({ user, onLogin }: PageProps) {
         }, 150);
     };
 
-    // Summary calculations
-    // For superadmin: all stores. For store admin: only managed stores.
-
-    // True inventory value = (warehouse unallotted + store remaining) Ã— cost_price
-    // This excludes already-sold units so the number reflects real unsold stock value.
-    const storeRemainingByProduct: Record<string, number> = {};
-    // Keyed by inventoryId (batch FK) so each batch's store-remaining is tracked separately
-    stockProvided.forEach(item => {
-        const key = item.inventoryId || item.id;
-        storeRemainingByProduct[key] = (storeRemainingByProduct[key] || 0) + (Number(item.quantityRemaining) || 0);
-    });
-
+    // Summary calculations — inventory is one global physical pool for every role.
     const calcInventoryValue = (inventoryItems: typeof data.inventory) =>
-        inventoryItems.reduce((acc, it) => {
-            const warehouseUnallotted = Math.max(0, (Number(it.quantityAvailable) || 0));
-            const atStores = storeRemainingByProduct[it.id] || 0;
-            return acc + (Number(it.costPrice) || 0) * (warehouseUnallotted + atStores);
-        }, 0);
+        inventoryItems.reduce(
+            (acc, it) => acc + (Number(it.costPrice) || 0) * Math.max(0, Number(it.quantityAvailable) || 0),
+            0
+        );
 
-    let totalInventoryValue = 0;
-    let totalItemsInWarehouse = 0;
-    let totalItemsInStores = 0;
-    if (isSuperAdmin) {
-        totalInventoryValue = calcInventoryValue(data.inventory);
-        totalItemsInWarehouse = data.inventory.reduce((acc, it) => acc + Math.max(0, (Number(it.quantityAvailable) || 0)), 0);
-        totalItemsInStores = stockProvided.reduce((acc, it) => acc + Math.max(0, it.quantityRemaining), 0);
-    } else if (isStoreAdmin) {
-        const ownedItems = data.inventory.filter(it => it.owner === user.username);
-        totalInventoryValue = calcInventoryValue(ownedItems);
-        totalItemsInWarehouse = ownedItems.reduce((acc, it) => acc + Math.max(0, (Number(it.quantityAvailable) || 0)), 0);
-        totalItemsInStores = stockProvided.filter(it => visibleStoreNames.some((name) => name.trim().toLowerCase() === it.storeName.trim().toLowerCase())).reduce((acc, it) => acc + Math.max(0, it.quantityRemaining), 0);
-    } else {
-        // Store user: only their own
-        const ownedItems = data.inventory.filter(it => it.owner === user.username);
-        totalInventoryValue = calcInventoryValue(ownedItems);
-        totalItemsInWarehouse = ownedItems.reduce((acc, it) => acc + Math.max(0, (Number(it.quantityAvailable) || 0)), 0);
-        totalItemsInStores = stockProvided.filter(it => storeNameMatches(it.storeName)).reduce((acc, it) => acc + Math.max(0, it.quantityRemaining), 0);
-    }
+    const totalInventoryValue = calcInventoryValue(data.inventory);
+    const totalItemsInWarehouse = data.inventory.reduce(
+        (acc, it) => acc + Math.max(0, Number(it.quantityAvailable) || 0),
+        0
+    );
+    const totalItemsInStores = 0;
 
     return (
         <>
