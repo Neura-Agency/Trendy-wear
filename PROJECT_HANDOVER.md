@@ -19,7 +19,7 @@
 
 ## 🎯 System Overview
 
-Trendy Wear ERP is a comprehensive multi-store management system designed for fashion retail businesses. The platform manages inventory, sales tracking, partner stores, profit distribution, and financial reporting across multiple retail locations.
+Trendy Wear ERP is a comprehensive multi-store management system designed for fashion retail businesses. The platform manages one shared global inventory, sales tracking by store, profit distribution, and financial reporting across multiple retail locations.
 
 **Technology Stack:**
 - Frontend: Next.js, React, TypeScript
@@ -113,7 +113,7 @@ Trendy Wear ERP is a comprehensive multi-store management system designed for fa
 
 ![Stock & Inventory](./docs/handover-images/02-stock-inventory.png)
 
-**Purpose:** Manage warehouse inventory and distribution to partner stores
+**Purpose:** Manage the shared global inventory used by every store
 
 **Features:**
 
@@ -121,15 +121,14 @@ Trendy Wear ERP is a comprehensive multi-store management system designed for fa
 - **Add Inventory:** Purchase and add new products to warehouse
 - **Track Quantities:** Monitor available stock levels
 - **Cost Tracking:** Record cost price per piece
-- **Allocation Status:** See how much inventory is allocated to stores
+- **Batch Status:** See how much physical inventory is currently available
 - **Stock Alerts:** Low stock warnings
 
-#### Partner Store Inventory Section:
-- **Allot to Stores:** Distribute inventory from warehouse to partner shops
-- **Owner Supply Price:** Set the supply price for store partners
-- **Commission Percentage:** Define store commission rates
-- **Track Store Stock:** Monitor inventory levels at each partner location
-- **Items Sold Tracking:** View sales performance per store
+#### Shared Global Inventory:
+- **Global Stock:** All stores use the same physical inventory pool
+- **Batch Tracking:** Inventory remains traceable to its purchase batch
+- **Commission Percentage:** Store commission is recorded on sales
+- **Store Sales:** Track quantities and performance through orders, not inventory ownership
 
 **Who Can Access:** Super Admin, Admins
 
@@ -142,13 +141,12 @@ Trendy Wear ERP is a comprehensive multi-store management system designed for fa
 4. Set low stock warning threshold
 5. Save to warehouse
 
-**Allocating to Stores:**
-1. Click "+ Allot to Stores" button
-2. Select store partner from dropdown
-3. Choose product/batch to allocate
-4. Enter quantity to send
-5. Set owner supply price and commission percentage
-6. Confirm allocation
+**Store sales:**
+1. Open the sales flow
+2. Select the product from global inventory
+3. Enter quantity, selling price and customer details
+4. Select the store when recording on behalf of a store, or use the authenticated store account
+5. Save the sale — global stock is deducted atomically
 
 ---
 
@@ -298,25 +296,42 @@ Trendy Wear ERP is a comprehensive multi-store management system designed for fa
 
 ![Store Dashboard](./docs/handover-images/06-store-view.png)
 
-**Purpose:** Partner stores view their own inventory, sales, and commissions
+**Purpose:** Partner stores view shared global inventory, their sales, and commissions
 
 **Features:**
-- **Assigned Inventory:** View products allocated to their store
-- **Stock Levels:** Monitor remaining inventory
-- **Sales Recording:** Record customer sales
+- **Global Inventory:** View the same physical stock pool as other stores
+- **Stock Levels:** Monitor globally available quantities
+- **Sales Recording:** Record customer sales against global inventory
 - **Commission Tracking:** See earned commissions
-- **Limited Access:** Can only view/manage their own store data
+- **Limited Access:** Store identity scopes sales and reporting; it does not create inventory ownership
 
 **Who Can Access:** Store role accounts only
 
 **How to Use (for Store Partners):**
 1. Login with store credentials
-2. View assigned inventory
+2. View the shared global inventory
 3. Record sales as they happen
-4. Monitor stock levels
+4. Monitor globally available stock
 5. Track commission earnings
 
 ---
+
+
+## 🔄 Global Inventory Architecture
+
+The system no longer treats a store as an inventory owner. There is one physical global inventory pool shared by all stores.
+
+- **Inventory:** Global physical stock and purchase batches
+- **Stores:** Sales/reporting identity only
+- **Sales:** Deduct from global inventory using the transactional inventory engine
+- **Returns:** Physical returns increase global inventory
+- **Refunds:** Financial-only refunds do not change stock
+- **Replacements:** Replacement stock comes from global inventory
+- **COGS:** Based on actual consumed inventory batches
+- **Commission:** Snapshotted on each order
+- **Allotment:** Retired; no supported API/UI path may create a new allotment
+
+The database migration and reconciliation procedures are documented in docs/GLOBAL_INVENTORY_MIGRATION.md and the scripts/ migration files.
 
 ## 📌 Important Notes
 
@@ -352,9 +367,9 @@ Trendy Wear ERP is a comprehensive multi-store management system designed for fa
 - Clear browser cache and cookies
 
 **Inventory Not Showing:**
-- Ensure inventory was added to warehouse first
-- Check if allocation to store was completed
-- Verify correct store is selected in filters
+- Ensure inventory was added to global inventory first
+- Check that the product has available global stock
+- Verify the correct store filter is selected for sales reporting
 
 **Permission Denied:**
 - Confirm user role matches required access level
@@ -421,8 +436,8 @@ WHERE plain_password IS NULL OR plain_password = '';
 
 ---
 
-**Document Version:** 1.0  
-**Last Updated:** April 6, 2026  
+**Document Version:** 2.0 — Global Shared Inventory  
+**Last Updated:** August 29, 2026  
 **Created By:** Neura Agency Development Team
 
 ---
