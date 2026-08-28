@@ -1,5 +1,6 @@
 import type { NextApiRequest, NextApiResponse } from 'next'
 import { supabaseAdmin, TABLES } from '../../lib/supabase'
+import globalSaleHandler from './global-sale'
 import { requireSession, getAllowedStoreIds, isSuperAdmin } from '../../lib/api/session'
 import {
   adjustVariantQuantities,
@@ -237,6 +238,9 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     // POST — record a new sale
     // ────────────────────────────────────────────────────────────────────────
     if (req.method === 'POST') {
+      // All new sales use the transactional global inventory engine. The legacy
+      // implementation remains below only during the staged retirement window.
+      return globalSaleHandler(req, res);
       const {
         productId,
         productName,
