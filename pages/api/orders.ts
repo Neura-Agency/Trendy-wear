@@ -164,6 +164,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
           product_id,
           product_name,
           store_inventory_id,
+          inventory_id,
           quantity,
           selling_price,
           shipment_cost,
@@ -205,11 +206,9 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
           refund_proof_url,
           created_at,
           stores:store_id ( name ),
-          store_inventory:store_inventory_id (
-            inventory:inventory_id (
-              cost_price,
-              batch_number
-            )
+          inventory:inventory_id (
+            cost_price,
+            batch_number
           )
         `)
         .order('occurred_at', { ascending: false })
@@ -228,11 +227,12 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       }
 
       const orders = (data || []).map((row: any) => {
-        // Follow: orders.store_inventory_id → store_inventory.inventory_id → inventory.cost_price
-        const inventoryCostPrice = row.store_inventory?.inventory?.cost_price
+        // Global sales link directly to the primary inventory batch. Legacy orders
+        // may still use store_inventory_id, so retain the stored cost fallback.
+        const inventoryCostPrice = row.inventory?.cost_price
         const costPrice = inventoryCostPrice != null
           ? num(inventoryCostPrice)
-          : num(row.cost_price)  // fallback to stored value if link is missing
+          : num(row.cost_price)
 
         return {
           id: row.id,
@@ -253,7 +253,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
           includedInPayout: row.included_in_payout ?? false,
           commissionPercent: num(row.commission_percent),
           costPrice,
-          batchNumber: row.store_inventory?.inventory?.batch_number ?? null,
+          batchNumber: row.inventory?.batch_number ?? null,
           commissionAmount: num(row.commission_amount),
           adminTake: num(row.admin_take),
           profit: num(row.profit),
