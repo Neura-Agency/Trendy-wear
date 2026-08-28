@@ -1,27 +1,17 @@
 import type { HelpLang } from "./voice";
 
 export interface HelpEntry {
-  /** Short heading of the popover. */
   title?: string;
-  /** What should I do here / what happens. 1–2 sentences. */
   what: string;
-  /** Step-by-step guidance for this screen or action. */
   steps?: string[];
-  /** Optional "Why?" — only where it genuinely helps. */
   why?: string;
-  /** Optional CSS selector of an existing control to point at ("Show me"). */
   target?: string;
 }
 
 type HelpCatalog = Record<string, HelpEntry>;
 
-/**
- * Contextual help copy, keyed by location id.
- * Language-ready: additional languages sit next to `en` / `roman-ur`
- * without touching any component.
- */
+/** Contextual help. Inventory is global/shared; stores are sales/reporting identities. */
 const en: HelpCatalog = {
-  /* ── Dashboard ── */
   "dashboard.kpis": {
     title: "Your business at a glance",
     what: "These totals summarise sales, costs, profit and stock for the period you have selected.",
@@ -37,13 +27,13 @@ const en: HelpCatalog = {
     what: "See how each partner shop is performing and settle their orders.",
     steps: [
       "Find the shop you want in the list.",
-      "Use its row actions to allot stock or open its details.",
+      "Use its row actions to open its details and sales.",
       "Mark orders as paid once you have received the money.",
     ],
   },
   "dashboard.partnerSales": {
     title: "Partner store sales",
-    what: "Every order recorded by your partner shops.",
+    what: "Every order recorded by your partner shops. Stores identify who made a sale; they do not own separate stock pools.",
     steps: [
       "Choose a period and shop in the filters above the table.",
       "Search by item or order to narrow the list further.",
@@ -52,13 +42,13 @@ const en: HelpCatalog = {
   },
   "dashboard.recordSale": {
     title: "Record a sale",
-    what: "Enter a sale you made so stock and profit stay correct.",
+    what: "Enter a sale so the shared inventory, order and profit stay correct.",
     steps: [
       "Click Record Sale to open the form.",
       "Select the item, then enter quantity and selling price.",
-      "Save — the shop's stock drops and revenue and profit update.",
+      "Save — available global stock drops and revenue and profit update.",
     ],
-    why: "Recording sales here is what keeps stock counts and profit reports accurate.",
+    why: "All stores sell from the same physical inventory pool. The selected store records who made the sale, not who owns the stock.",
   },
   "dashboard.expensesSection": {
     title: "Money spent",
@@ -70,76 +60,77 @@ const en: HelpCatalog = {
     ],
   },
 
-  /* ── Inventory ── */
   "inventory.page": {
-    title: "Stock & inventory",
-    what: "Add stock to the warehouse, then allot it to the shops that will sell it.",
+    title: "Global inventory",
+    what: "All physical stock belongs to one shared inventory pool. Stores can sell available stock without receiving separate inventory ownership.",
     steps: [
-      "Add the item to warehouse stock with its cost and quantity.",
-      "Choose Allot to Store and pick the shop.",
-      "Enter quantity per colour and size, then save the allotment.",
+      "Add incoming stock to the global inventory with its cost and quantity.",
+      "Use the inventory view to check available quantities and batches.",
+      "Record store sales against the global pool; the store remains attached to the order for reporting and commission.",
     ],
+    why: "There is no store-owned stock layer. This keeps one authoritative physical stock balance for the business.",
   },
   "inventory.warehouse": {
-    title: "Warehouse stock",
-    what: "Everything you own that has not been sent to a shop yet.",
+    title: "Global stock",
+    what: "Physical inventory batches currently available to the business.",
     steps: [
-      "Click Add Item and fill in name, cost and quantity.",
-      "Add colours and sizes so allotments can be split correctly.",
-      "Use Edit on a row to correct cost or quantity later.",
+      "Add incoming stock with its cost, quantity and variants.",
+      "Use the batch information to understand where available stock came from.",
+      "Sales reduce the shared available quantity regardless of which store made the sale.",
     ],
-    why: "Item cost recorded here is what the profit reports use as cost of goods.",
+    why: "The inventory batch cost is used for cost-of-goods and profit analysis.",
   },
   "inventory.storeStock": {
-    title: "Stock with shops",
-    what: "Stock already supplied to partner shops and still unsold.",
+    title: "Shared inventory for stores",
+    what: "Stores do not have separate inventory balances. They view the same global stock pool and their sales are linked to their store identity.",
     steps: [
-      "Pick a shop to see exactly what it is holding.",
-      "Compare allotted quantity against items sold.",
-      "Allot more stock when a shop is running low.",
+      "Use store filters when you want to analyse sales, not inventory ownership.",
+      "Use the global inventory view to check available stock.",
+      "Use orders and reports to see what each store has sold.",
     ],
+    why: "A store is a sales/reporting entity, not an inventory-ownership entity.",
   },
   "inventory.allot": {
-    title: "Allot to store",
-    what: "Move warehouse stock to a shop so the shop can sell it.",
+    title: "Global inventory",
+    what: "Inventory is shared across stores. Stock is no longer moved into a separate store-owned pool.",
     steps: [
-      "Enter how many units of each colour and size the shop gets — the remaining count is shown under each box.",
-      "Set the partner commission percentage for these items.",
-      "Add any extra gift units, then click Save Allotment.",
+      "Add stock to the global inventory with its cost and quantity.",
+      "Let stores sell available stock through their normal sales flow.",
+      "Use store sales and reports to track performance and commission.",
     ],
-    why: "The commission you set here is used to calculate the shop's share on every sale of these items.",
+    why: "Removing the allotment layer prevents the same physical inventory from being split into competing store balances.",
   },
   "inventory.gifts": {
     title: "Gifts & extras",
-    what: "Extra units given to a shop free of charge.",
+    what: "Extra units can be dispatched as free/bonus quantities while still coming from the shared physical inventory.",
     steps: [
-      "Enter gift units while allotting stock to a shop.",
-      "Check them here to see their cost impact.",
+      "Enter bonus units on the sale when applicable.",
+      "The global inventory engine deducts the physical units.",
+      "The order keeps the bonus quantity so it is not lost from the sales record.",
     ],
-    why: "Their cost is counted as an expense, not as a sale.",
+    why: "Bonus units affect physical stock even when they are not billed as normal sale quantity.",
   },
   "inventory.allInventory": {
-    title: "All warehouse inventory",
-    what: "A read-only view of everything held in the warehouse, including what has been supplied to shops.",
+    title: "All global inventory",
+    what: "A read-only view of the business's shared physical inventory and its batches.",
     steps: [
       "Use search and filters to find an item.",
-      "Read the columns to see warehouse, allotted and sold quantities.",
+      "Review available quantity and batch information.",
+      "Use store sales reports separately when you need store-level performance.",
     ],
   },
 
-  /* ── Direct sales ── */
   "directSales.page": {
     title: "Direct sales",
-    what: "Sales you made yourself, without a partner shop.",
+    what: "Sales you made yourself, without a partner shop. They still consume the same global inventory pool.",
     steps: [
       "Click Record Direct Sale.",
-      "Pick the item from warehouse stock and enter quantity and price.",
-      "Save — warehouse stock drops and the full margin is your profit.",
+      "Pick the item from global inventory and enter quantity and price.",
+      "Save — shared stock drops and the direct-sale margin is recorded.",
     ],
-    why: "No shop commission is applied to direct sales, so the profit share differs from partner orders.",
+    why: "Direct sales have no partner-store commission, but they use the same physical inventory as every other sale.",
   },
 
-  /* ── Profit partners ── */
   "owners.page": {
     title: "Profit partners",
     what: "Partners share the business profit by percentage.",
@@ -176,7 +167,6 @@ const en: HelpCatalog = {
     why: "Recording a transfer keeps each partner's balance correct without touching profit.",
   },
 
-  /* ── Expenses / returns / refunds / profit ── */
   "expenses.page": {
     title: "Expenses",
     what: "All costs pulled from your orders — item cost, commissions and shipment charges — plus anything you add manually.",
@@ -189,20 +179,22 @@ const en: HelpCatalog = {
   },
   "returns.page": {
     title: "Returns",
-    what: "Orders where the item came back to the warehouse.",
+    what: "Orders where a physical item came back and should return to the shared global inventory.",
     steps: [
       "Find the order in the list.",
-      "Mark it as returned — stock goes back in and the sale stops counting as revenue.",
+      "Mark the physical return with its quantity and variant details.",
+      "The returned stock goes back into global inventory rather than a store-owned balance.",
     ],
   },
   "refunds.page": {
     title: "Refunds",
-    what: "Orders where money was returned but the customer kept the item.",
+    what: "Financial refunds are separate from physical stock returns.",
     steps: [
       "Find the order you refunded.",
-      "Record the refund — revenue is reversed while the stock stays sold.",
+      "Record the financial refund — stock stays unchanged when the customer keeps the item.",
+      "When an item is physically returned, record the return so global inventory increases.",
     ],
-    why: "Keeping refunds separate from returns is what stops stock counts drifting.",
+    why: "Keeping financial refunds separate from physical returns prevents stock counts from drifting.",
   },
   "profit.page": {
     title: "Profit analysis",
@@ -212,8 +204,6 @@ const en: HelpCatalog = {
       "Scan the profit column to spot orders that earned little or nothing.",
     ],
   },
-
-  /* ── Reports & credentials ── */
   "reports.page": {
     title: "Reports",
     what: "Build a report from the figures already recorded in the system.",
@@ -231,123 +221,127 @@ const en: HelpCatalog = {
       "Set the username and password for that shop.",
       "Reveal a password only when you need to share it.",
     ],
-    why: "Each shop only sees its own stock and sales when it signs in with these details.",
+    why: "Each shop can use these details to access the sales and inventory information allowed for its account.",
   },
 };
 
-/** Roman Urdu — same keys, same meaning, spoken-friendly wording. */
+/** Roman Urdu — same keys and meaning, with global inventory terminology. */
 const romanUr: HelpCatalog = {
   "dashboard.kpis": {
     title: "Business ka khulasa",
     what: "Yeh totals aap ke chune gaye period ki sales, cost, profit aur stock dikhate hain.",
     steps: [
-      "Sab se pehle upar se period select karein.",
+      "Upar se period select karein.",
       "Cards ko baayen se daayen parhein: revenue, cost, phir profit.",
-      "Expenses card par click karein to dekhein woh cost kis se bani hai.",
+      "Expenses card par click karein to cost ki tafseel dekhein.",
     ],
-    why: "Yeh sab aap ke record kiye orders se calculate hota hai, is liye nayi sale ya expense par foran badal jata hai.",
+    why: "Yeh aap ke recorded orders aur expenses se calculate hota hai.",
   },
   "dashboard.storePartners": {
     title: "Store partners",
     what: "Har partner shop ki performance dekhein aur un ke orders settle karein.",
     steps: [
-      "List mein apni shop dhoondein.",
-      "Us row ke actions se stock allot karein ya details kholein.",
-      "Paisa mil jaane par order ko paid mark karein.",
+      "List mein shop dhoondein.",
+      "Us ki details aur sales kholein.",
+      "Paisa milne par order ko paid mark karein.",
     ],
   },
   "dashboard.partnerSales": {
     title: "Partner store sales",
-    what: "Aap ki partner shops ke record kiye hue tamam orders.",
+    what: "Partner shops ke tamam orders. Store sirf yeh batata hai ke sale kis ne ki; stock us ka apna pool nahi hota.",
     steps: [
-      "Filters se period aur shop chunein.",
-      "Item ya order search kar ke list chhoti karein.",
+      "Period aur shop filter karein.",
+      "Item ya order search karein.",
       "Poori tafseel ke liye row par click karein.",
     ],
   },
   "dashboard.recordSale": {
     title: "Sale record karein",
-    what: "Ki gayi sale darj karein taake stock aur profit sahi rahein.",
+    what: "Sale darj karein taake shared inventory, order aur profit sahi rahein.",
     steps: [
       "Record Sale par click karein.",
-      "Item chunein, phir quantity aur selling price likhein.",
-      "Save karein — shop ka stock kam ho jayega aur profit update ho jayega.",
+      "Item, quantity aur selling price likhein.",
+      "Save karein — global available stock kam hoga aur profit update hoga.",
     ],
-    why: "Sale yahan record karna hi stock aur profit reports ko drust rakhta hai.",
+    why: "Har store aik hi physical global inventory se sale karta hai.",
   },
   "dashboard.expensesSection": {
     title: "Kharch",
     what: "Is period ke tamam kharche.",
     steps: [
-      "Chune gaye period ke kharche dekhein.",
-      "Jo kharch shamil nahi, us ke liye Add Expense dabayein.",
-      "Amount aur chhoti tafseel likh kar save karein.",
+      "Period ke kharche dekhein.",
+      "Jo kharch shamil nahi us ke liye Add Expense dabayein.",
+      "Amount aur tafseel likh kar save karein.",
     ],
   },
   "inventory.page": {
-    title: "Stock aur inventory",
-    what: "Pehle warehouse mein stock daalein, phir shops ko allot karein.",
+    title: "Global inventory",
+    what: "Business ka tamam physical stock aik shared inventory pool mein hota hai. Shops ka alag owned stock nahi hota.",
     steps: [
-      "Item ko cost aur quantity ke sath warehouse mein add karein.",
-      "Allot to Store chunein aur shop select karein.",
-      "Har colour aur size ki quantity likh kar allotment save karein.",
+      "Naya stock cost aur quantity ke sath global inventory mein add karein.",
+      "Inventory view se available quantity aur batches dekhein.",
+      "Store ki sale global stock se deduct hoti hai aur order mein store ka naam record hota hai.",
     ],
+    why: "Aik hi physical stock balance hone se duplicate ya conflicting store balances nahi bante.",
   },
   "inventory.warehouse": {
-    title: "Warehouse stock",
-    what: "Woh maal jo abhi kisi shop ko nahi bheja gaya.",
+    title: "Global stock",
+    what: "Business ke paas mojood physical inventory batches.",
     steps: [
-      "Add Item par click karein aur naam, cost, quantity likhein.",
-      "Colour aur size zaroor daalein taake allotment sahi bant sake.",
-      "Baad mein cost ya quantity theek karne ke liye Edit use karein.",
+      "Incoming stock ko cost, quantity aur variants ke sath add karein.",
+      "Batch information se available stock ka source dekhein.",
+      "Kisi bhi store ki sale isi shared quantity ko kam karti hai.",
     ],
-    why: "Yahan likhi cost hi profit reports mein cost of goods bunti hai.",
+    why: "Batch cost profit aur COGS ke liye use hoti hai.",
   },
   "inventory.storeStock": {
-    title: "Shops ka stock",
-    what: "Woh stock jo shops ko de diya gaya hai aur abhi bika nahi.",
+    title: "Stores ke liye shared inventory",
+    what: "Stores ka alag inventory balance nahi. Sab aik hi global stock pool dekhte hain.",
     steps: [
-      "Shop chunein aur dekhein us ke paas kya mojood hai.",
-      "Allot ki hui quantity aur bike hue items ka moqabla karein.",
-      "Stock kam ho to mazeed allot karein.",
+      "Store filter sales analysis ke liye use karein.",
+      "Available stock ke liye global inventory dekhein.",
+      "Store ki performance ke liye orders aur reports dekhein.",
     ],
+    why: "Store sales/reporting entity hai, inventory owner nahi.",
   },
   "inventory.allot": {
-    title: "Store ko allot karein",
-    what: "Warehouse ka stock shop ko dein taake woh bech sake.",
+    title: "Global inventory",
+    what: "Stock ab kisi store ke alag owned pool mein allot nahi hota. Sab stores available global stock se sale karte hain.",
     steps: [
-      "Har colour aur size ke saamne quantity likhein — neeche bacha hua stock likha hota hai.",
-      "Partner commission percentage set karein.",
-      "Extra gift units daalein, phir Save Allotment dabayein.",
+      "Stock ko cost aur quantity ke sath global inventory mein add karein.",
+      "Normal sales flow se available stock sell karein.",
+      "Store sales aur reports se performance aur commission track karein.",
     ],
-    why: "Yahan set ki gayi commission hi har sale par shop ka hissa nikalti hai.",
+    why: "Allotment layer hatane se aik physical stock ko multiple store balances mein divide karne ka masla khatam hota hai.",
   },
   "inventory.gifts": {
     title: "Gifts aur extras",
-    what: "Woh extra units jo shop ko muft di gayi hain.",
+    what: "Free ya bonus units bhi shared physical inventory se nikalte hain.",
     steps: [
-      "Allotment ke waqt gift units likhein.",
-      "Yahan un ka cost asar dekhein.",
+      "Sale ke waqt bonus units likhein.",
+      "Global inventory engine physical units deduct karega.",
+      "Order mein bonus quantity save rahegi.",
     ],
-    why: "In ki cost expense mein ginti hai, sale mein nahi.",
+    why: "Bonus unit billed na ho tab bhi physical stock kam hota hai.",
   },
   "inventory.allInventory": {
-    title: "Tamam warehouse inventory",
-    what: "Sirf parhne ke liye view — warehouse ka sab maal, shops ko diya gaya bhi.",
+    title: "Tamam global inventory",
+    what: "Business ke shared physical stock aur batches ka read-only view.",
     steps: [
       "Search aur filters se item dhoondein.",
-      "Columns se warehouse, allotted aur sold quantity dekhein.",
+      "Available quantity aur batch information dekhein.",
+      "Store performance ke liye sales reports alag se dekhein.",
     ],
   },
   "directSales.page": {
     title: "Direct sales",
-    what: "Woh sales jo aap ne khud ki, kisi partner shop ke baghair.",
+    what: "Woh sales jo aap ne khud ki, magar stock phir bhi global inventory se hi nikalta hai.",
     steps: [
       "Record Direct Sale par click karein.",
-      "Warehouse se item chunein aur quantity aur price likhein.",
-      "Save karein — warehouse stock kam hoga aur poora margin aap ka profit hai.",
+      "Global inventory se item chunein aur quantity aur price likhein.",
+      "Save karein — shared stock kam hoga aur direct sale ka margin record hoga.",
     ],
-    why: "Direct sale par shop commission nahi lagti, is liye profit ka hissa mukhtalif hota hai.",
+    why: "Direct sale par partner-store commission nahi hoti, lekin physical inventory shared rehti hai.",
   },
   "owners.page": {
     title: "Profit partners",
@@ -362,8 +356,8 @@ const romanUr: HelpCatalog = {
     title: "Profit split",
     what: "Har partner ka hissa net profit ka us ka percentage hai.",
     steps: [
-      "Check karein ke percentage asli agreement se milta hai.",
-      "Percentage sirf tab badlein jab agreement waqai badle.",
+      "Check karein percentage asli agreement se milta hai.",
+      "Percentage sirf agreement badalne par edit karein.",
     ],
   },
   "owners.payouts": {
@@ -371,72 +365,74 @@ const romanUr: HelpCatalog = {
     what: "Partner ko diya gaya paisa record karein.",
     steps: [
       "Add Payout par click kar ke partner chunein.",
-      "Di gayi amount aur date likhein.",
-      "Save karein — yeh foran un ke bache hue hisse se kat jata hai.",
+      "Amount aur date likhein.",
+      "Save karein.",
     ],
   },
   "owners.transfers": {
     title: "Owner transfers",
-    what: "Partners ke darmiyan ya business mein aaya hua paisa.",
+    what: "Partners ke darmiyan ya business mein paisay ki movement.",
     steps: [
-      "Chunein paisa kis ne diya aur kis ko mila.",
+      "Paisa kis ne diya aur kis ko mila, chunein.",
       "Amount likh kar save karein.",
     ],
-    why: "Transfer record karna balance sahi rakhta hai aur profit ko cherta nahi.",
+    why: "Transfer balance sahi rakhta hai aur profit ko change nahi karta.",
   },
   "expenses.page": {
     title: "Expenses",
-    what: "Orders se aane wali tamam cost — item cost, commission, shipment — aur aap ke apne kharche.",
+    what: "Orders ki item cost, commission, shipment aur manual kharche.",
     steps: [
       "Period select karein.",
-      "Jo kharch system ko maloom nahi, us ke liye Add Expense dabayein.",
+      "System se bahar ke kharch ke liye Add Expense dabayein.",
       "Amount, date aur tafseel likh kar save karein.",
     ],
-    why: "Yeh cost revenue se minus ho kar dashboard ka net profit banati hai.",
+    why: "Yeh cost revenue se minus ho kar net profit banati hai.",
   },
   "returns.page": {
     title: "Returns",
-    what: "Woh orders jin ka maal warehouse wapas aa gaya.",
+    what: "Woh orders jin ka physical maal wapas aya aur global inventory mein jana chahiye.",
     steps: [
       "List mein order dhoondein.",
-      "Return mark karein — stock wapas add hoga aur sale revenue se nikal jayegi.",
+      "Return ki quantity aur variant details record karein.",
+      "Returned stock global inventory mein wapas jata hai.",
     ],
   },
   "refunds.page": {
     title: "Refunds",
-    what: "Woh orders jin mein paisa wapas hua magar maal customer ke paas raha.",
+    what: "Financial refund aur physical stock return alag cheezen hain.",
     steps: [
-      "Jis order ka refund kiya, use dhoondein.",
-      "Refund record karein — revenue wapas hoti hai, stock sold hi rehta hai.",
+      "Refund wala order dhoondein.",
+      "Agar customer maal rakhta hai to financial refund record karein aur stock change na karein.",
+      "Agar maal physically wapas aya hai to return record karein taake global stock barhe.",
     ],
-    why: "Refund aur return ko alag rakhna stock ko galat hone se bachata hai.",
+    why: "Refund aur return ko alag rakhne se stock sahi rehta hai.",
   },
   "profit.page": {
     title: "Profit analysis",
-    what: "Revenue mein se item cost, commission, shipping aur expenses — har order par.",
+    what: "Revenue mein se item cost, commission, shipping aur expenses minus kar ke profit.",
     steps: [
       "Period aur shop chunein.",
-      "Profit column dekhein aur kam kamane wale orders pehchanein.",
+      "Profit column se kam kamane wale orders dekhein.",
     ],
   },
   "reports.page": {
     title: "Reports",
-    what: "System mein mojood figures se report banayein.",
+    what: "System mein record ki hui figures se report banayein.",
     steps: [
       "Period aur filters chunein.",
-      "Screen par totals check karein.",
-      "Print ya Save dabayein taake copy reh jaye.",
+      "Totals check karein.",
+      "Print ya Save dabayein.",
     ],
   },
   "credentials.page": {
     title: "Shop credentials",
     what: "Har shop ke login accounts.",
     steps: [
-      "Nayi shop aane par Add Account dabayein.",
-      "Us shop ka username aur password set karein.",
+      "Nayi shop par Add Account dabayein.",
+      "Username aur password set karein.",
       "Password sirf zaroorat par reveal karein.",
     ],
-    why: "In details se login kar ke har shop sirf apna stock aur sales dekhti hai.",
+    why: "Account se shop ko us ki allowed sales aur inventory information milti hai.",
   },
 };
 
