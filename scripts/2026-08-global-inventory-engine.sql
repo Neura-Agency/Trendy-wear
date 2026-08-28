@@ -5,11 +5,12 @@ create table if not exists public.order_inventory_allocations (
   id uuid primary key default gen_random_uuid(),
   order_id uuid not null references public.orders(id) on delete cascade,
   inventory_id uuid not null references public.inventory(id) on delete restrict,
-  quantity integer not null check (quantity > 0),
+  quantity integer not null default 0 check (quantity >= 0),
   bonus_quantity integer not null default 0 check (bonus_quantity >= 0),
   unit_cost numeric(12,2) not null default 0,
   variant_quantities jsonb,
-  created_at timestamptz not null default now()
+  created_at timestamptz not null default now(),
+  constraint order_inventory_allocations_positive_units check (quantity + bonus_quantity > 0)
 );
 create index if not exists idx_order_inventory_allocations_order on public.order_inventory_allocations(order_id);
 create index if not exists idx_order_inventory_allocations_inventory on public.order_inventory_allocations(inventory_id);
@@ -131,9 +132,6 @@ begin
     v_order_code := 'ORD-' || upper(substr(md5(gen_random_uuid()::text),1,12));
   end if;
 
-  -- One PostgreSQL transaction: order, stock and allocation rows commit together.
-  -- inventory_id remains populated with the primary FIFO batch for compatibility;
-  -- exact multi-batch traceability lives in order_inventory_allocations.
   insert into public.orders(
     order_code,store_id,product_id,inventory_id,store_inventory_id,product_name,quantity,size_quantities,color_quantities,variant_quantities,
     selling_price,shipment_cost,client_name,order_type,occurred_at,included_in_payout,
