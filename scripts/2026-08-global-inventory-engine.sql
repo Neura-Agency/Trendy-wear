@@ -280,3 +280,137 @@ revoke all on function public.return_order_to_global_inventory(uuid, integer) fr
 grant execute on function public.return_order_to_global_inventory(uuid, integer) to service_role;
 
 
+
+
+-- Full order-return transaction: inventory movement and order financial state commit together.
+create or replace function public.process_global_order_return(p_payload jsonb)
+returns jsonb
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  v_order public.orders%rowtype;
+  v_qty integer;
+  v_already integer;
+  v_remaining integer;
+  v_new_return integer;
+  v_gross numeric;
+  v_commission numeric;
+  v_admin numeric;
+  v_profit numeric;
+  v_result jsonb;
+begin
+  select * into v_order
+  from public.orders
+  where id = nullif(p_payload->>'order_id','')::uuid
+  for update;
+
+  if not found then raise exception using errcode='P0001', message='ORDER_NOT_FOUND'; end if;
+
+  v_already := greatest(0, coalesce(v_order.return_quantity,0));
+  v_remaining := greatest(0, v_order.quantity - v_already);
+  v_qty := least(greatest(0, coalesce((p_payload->>'return_quantity')::integer, v_remaining)), v_remaining);
+  if v_qty < 1 then raise exception using errcode='P0001', message='RETURN_QUANTITY_MUST_BE_POSITIVE'; end if;
+
+  v_result := public.return_order_to_global_inventory(v_order.id, v_qty);
+  v_new_return := v_already + v_qty;
+  v_gross := v_order.selling_price * greatest(0, v_order.quantity - v_new_return) - v_order.shipment_cost;
+  v_commission := round(greatest(0,v_gross) * coalesce(v_order.commission_percent,0) / 100, 2);
+  v_admin := greatest(0,v_gross) - v_commission;
+  v_profit := v_admin - coalesce(v_order.cost_price,0) * greatest(0,v_order.quantity - v_new_return);
+
+  update public.orders
+  set order_returned = (v_new_return >= v_order.quantity),
+      profit = greatest(0,v_profit),
+      admin_take = greatest(0,v_admin),
+      commission_amount = greatest(0,v_commission),
+      return_quantity = v_new_return,
+      return_reason = nullif(p_payload->>'return_reason',''),
+      return_size_quantities = p_payload->'return_size_quantities',
+      return_color_quantities = p_payload->'return_color_quantities',
+      return_variant_quantities = p_payload->'return_variant_quantities',
+      returned_at = now(),
+      return_proof_url = nullif(p_payload->>'return_proof_url','')
+  where id = v_order.id;
+
+  return jsonb_build_object('success',true,'returned',v_qty,'order_id',v_order.id);
+end;
+$$;
+
+revoke all on function public.process_global_order_return(jsonb) from public;
+grant execute on function public.process_global_order_return(jsonb) to service_role;
+
+-- Undo the most recent physical return, reversing the exact allocation batches.
+create or replace function public.undo_global_order_return(p_order_id uuid)
+returns jsonb
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  v_order public.orders%rowtype;
+  v_remaining integer;
+  v_row record;
+  v_take integer;
+  v_undone integer := 0;
+  v_new_return integer;
+  v_gross numeric;
+  v_commission numeric;
+  v_admin numeric;
+  v_profit numeric;
+begin
+  select * into v_order from public.orders where id=p_order_id for update;
+  if not found then raise exception using errcode='P0001', message='ORDER_NOT_FOUND'; end if;
+  v_remaining := greatest(0,coalesce(v_order.return_quantity,0));
+  if v_remaining < 1 then raise exception using errcode='P0001', message='ORDER_HAS_NO_RETURN'; end if;
+
+  for v_row in
+    select id, inventory_id, returned_quantity
+    from public.order_inventory_allocations
+    where order_id=p_order_id and returned_quantity > 0
+    order by created_at desc, id desc
+    for update
+  loop
+    exit when v_remaining <= 0;
+    v_take := least(v_row.returned_quantity,v_remaining);
+    update public.inventory
+    set quantity_available = quantity_available - v_take,
+        updated_at = now()
+    where id=v_row.inventory_id and quantity_available >= v_take;
+    if not found then raise exception using errcode='P0001', message='UNDO_RETURN_INSUFFICIENT_GLOBAL_STOCK'; end if;
+    update public.order_inventory_allocations
+    set returned_quantity = returned_quantity - v_take
+    where id=v_row.id;
+    v_remaining := v_remaining - v_take;
+    v_undone := v_undone + v_take;
+  end loop;
+
+  if v_remaining > 0 then raise exception using errcode='P0001', message='RETURN_ALLOCATION_NOT_FOUND'; end if;
+
+  v_new_return := greatest(0,coalesce(v_order.return_quantity,0)-v_undone);
+  v_gross := v_order.selling_price * greatest(0,v_order.quantity-v_new_return) - v_order.shipment_cost;
+  v_commission := round(greatest(0,v_gross) * coalesce(v_order.commission_percent,0) / 100, 2);
+  v_admin := greatest(0,v_gross)-v_commission;
+  v_profit := v_admin - coalesce(v_order.cost_price,0)*greatest(0,v_order.quantity-v_new_return);
+
+  update public.orders
+  set order_returned=false,
+      return_quantity=case when v_new_return=0 then null else v_new_return end,
+      return_reason=case when v_new_return=0 then null else return_reason end,
+      return_size_quantities=case when v_new_return=0 then null else return_size_quantities end,
+      return_color_quantities=case when v_new_return=0 then null else return_color_quantities end,
+      return_variant_quantities=case when v_new_return=0 then null else return_variant_quantities end,
+      returned_at=case when v_new_return=0 then null else returned_at end,
+      return_proof_url=case when v_new_return=0 then null else return_proof_url end,
+      profit=greatest(0,v_profit),
+      admin_take=greatest(0,v_admin),
+      commission_amount=greatest(0,v_commission)
+  where id=p_order_id;
+
+  return jsonb_build_object('success',true,'undone',v_undone,'order_id',p_order_id);
+end;
+$$;
+
+revoke all on function public.undo_global_order_return(uuid) from public;
+grant execute on function public.undo_global_order_return(uuid) to service_role;
