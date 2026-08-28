@@ -910,7 +910,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
             return res.status(400).json({ error: deduction.error })
           }
           replacementCostTotal = deduction.replacementCostTotal
-          replacementConsumedStoreInventoryIds = deduction.consumedIds
+          replacementConsumedInventoryIds = deduction.consumedIds
 
           // Scenario A: the original item came back. Restore it onto the order's
           // own store allotment using the same mechanism the sale-return flow uses.
@@ -1055,7 +1055,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
           ...(refundMethod === 'replacement'
             ? {
                 replacementCostTotal,
-                replacementConsumedStoreInventoryIds,
+                replacementConsumedInventoryIds,
               }
             : {}),
         });
