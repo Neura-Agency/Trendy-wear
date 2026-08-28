@@ -44,67 +44,47 @@ async function generateOrderCode(
  * Returns consumed row ids and the replacement COGS (sum of owner_supply_price × qty),
  * matching the sale branch's cost basis.
  */
-async function deductStoreInventoryFIFO(
-  storeId: string,
+async function deductGlobalInventoryFIFO(
   productId: string,
   variants: VariantQuantities | null,
   qty: number,
 ): Promise<{ consumedIds: string[]; replacementCostTotal: number } | { error: string }> {
   const { data: rows, error } = await supabaseAdmin
-    .from(TABLES.STORE_INVENTORY)
-    .select('id, owner_supply_price, quantity_remaining, size_quantities_remaining, color_quantities_remaining, variant_quantities_remaining')
-    .eq('store_id', storeId)
+    .from(TABLES.INVENTORY)
+    .select('id, cost_price, quantity_available, variant_quantities')
     .eq('product_id', productId)
-    .order('created_at', { ascending: true })
+    .gt('quantity_available', 0)
+    .order('created_at', { ascending: true });
 
-  if (error) return { error: error.message }
+  if (error) return { error: error.message };
 
-  const avail = (rows || []).filter((r: any) => num(r.quantity_remaining) > 0)
-  const totalAvailable = avail.reduce((s: number, r: any) => s + num(r.quantity_remaining), 0)
+  const avail = (rows || []).filter((r: any) => num(r.quantity_available) > 0);
+  const totalAvailable = avail.reduce((s: number, r: any) => s + num(r.quantity_available), 0);
   if (totalAvailable < qty) {
-    return { error: `Insufficient stock for replacement. Only ${totalAvailable} unit(s) available (need ${qty}).` }
+    return { error: `Insufficient global stock for replacement. Only ${totalAvailable} unit(s) available (need ${qty}).` };
   }
 
-  if (variants) {
-    const variantAvailable = avail.reduce((acc: Record<string, Record<string, number>>, row: any) => {
-      const variantsRow = normalizeVariantQuantities(row.variant_quantities_remaining) || {}
-      Object.entries(variantsRow).forEach(([color, sizes]) => {
-        if (!acc[color]) acc[color] = {}
-        Object.entries(sizes).forEach(([size, v]) => { acc[color][size] = (acc[color][size] || 0) + v })
-      })
-      return acc
-    }, {})
-    const validationError = validateVariantRequest(variants, variantAvailable)
-    if (validationError) return { error: validationError }
-  }
+  let remaining = qty;
+  const consumedIds: string[] = [];
+  let replacementCostTotal = 0;
 
-  let remaining = qty
-  const consumedIds: string[] = []
-  let replacementCostTotal = 0
   for (const row of avail) {
-    if (remaining <= 0) break
-    const rowQty = num(row.quantity_remaining)
-    const deduct = Math.min(rowQty, remaining)
-    const updatePayload: Record<string, any> = { quantity_remaining: rowQty - deduct }
+    if (remaining <= 0) break;
+    const take = Math.min(num(row.quantity_available), remaining);
+    const { error: updErr } = await supabaseAdmin
+      .from(TABLES.INVENTORY)
+      .update({ quantity_available: num(row.quantity_available) - take })
+      .eq('id', row.id)
+      .gte('quantity_available', take);
 
-    if (variants && row.variant_quantities_remaining) {
-      const nextVariants = adjustVariantQuantities(row.variant_quantities_remaining, variants, -1)
-      const rollups = rollupVariantQuantities(nextVariants)
-      updatePayload.variant_quantities_remaining = nextVariants
-      updatePayload.size_quantities_remaining = rollups.sizeQuantities
-      updatePayload.color_quantities_remaining = rollups.colorQuantities
-    }
-
-    const { error: updErr } = await supabaseAdmin.from(TABLES.STORE_INVENTORY).update(updatePayload).eq('id', row.id)
-    if (updErr) return { error: updErr.message }
-
-    replacementCostTotal += num(row.owner_supply_price) * deduct
-    consumedIds.push(row.id)
-    remaining -= deduct
+    if (updErr) return { error: updErr.message };
+    replacementCostTotal += num(row.cost_price) * take;
+    consumedIds.push(row.id);
+    remaining -= take;
   }
 
-  if (remaining > 0) return { error: 'Insufficient stock for replacement after allocation.' }
-  return { consumedIds, replacementCostTotal }
+  if (remaining > 0) return { error: 'Insufficient global stock for replacement after concurrency check.' };
+  return { consumedIds, replacementCostTotal };
 }
 
 /**
@@ -910,7 +890,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 
         // ── Replacement inventory handling ──────────────────────────────────
         let replacementCostTotal = 0
-        let replacementConsumedStoreInventoryIds: string[] = []
+        let replacementConsumedInventoryIds: string[] = []
         if (refundMethod === 'replacement') {
           // Build the replacement variant request from the selected product/variant.
           // Product/variant identity is the source of truth; FIFO picks the batches.
@@ -921,8 +901,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
               ? { [normalizedReplacementColor]: { [normalizedReplacementSize]: normalizedReplacementQty } }
               : null)
 
-          const deduction = await deductStoreInventoryFIFO(
-            order.store_id as string,
+          const deduction = await deductGlobalInventoryFIFO(
             normalizedReplacementProductId,
             replacementVariants,
             normalizedReplacementQty,
