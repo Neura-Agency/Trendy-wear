@@ -756,3 +756,27 @@ $$;
 
 revoke all on function public.undo_global_refund(uuid, integer) from public;
 grant execute on function public.undo_global_refund(uuid, integer) to service_role;
+
+
+-- Delete a global sale atomically.
+create or replace function public.delete_global_order(p_order_id uuid, p_engine_version integer)
+returns jsonb language plpgsql security definer set search_path=public as $$
+declare v_order public.orders%rowtype; v_deployed_version integer; v_row record; v_restored integer:=0;
+begin
+ select case when jsonb_typeof(value)='number' then (value #>> '{}')::integer when jsonb_typeof(value)='string' then trim(both '"' from value::text)::integer else null end into v_deployed_version from public.settings where key='inventoryEngineVersion';
+ if p_engine_version=0 or v_deployed_version is null or v_deployed_version<>p_engine_version then raise exception using errcode='P0001',message=format('INVENTORY_ENGINE_VERSION_MISMATCH: app=%s db=%s',p_engine_version,coalesce(v_deployed_version,-1)); end if;
+ select * into v_order from public.orders where id=p_order_id for update;
+ if not found then raise exception using errcode='P0001',message='ORDER_NOT_FOUND'; end if;
+ if coalesce(v_order.included_in_payout,false) then raise exception using errcode='P0001',message='ORDER_IN_PAYOUT'; end if;
+ if coalesce(v_order.refund_quantity,0)>0 then perform public.undo_global_refund(p_order_id,p_engine_version); end if;
+ if coalesce(v_order.return_quantity,0)>0 then perform public.undo_global_order_return(p_order_id); end if;
+ for v_row in select id,inventory_id,quantity,bonus_quantity from public.order_inventory_allocations where order_id=p_order_id and allocation_type='sale' order by created_at desc,id desc for update loop
+   update public.inventory set quantity_available=quantity_available+v_row.quantity+v_row.bonus_quantity,updated_at=now() where id=v_row.inventory_id;
+   if not found then raise exception using errcode='P0001',message='INVENTORY_BATCH_NOT_FOUND'; end if;
+   v_restored:=v_restored+v_row.quantity+v_row.bonus_quantity;
+ end loop;
+ delete from public.orders where id=p_order_id;
+ return jsonb_build_object('success',true,'restored',v_restored);
+end; $$;
+revoke all on function public.delete_global_order(uuid,integer) from public;
+grant execute on function public.delete_global_order(uuid,integer) to service_role;
