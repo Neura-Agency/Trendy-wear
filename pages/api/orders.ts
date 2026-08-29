@@ -238,6 +238,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
             return_variant_quantities: returnVariantQuantities || null,
             return_proof_url: returnProofUrl || null,
           },
+          p_engine_version: 2,
         });
 
         if (error) {
@@ -343,6 +344,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 
         const { data, error } = await supabaseAdmin.rpc('undo_global_order_return', {
           p_order_id: id,
+          p_engine_version: 2,
         });
 
         if (error) {
