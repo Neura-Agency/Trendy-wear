@@ -75,14 +75,11 @@ export default function InventoryPage({ user, onLogin }: PageProps) {
     const { toast, showProcessing, hideProcessing } = usePopup();
     const [data, setData] = useState<{
         inventory: InventoryItem[];
-        stores: Record<string, Store>;
-        purchases: Purchase[];
+                purchases: Purchase[];
         products: Product[];
     }>({
         inventory: [],
-        storeInventory: {},
-        stores: {},
-        purchases: [],
+                        purchases: [],
         products: [],
     });
     // Track inventory ownership: each admin can only see/manage their own
@@ -90,10 +87,8 @@ export default function InventoryPage({ user, onLogin }: PageProps) {
     const [loading, setLoading] = useState<boolean>(true);
     const [showAddInventoryModal, setShowAddInventoryModal] = useState(false);
     const [showAlerts, setShowAlerts] = useState(false);
-    const [inventorySearch, setInventorySearch] = useState('');
-    const [storeSearch, setStoreSearch] = useState('');
-    const [detailInventoryItem, setDetailInventoryItem] = useState<any | null>(null);
-    const [detailsetDetailStoreInventoryItem] = useState<any | null>(null);
+    const [inventorySearch, setInventorySearch] = useState('');    const [detailInventoryItem, setDetailInventoryItem] = useState<any | null>(null);
+    
     // Persisted across modal open/close — tracks product types hidden/replaced by the user
     const [hiddenProductTypes, setHiddenProductTypes] = useState<string[]>([]);
     const handleHideProductType = (typeName: string) => {
@@ -107,12 +102,7 @@ export default function InventoryPage({ user, onLogin }: PageProps) {
     const refresh = useCallback(async () => {
         setLoading(true);
         try {
-            // Fetch stores from API
-            const storesRes = await fetch('/api/store');
-            const storesData = await storesRes.json();
-            
-            // Fetch products from API
-            const productsRes = await fetch('/api/products');
+             const productsRes = await fetch('/api/products');
             const productsData = await productsRes.json();
             
             // Fetch inventory from API
@@ -122,8 +112,7 @@ export default function InventoryPage({ user, onLogin }: PageProps) {
             setData({
                 inventory: inventoryData.inventory || [],
                 purchases: [],
-                                stores: storesData.stores || {},
-                products: productsData.products || [],
+                                                products: productsData.products || [],
             });
         } catch (e) {
             console.error(e);
@@ -372,8 +361,6 @@ export default function InventoryPage({ user, onLogin }: PageProps) {
                                         <th>Item ID</th>
                                         <th>Cost/pc</th>
                                         <th>Qty</th>
-                                        <th>Allotted Qty</th>
-                                        <th>Alloted Stores</th>
                                         <th>Status</th>
                                         <th style={{ textAlign: 'center' }}>Actions</th>
                                     </tr>
@@ -385,10 +372,6 @@ export default function InventoryPage({ user, onLogin }: PageProps) {
                                     ).map((item, idx) => {
                                         const picture = item.productImage || (item as any)?.otherVariants?.picture as string | undefined;
                                         const pictureSrc = (typeof picture === 'string' && picture.trim().length > 0) ? picture : '/images/size_L.webp';
-                                        const allotedStores = Object.entries(data.storeInventory || {})
-                                            .filter(([, items]) => Object.values(items as any).some((si: any) => si.inventoryId === item.id))
-                                            .map(([storeName]) => storeName);
-                                        const allotedQty = allotedQtyByProduct[item.id] || 0;
                                         const availableQty = Math.max(0, (Number(item.quantityAvailable) || 0));
 
                                         return (
@@ -440,18 +423,6 @@ export default function InventoryPage({ user, onLogin }: PageProps) {
                                                 <td className="text-muted font-mono" style={{ fontWeight: 700 }}>{formatItemCode(item.batchNumber)}</td>
                                                 <td>{Rs(item.costPrice)}</td>
                                                 <td className="font-bold" style={{ fontSize: '1.05rem' }}>{availableQty}</td>
-                                                <td className="font-bold">{allotedQty}</td>
-                                                <td>
-                                                    {Array.isArray(allotedStores) && allotedStores.length > 0 ? (
-                                                        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
-                                                            {allotedStores.map((s) => (
-                                                                <Badge key={s} type="blue">{s}</Badge>
-                                                            ))}
-                                                        </div>
-                                                    ) : (
-                                                        <span className="text-muted">-</span>
-                                                    )}
-                                                </td>
                                                 <td>
                                                     {availableQty <= 0 ? (
                                                         <Badge type="red">✕ Out</Badge>
@@ -561,20 +532,7 @@ export default function InventoryPage({ user, onLogin }: PageProps) {
                                                 <span className="mobile-card-label">Qty Available</span>
                                                 <span className="mobile-card-value" style={{ fontSize: '1.05rem' }}>{availableQty}</span>
                                             </div>
-                                            <div className="mobile-card-row">
-                                                <span className="mobile-card-label">Allotted</span>
-                                                <span className="mobile-card-value">{allotedQty}</span>
-                                            </div>
-                                            {Array.isArray(allotedStores) && allotedStores.length > 0 && (
-                                                <div className="mobile-card-row">
-                                                    <span className="mobile-card-label">Stores</span>
-                                                    <span className="mobile-card-value" style={{ display: 'flex', flexWrap: 'wrap', gap: 4, justifyContent: 'flex-end' }}>
-                                                        {allotedStores.map((s) => (
-                                                            <Badge key={s} type="blue" style={{ fontSize: 10 }}>{s}</Badge>
-                                                        ))}
-                                                    </span>
-                                                </div>
-                                            )}
+                                            
                                             <div className="mobile-card-actions">
                                                 <button className="btn btn-sm" style={{ fontSize: 10, padding: '4px 10px', background: 'rgba(16,185,129,0.1)', color: '#059669', border: '1.5px solid rgba(16,185,129,0.25)' }} onClick={() => setDetailInventoryItem(item)}>Detail</button>
                                                 <button className="btn btn-sm btn-glass" style={{ fontWeight: 800, color: 'var(--acc)', borderColor: 'rgba(99, 102, 241, 0.22)', background: 'rgba(99, 102, 241, 0.07)' }} onClick={() => { setEditingInventoryItem(item); setShowEditInventoryModal(true); }}>Edit</button>
@@ -916,12 +874,6 @@ export default function InventoryPage({ user, onLogin }: PageProps) {
           onClose={() => setDetailInventoryItem(null)}
           title={detailInventoryItem ? `Inventory Details — ${detailInventoryItem.productName}` : undefined}
           data={detailInventoryItem || {}}
-        />
-        <DetailModal
-          open={!!detailStoreInventoryItem}
-          onClose={() => setDetailStoreInventoryItem(null)}
-          title={detailStoreInventoryItem ? `Store Inventory Details — ${detailStoreInventoryItem.productName}` : undefined}
-          data={detailStoreInventoryItem || {}}
         />
     </>
 );

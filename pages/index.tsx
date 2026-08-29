@@ -1709,11 +1709,6 @@ export default function Home({ user, onLogin }: PageProps) {
     stores: Record<string, Store>;
     clients: Client[];
     expenses: Expense[];
-    storeInventory: Record<string, Record<string>>;
-    storeInventoryMeta?: {
-      latestUpdatedAt?: string | null;
-      latestUpdatedAtByStore?: Record<string, string>;
-    };
     settings?: any;
   }>({
     orders: [],
@@ -2687,8 +2682,7 @@ export default function Home({ user, onLogin }: PageProps) {
 
         {showSaleModal && (
           <CartModal
-            inventory={data.inventory
-            }
+            inventory={data.inventory}
             storeName={user.storeName}
             isAdmin={isAdmin}
             storeNames={isAdmin && user.scope === 'all' ? Object.keys(data.stores) : (isAdmin ? (user.managedStores || []) : [user.storeName])}
