@@ -296,7 +296,7 @@ grant execute on function public.return_order_to_global_inventory(uuid, integer)
 
 
 -- Full order-return transaction: inventory movement and order financial state commit together.
-create or replace function public.process_global_order_return(p_payload jsonb)
+create or replace function public.process_global_order_return(p_payload jsonb, p_engine_version integer)
 returns jsonb
 language plpgsql
 security definer
@@ -313,7 +313,12 @@ declare
   v_admin numeric;
   v_profit numeric;
   v_result jsonb;
+  v_deployed_version integer;
 begin
+  select case when jsonb_typeof(value)='number' then (value #>> '{}')::integer when jsonb_typeof(value)='string' then trim(both '"' from value::text)::integer else null end into v_deployed_version
+  from public.settings where key='inventoryEngineVersion';
+  if p_engine_version=0 or v_deployed_version is null or v_deployed_version<>p_engine_version then raise exception using errcode='P0001', message=format('INVENTORY_ENGINE_VERSION_MISMATCH: app=%s db=%s',p_engine_version,coalesce(v_deployed_version,-1)); end if;
+
   select * into v_order
   from public.orders
   where id = nullif(p_payload->>'order_id','')::uuid
@@ -351,11 +356,11 @@ begin
 end;
 $$;
 
-revoke all on function public.process_global_order_return(jsonb) from public;
-grant execute on function public.process_global_order_return(jsonb) to service_role;
+revoke all on function public.process_global_order_return(jsonb, integer) from public;
+grant execute on function public.process_global_order_return(jsonb, integer) to service_role;
 
 -- Undo the most recent physical return, reversing the exact allocation batches.
-create or replace function public.undo_global_order_return(p_order_id uuid)
+create or replace function public.undo_global_order_return(p_order_id uuid, p_engine_version integer)
 returns jsonb
 language plpgsql
 security definer
@@ -363,6 +368,7 @@ set search_path = public
 as $$
 declare
   v_order public.orders%rowtype;
+  v_deployed_version integer;
   v_remaining integer;
   v_row record;
   v_take integer;
@@ -373,6 +379,8 @@ declare
   v_admin numeric;
   v_profit numeric;
 begin
+  select case when jsonb_typeof(value)='number' then (value #>> '{}')::integer when jsonb_typeof(value)='string' then trim(both '"' from value::text)::integer else null end into v_deployed_version from public.settings where key='inventoryEngineVersion';
+  if p_engine_version=0 or v_deployed_version is null or v_deployed_version<>p_engine_version then raise exception using errcode='P0001', message=format('INVENTORY_ENGINE_VERSION_MISMATCH: app=%s db=%s',p_engine_version,coalesce(v_deployed_version,-1)); end if;
   select * into v_order from public.orders where id=p_order_id for update;
   if not found then raise exception using errcode='P0001', message='ORDER_NOT_FOUND'; end if;
   v_remaining := greatest(0,coalesce(v_order.return_quantity,0));
@@ -425,8 +433,8 @@ begin
 end;
 $$;
 
-revoke all on function public.undo_global_order_return(uuid) from public;
-grant execute on function public.undo_global_order_return(uuid) to service_role;
+revoke all on function public.undo_global_order_return(uuid, integer) from public;
+grant execute on function public.undo_global_order_return(uuid, integer) to service_role;
 
 
 -- Restock the physical original item for a replacement without changing the order's
