@@ -10,6 +10,7 @@ create table if not exists public.order_inventory_allocations (
   returned_quantity integer not null default 0 check (returned_quantity >= 0),
   unit_cost numeric(12,2) not null default 0,
   variant_quantities jsonb,
+  allocation_type text not null default 'sale' check (allocation_type in ('sale','replacement')),
   created_at timestamptz not null default now(),
   constraint order_inventory_allocations_positive_units check (quantity + bonus_quantity > 0)
 );
@@ -21,6 +22,18 @@ alter table public.orders
 
 alter table public.order_inventory_allocations
   add column if not exists returned_quantity integer not null default 0;
+
+alter table public.order_inventory_allocations
+  add column if not exists allocation_type text not null default 'sale';
+
+create table if not exists public.order_replacement_restock_allocations (
+  id uuid primary key default gen_random_uuid(),
+  order_id uuid not null references public.orders(id) on delete cascade,
+  inventory_id uuid not null references public.inventory(id) on delete restrict,
+  quantity integer not null check (quantity > 0),
+  created_at timestamptz not null default now()
+);
+create index if not exists idx_order_replacement_restock_order on public.order_replacement_restock_allocations(order_id);
 
 create table if not exists public.inventory_sale_idempotency (
   request_key text primary key,
@@ -368,7 +381,7 @@ begin
   for v_row in
     select id, inventory_id, returned_quantity
     from public.order_inventory_allocations
-    where order_id=p_order_id and returned_quantity > 0
+    where order_id=p_order_id and allocation_type = 'sale' and returned_quantity > 0
     order by created_at desc, id desc
     for update
   loop
@@ -461,3 +474,285 @@ $$;
 
 revoke all on function public.restock_order_original_for_replacement(uuid, integer) from public;
 grant execute on function public.restock_order_original_for_replacement(uuid, integer) to service_role;
+
+
+-- Transactional financial refund + global replacement engine.
+create or replace function public.process_global_refund(p_payload jsonb)
+returns jsonb
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  v_order public.orders%rowtype;
+  v_engine_version integer := coalesce((p_payload->>'engine_version')::integer,0);
+  v_deployed_version integer;
+  v_method text := coalesce(nullif(p_payload->>'refund_type',''),'quantity');
+  v_ref_qty integer;
+  v_original_qty integer;
+  v_returned_qty integer;
+  v_refunded_qty integer;
+  v_remaining_qty integer;
+  v_fixed_amount numeric := greatest(0,coalesce((p_payload->>'fixed_amount')::numeric,0));
+  v_new_refund_qty integer;
+  v_refund_amount numeric := 0;
+  v_replacement_qty integer := greatest(1,coalesce((p_payload->>'replacement_quantity')::integer,1));
+  v_replacement_product_id uuid := nullif(p_payload->>'replacement_product_id','')::uuid;
+  v_replacement_cost numeric := 0;
+  v_replacement_remaining integer;
+  v_row record;
+  v_take integer;
+  v_restock_remaining integer;
+  v_gross numeric;
+  v_commission numeric;
+  v_admin numeric;
+  v_profit numeric;
+begin
+  select case when jsonb_typeof(value)='number' then (value #>> '{}')::integer
+              when jsonb_typeof(value)='string' then trim(both '"' from value::text)::integer
+              else null end
+    into v_deployed_version
+  from public.settings where key='inventoryEngineVersion';
+
+  if v_engine_version = 0 or v_deployed_version is null or v_deployed_version <> v_engine_version then
+    raise exception using errcode='P0001', message=format('INVENTORY_ENGINE_VERSION_MISMATCH: app=%s db=%s',v_engine_version,coalesce(v_deployed_version,-1));
+  end if;
+
+  select * into v_order
+  from public.orders
+  where id = nullif(p_payload->>'order_id','')::uuid
+  for update;
+  if not found then raise exception using errcode='P0001', message='ORDER_NOT_FOUND'; end if;
+
+  v_original_qty := greatest(0,coalesce(v_order.quantity,0));
+  v_returned_qty := greatest(0,coalesce(v_order.return_quantity,0));
+  v_refunded_qty := greatest(0,coalesce(v_order.refund_quantity,0));
+  v_remaining_qty := greatest(0,v_original_qty-v_returned_qty-v_refunded_qty);
+  if v_remaining_qty < 1 then raise exception using errcode='P0001', message='NO_REMAINING_UNITS'; end if;
+
+  if v_method = 'amount' then
+    if v_fixed_amount <= 0 then raise exception using errcode='P0001', message='FIXED_REFUND_AMOUNT_REQUIRED'; end if;
+    v_ref_qty := least(v_remaining_qty, greatest(1,coalesce((p_payload->>'refund_quantity')::integer,v_remaining_qty)));
+  elsif v_method = 'replacement' then
+    if v_replacement_product_id is null then raise exception using errcode='P0001', message='REPLACEMENT_PRODUCT_REQUIRED'; end if;
+    v_ref_qty := least(v_remaining_qty, greatest(1,coalesce((p_payload->>'refund_quantity')::integer,1)));
+  else
+    v_ref_qty := least(v_remaining_qty, greatest(1,coalesce((p_payload->>'refund_quantity')::integer,v_remaining_qty)));
+  end if;
+  if v_ref_qty < 1 then raise exception using errcode='P0001', message='REFUND_QUANTITY_MUST_BE_POSITIVE'; end if;
+
+  v_new_refund_qty := v_refunded_qty + v_ref_qty;
+
+  -- Replacement stock is deducted under the same transaction and exact FIFO batches
+  -- are recorded as replacement allocations for COGS/auditability.
+  if v_method = 'replacement' then
+    v_replacement_remaining := v_replacement_qty;
+    for v_row in
+      select id, quantity_available, cost_price
+      from public.inventory
+      where product_id=v_replacement_product_id and quantity_available > 0
+      order by created_at asc, id asc
+      for update
+    loop
+      exit when v_replacement_remaining <= 0;
+      v_take := least(v_row.quantity_available,v_replacement_remaining);
+
+      update public.inventory
+      set quantity_available=quantity_available-v_take, updated_at=now()
+      where id=v_row.id and quantity_available >= v_take;
+      if not found then raise exception using errcode='P0001', message='INVENTORY_CONCURRENT_UPDATE'; end if;
+
+      insert into public.order_inventory_allocations(
+        order_id, inventory_id, quantity, bonus_quantity, unit_cost, allocation_type
+      ) values (
+        v_order.id, v_row.id, v_take, 0, v_row.cost_price, 'replacement'
+      );
+
+      v_replacement_cost := v_replacement_cost + v_row.cost_price*v_take;
+      v_replacement_remaining := v_replacement_remaining-v_take;
+    end loop;
+
+    if v_replacement_remaining > 0 then
+      raise exception using errcode='P0001', message=format('INSUFFICIENT_GLOBAL_STOCK: replacement_available=%s replacement_requested=%s',v_replacement_qty-v_replacement_remaining,v_replacement_qty);
+    end if;
+
+    -- Scenario A: original item physically returned. Restore the original sale
+    -- allocations atomically and remember the exact batches so undo is reversible.
+    if coalesce((p_payload->>'original_item_returned')::boolean,false) then
+      v_restock_remaining := v_ref_qty;
+      for v_row in
+        select id, inventory_id, quantity, bonus_quantity, returned_quantity
+        from public.order_inventory_allocations
+        where order_id=v_order.id and allocation_type='sale'
+          and (quantity+bonus_quantity-returned_quantity) > 0
+        order by created_at desc, id desc
+        for update
+      loop
+        exit when v_restock_remaining <= 0;
+        v_take := least(v_restock_remaining, v_row.quantity+v_row.bonus_quantity-v_row.returned_quantity);
+        update public.inventory set quantity_available=quantity_available+v_take, updated_at=now()
+        where id=v_row.inventory_id;
+        if not found then raise exception using errcode='P0001', message='INVENTORY_BATCH_NOT_FOUND'; end if;
+        insert into public.order_replacement_restock_allocations(order_id,inventory_id,quantity)
+        values(v_order.id,v_row.inventory_id,v_take);
+        v_restock_remaining := v_restock_remaining-v_take;
+      end loop;
+      if v_restock_remaining > 0 then
+        raise exception using errcode='P0001', message='RESTOCK_ALLOCATION_NOT_FOUND';
+      end if;
+    end if;
+  end if;
+
+  if v_method='amount' then
+    v_refund_amount := coalesce(v_order.refund_amount,0)+v_fixed_amount;
+  elsif v_method='replacement' then
+    v_refund_amount := 0;
+  else
+    v_refund_amount := coalesce(v_order.refund_amount,0)+v_order.selling_price*v_ref_qty;
+  end if;
+
+  v_gross := v_order.selling_price * greatest(0,v_original_qty-v_returned_qty)
+             - v_order.shipment_cost
+             - case when v_method='amount' then v_fixed_amount else 0 end;
+  if v_method='quantity' then
+    v_gross := v_order.selling_price * greatest(0,v_original_qty-v_returned_qty-v_new_refund_qty)
+               - v_order.shipment_cost;
+  end if;
+
+  v_commission := round(greatest(0,v_gross)*coalesce(v_order.commission_percent,0)/100,2);
+  v_admin := greatest(0,v_gross)-v_commission;
+
+  if v_method='replacement' and coalesce((p_payload->>'original_item_returned')::boolean,false) then
+    v_profit := v_admin - coalesce(v_order.cost_price,0)*greatest(0,v_original_qty-v_returned_qty-v_new_refund_qty) - v_replacement_cost;
+  elsif v_method='replacement' then
+    v_profit := v_admin - coalesce(v_order.cost_price,0)*greatest(0,v_original_qty-v_returned_qty) - v_replacement_cost;
+  else
+    v_profit := v_admin - coalesce(v_order.cost_price,0)*greatest(0,v_original_qty-v_returned_qty);
+  end if;
+
+  update public.orders
+  set profit=greatest(0,v_profit),
+      admin_take=greatest(0,v_admin),
+      commission_amount=greatest(0,v_commission),
+      refund_quantity=v_new_refund_qty,
+      refund_amount=v_refund_amount,
+      refund_type=v_method,
+      replacement_item=case when v_method='replacement' then nullif(p_payload->>'replacement_item','') else null end,
+      replacement_product_id=case when v_method='replacement' then v_replacement_product_id else null end,
+      replacement_quantity=case when v_method='replacement' then v_replacement_qty else null end,
+      replacement_size=case when v_method='replacement' then nullif(p_payload->>'replacement_size','') else null end,
+      replacement_color=case when v_method='replacement' then nullif(p_payload->>'replacement_color','') else null end,
+      original_item_returned=case when v_method='replacement' then coalesce((p_payload->>'original_item_returned')::boolean,false) else null end,
+      refund_reason=case when v_method='replacement' then concat('Replacement: ',coalesce(nullif(p_payload->>'replacement_item',''),'Replacement')) else nullif(p_payload->>'refund_reason','') end,
+      refund_size_quantities=p_payload->'refund_size_quantities',
+      refund_color_quantities=p_payload->'refund_color_quantities',
+      refund_variant_quantities=p_payload->'refund_variant_quantities',
+      refunded_at=now(),
+      refund_proof_url=nullif(p_payload->>'refund_proof_url','')
+  where id=v_order.id;
+
+  return jsonb_build_object(
+    'success',true,
+    'refund_amount',v_refund_amount,
+    'replacement_cost_total',v_replacement_cost,
+    'replacement_consumed_inventory_ids',coalesce((select jsonb_agg(inventory_id) from public.order_inventory_allocations where order_id=v_order.id and allocation_type='replacement'), '[]'::jsonb)
+  );
+end;
+$$;
+
+revoke all on function public.process_global_refund(jsonb) from public;
+grant execute on function public.process_global_refund(jsonb) to service_role;
+
+-- Reverse a refund/replacement atomically.
+create or replace function public.undo_global_refund(p_order_id uuid, p_engine_version integer)
+returns jsonb
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  v_order public.orders%rowtype;
+  v_deployed_version integer;
+  v_row record;
+  v_restored integer := 0;
+  v_gross numeric;
+  v_commission numeric;
+  v_admin numeric;
+  v_profit numeric;
+begin
+  select case when jsonb_typeof(value)='number' then (value #>> '{}')::integer
+              when jsonb_typeof(value)='string' then trim(both '"' from value::text)::integer
+              else null end
+    into v_deployed_version
+  from public.settings where key='inventoryEngineVersion';
+  if p_engine_version=0 or v_deployed_version is null or v_deployed_version<>p_engine_version then
+    raise exception using errcode='P0001', message=format('INVENTORY_ENGINE_VERSION_MISMATCH: app=%s db=%s',p_engine_version,coalesce(v_deployed_version,-1));
+  end if;
+
+  select * into v_order from public.orders where id=p_order_id for update;
+  if not found then raise exception using errcode='P0001', message='ORDER_NOT_FOUND'; end if;
+  if coalesce(v_order.refund_quantity,0) < 1 then raise exception using errcode='P0001', message='NO_REFUND_TO_UNDO'; end if;
+
+  -- Remove replacement stock from the exact batches that were returned to the pool.
+  for v_row in
+    select id, inventory_id, quantity
+    from public.order_inventory_allocations
+    where order_id=p_order_id and allocation_type='replacement'
+    order by created_at desc, id desc
+    for update
+  loop
+    update public.inventory
+    set quantity_available=quantity_available-v_row.quantity, updated_at=now()
+    where id=v_row.inventory_id and quantity_available>=v_row.quantity;
+    if not found then raise exception using errcode='P0001', message='INSUFFICIENT_GLOBAL_STOCK'; end if;
+    v_restored := v_restored+v_row.quantity;
+    delete from public.order_inventory_allocations where id=v_row.id;
+  end loop;
+
+  -- Reverse Scenario-A original-item restock using the exact recorded batches.
+  for v_row in
+    select id, inventory_id, quantity
+    from public.order_replacement_restock_allocations
+    where order_id=p_order_id
+    order by created_at desc, id desc
+    for update
+  loop
+    update public.inventory
+    set quantity_available=quantity_available-v_row.quantity, updated_at=now()
+    where id=v_row.inventory_id and quantity_available>=v_row.quantity;
+    if not found then raise exception using errcode='P0001', message='INSUFFICIENT_GLOBAL_STOCK'; end if;
+    delete from public.order_replacement_restock_allocations where id=v_row.id;
+  end loop;
+
+  v_gross := v_order.selling_price*greatest(0,v_order.quantity-coalesce(v_order.return_quantity,0))-v_order.shipment_cost;
+  v_commission := round(greatest(0,v_gross)*coalesce(v_order.commission_percent,0)/100,2);
+  v_admin := greatest(0,v_gross)-v_commission;
+  v_profit := v_admin-coalesce(v_order.cost_price,0)*greatest(0,v_order.quantity-coalesce(v_order.return_quantity,0));
+
+  update public.orders
+  set profit=greatest(0,v_profit),
+      admin_take=greatest(0,v_admin),
+      commission_amount=greatest(0,v_commission),
+      refund_quantity=null,
+      refund_amount=null,
+      refund_type=null,
+      replacement_item=null,
+      replacement_product_id=null,
+      replacement_quantity=null,
+      replacement_size=null,
+      replacement_color=null,
+      original_item_returned=null,
+      refund_reason=null,
+      refund_size_quantities=null,
+      refund_color_quantities=null,
+      refund_variant_quantities=null,
+      refunded_at=null,
+      refund_proof_url=null
+  where id=p_order_id;
+
+  return jsonb_build_object('success',true,'restored',v_restored);
+end;
+$$;
+
+revoke all on function public.undo_global_refund(uuid, integer) from public;
+grant execute on function public.undo_global_refund(uuid, integer) to service_role;

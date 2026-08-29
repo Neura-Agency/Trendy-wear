@@ -9,7 +9,7 @@ import { SaleModal as LegacySaleModal, CreateStoreModal, ReportModal, ExpenseBre
 import { AddExpenseForm } from '../components/Forms';
 import CustomSelect from "../components/CustomSelect";
 import DetailModal from "../components/DetailModal";
-import { User, Order, Store, InventoryItem, Expense, Client, StoreInventoryItem, AppData, PageProps } from "../types";
+import { User, Order, Store, InventoryItem, Expense, Client, AppData, PageProps } from "../types";
 import { usePopup } from "../components/Popup";
 import SearchBar from "../components/SearchBar";
 import { formatItemCode } from "../lib/catalog";
@@ -628,7 +628,7 @@ function InlineCommEdit({ value, onSave }) {
 }
 
 // ─── STORES OVERVIEW SECTION (Reworked for Table View) ───────────────
-function StoresOverviewSection({ stores, orders, storeInventory, filter, getFiltered, onPayOrders, inventory, isAdmin, isSuperAdmin, onDeleteStore }) {
+function StoresOverviewSection({ stores, orders, filter, getFiltered, onPayOrders, inventory, isAdmin, isSuperAdmin, onDeleteStore }) {
   const { confirmDialog } = usePopup();
   const storeNames = Object.keys(stores);
   const [selected, setSelected] = useState(storeNames[0] || "");
@@ -818,7 +818,7 @@ function StoresOverviewSection({ stores, orders, storeInventory, filter, getFilt
          ) : (
            products.filter(p => !search || p.toLowerCase().includes(search.toLowerCase())).map(productName => {
              const catOrders = sOrders.filter(o => o.productName === productName);
-             const catInventory = Object.values(storeInventory[name] || {}).filter(si => (si as StoreInventoryItem).productName === productName);
+             const catInventory = inventory.filter(i => i.productName === productName);
 
              const unpaidOrders = catOrders.filter(o => o.paymentStatus !== true && (o.commissionAmount || 0) > 0);
              const paidOrders = catOrders.filter(o => o.paymentStatus === true);
@@ -827,7 +827,7 @@ function StoresOverviewSection({ stores, orders, storeInventory, filter, getFilt
              const totalPayout = catOrders.reduce((acc, o) => acc + (o.commissionAmount || 0), 0);
 
              const itemsSold = catOrders.reduce((acc: number, o) => acc + effectiveQty(o), 0);
-             const leftover = catInventory.reduce((acc: number, si) => acc + ((si as StoreInventoryItem).quantityRemaining as number), 0) as number;
+             const leftover = catInventory.reduce((acc: number, i: any) => acc + Math.max(0, Number(i.quantityAvailable) || 0), 0);
              const expenses = catOrders.reduce((acc, o) => acc + (o.shipmentCost || 0), 0);
              const partnerCut = totalPayout;
              const profit = catOrders.reduce((acc, o) => acc + (o.profit || 0), 0);
@@ -925,7 +925,7 @@ function StoresOverviewSection({ stores, orders, storeInventory, filter, getFilt
 }
 
 // ─── ORDERS SECTION ──────────────────────────────────────────────────
-function OrdersSection({ orders, overallOrders = [], inventory = [], storeInventory = {}, isAdmin, canDelete, onCommissionEdit, onTogglePayout, onEdit, onDelete, onReturn, onRefund, onUndoReturn, onUndoRefund, confirmDialog }: any) {
+function OrdersSection({ orders, overallOrders = [], inventory = [], isAdmin, canDelete, onCommissionEdit, onTogglePayout, onEdit, onDelete, onReturn, onRefund, onUndoReturn, onUndoRefund, confirmDialog }: any) {
   const [editing, setEditing] = useState<any>(null);
   const [editingCurrency, setEditingCurrency] = useState<'PKR' | 'GBP'>('PKR');
   const [editingSizeQuantities, setEditingSizeQuantities] = useState<Record<string, number>>({});
@@ -960,15 +960,6 @@ function OrdersSection({ orders, overallOrders = [], inventory = [], storeInvent
   };
 
   const getVariantGridSource = (item: any, order?: any) => {
-    // For store orders, prefer variantQuantitiesRemaining from storeInventory
-    // (keyed by storeName → productName → first matching item)
-    if (order?.storeName && order.storeName !== 'Direct') {
-      const storeItems = Object.values(storeInventory[order.storeName] || {}) as any[];
-      const storeItem = storeItems.find((si: any) => normalizeCatalogValue(si.productName) === normalizeCatalogValue(order.productName));
-      if (storeItem?.variantQuantitiesRemaining && typeof storeItem.variantQuantitiesRemaining === 'object' && Object.keys(storeItem.variantQuantitiesRemaining).length > 0) {
-        return storeItem.variantQuantitiesRemaining;
-      }
-    }
     const direct = item?.variantQuantitiesRemaining ?? item?.variantQuantities;
     if (direct && typeof direct === 'object' && Object.keys(direct).length > 0) return direct;
     return buildLegacyMaxVariantGrid(item?.colorQuantitiesRemaining ?? item?.colorQuantities, item?.sizeQuantitiesRemaining ?? item?.sizeQuantities);
@@ -1718,7 +1709,7 @@ export default function Home({ user, onLogin }: PageProps) {
     stores: Record<string, Store>;
     clients: Client[];
     expenses: Expense[];
-    storeInventory: Record<string, Record<string, StoreInventoryItem>>;
+    storeInventory: Record<string, Record<string>>;
     storeInventoryMeta?: {
       latestUpdatedAt?: string | null;
       latestUpdatedAtByStore?: Record<string, string>;
@@ -1730,7 +1721,6 @@ export default function Home({ user, onLogin }: PageProps) {
     stores: {},
     clients: [],
     expenses: [],
-    storeInventory: {},
   });
   const [loading, setLoading] = useState<boolean>(true);
 
@@ -1750,16 +1740,14 @@ export default function Home({ user, onLogin }: PageProps) {
   const refresh = useCallback(async () => {
     setLoading(true);
     try {
-      const [storesRes, storeInvRes, invRes, ordersRes, expensesRes, ownersRes] = await Promise.all([
+      const [storesRes, invRes, ordersRes, expensesRes, ownersRes] = await Promise.all([
         fetch('/api/store'),
-        fetch('/api/storeInventory'),
         fetch('/api/inventory'),
         fetch('/api/orders'),
         fetch('/api/expenses'),
         fetch('/api/owners'),
       ]);
       const storesData = await storesRes.json()
-      const storeInvData = await storeInvRes.json()
       const invData = await invRes.json()
       const ordersData = await ordersRes.json()
       const expensesData = await expensesRes.json()
@@ -1774,8 +1762,7 @@ export default function Home({ user, onLogin }: PageProps) {
         expenses: expensesData?.expenses || [],
         clients: [],
         settings: storesData?.settings || { storeCommissionPercent: 10 },
-        storeInventory: storeInvData?.storeInventory || {},
-        storeInventoryMeta: storeInvData?.meta || {},
+
       });
     } catch (e) {
       console.error(e);
@@ -1895,20 +1882,6 @@ export default function Home({ user, onLogin }: PageProps) {
     (s, i) => s + Math.max(0, Number(i.quantityAvailable) || 0),
     0
   );
-
-  const stockAsOfIso = (() => {
-    const meta = data.storeInventoryMeta
-    if (!meta) return null
-
-    if (isStoreManager) return meta.latestUpdatedAt ?? null
-    if (user.role === 'store') {
-      const byStore = meta.latestUpdatedAtByStore || {}
-      return (user.storeName && byStore[user.storeName]) ? byStore[user.storeName] : (meta.latestUpdatedAt ?? null)
-    }
-    return null
-  })();
-
-  const stockAsOfLabel = stockAsOfIso ? new Date(stockAsOfIso).toLocaleDateString() : null
   const storesCount = isSuperAdmin
     ? Object.keys(data.stores || {}).length
     : isAdmin
@@ -2469,7 +2442,6 @@ export default function Home({ user, onLogin }: PageProps) {
             <StoresOverviewSection
               stores={availableStores}
               orders={data.orders}
-              storeInventory={data.storeInventory}
               inventory={data.inventory}
               filter="All"
               getFiltered={getFiltered}
@@ -2503,7 +2475,6 @@ export default function Home({ user, onLogin }: PageProps) {
               orders={partnerOrders.slice(-20).reverse()}
               overallOrders={partnerAll}
               inventory={data.inventory}
-              storeInventory={data.storeInventory}
               isAdmin={isAdmin}
               onCommissionEdit={async (id, v) => {
                 try {
@@ -2716,38 +2687,7 @@ export default function Home({ user, onLogin }: PageProps) {
 
         {showSaleModal && (
           <CartModal
-            inventory={
-              isStoreManager
-                ? Object.entries(data.storeInventory)
-                    .filter(([sName]) => (user.managedStores || []).includes(sName))
-                    .flatMap(([, items]) =>
-                      Object.values(items).map(si => ({
-                        productId: si.productId,
-                        productName: si.productName,
-                        sizes: si.sizes,
-                        colors: si.colors,
-                        quantityAvailable: si.quantityRemaining,
-                        sellingPrice: si.storeSellingPrice,
-                        ownerSupplyPrice: si.ownerSupplyPrice,
-                        sizeQuantitiesRemaining: si.sizeQuantitiesRemaining,
-                        colorQuantitiesRemaining: si.colorQuantitiesRemaining,
-                        variantQuantitiesRemaining: si.variantQuantitiesRemaining,
-                      }))
-                    )
-                : user.role === 'store'
-                  ? Object.values(data.storeInventory[user.storeName] || {}).map(si => ({
-                      productId: si.productId,
-                      productName: si.productName,
-                      sizes: si.sizes,
-                      colors: si.colors,
-                      quantityAvailable: si.quantityRemaining,
-                      sellingPrice: si.storeSellingPrice,
-                      ownerSupplyPrice: si.ownerSupplyPrice,
-                      sizeQuantitiesRemaining: si.sizeQuantitiesRemaining,
-                      colorQuantitiesRemaining: si.colorQuantitiesRemaining,
-                      variantQuantitiesRemaining: si.variantQuantitiesRemaining,
-                    }))
-                  : data.inventory
+            inventory={data.inventory
             }
             storeName={user.storeName}
             isAdmin={isAdmin}

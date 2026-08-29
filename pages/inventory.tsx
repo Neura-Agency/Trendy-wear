@@ -8,14 +8,11 @@ import DetailModal from "../components/DetailModal";
 import { formatItemCode } from "../lib/catalog";
 import { 
   PageProps, 
-  InventoryItem, 
-  StoreInventoryItem, 
-  Store, 
-  Purchase,
+  InventoryItem,
+Purchase,
     Product,
-  User 
 } from "../types";
-import { AddInventoryModal, AllotToStoreModal, EditInventoryModal, EditStoreInventoryModal, ReturnToWarehouseModal } from "../components/Modals";
+import { AddInventoryModal, EditInventoryModal } from "../components/Modals";
 import ContextHelp from "../components/ContextHelp";
 import PageSkeleton from "../components/Skeletons";
 
@@ -78,7 +75,6 @@ export default function InventoryPage({ user, onLogin }: PageProps) {
     const { toast, showProcessing, hideProcessing } = usePopup();
     const [data, setData] = useState<{
         inventory: InventoryItem[];
-        storeInventory: Record<string, Record<string, StoreInventoryItem>>;
         stores: Record<string, Store>;
         purchases: Purchase[];
         products: Product[];
@@ -93,21 +89,11 @@ export default function InventoryPage({ user, onLogin }: PageProps) {
     // Assume each inventory item has an 'owner' field (username)
     const [loading, setLoading] = useState<boolean>(true);
     const [showAddInventoryModal, setShowAddInventoryModal] = useState(false);
-    const [showAllotModal, setShowAllotModal] = useState(false);
-    const [showEditModalUI, setShowEditModalUI] = useState(false);
-    const [editingRow, setEditingRow] = useState<any | null>(null);
-    const [showEditInventoryModal, setShowEditInventoryModal] = useState(false);
-    const [editingInventoryItem, setEditingInventoryItem] = useState<InventoryItem | null>(null);
-    const [showDeleteInventoryModal, setShowDeleteInventoryModal] = useState(false);
-    const [deletingInventoryItem, setDeletingInventoryItem] = useState<InventoryItem | null>(null);
-    const [deletingAllotmentRow, setDeletingAllotmentRow] = useState<any | null>(null);
-    const [deletingAllotment, setDeletingAllotment] = useState(false);
-    const [returnToWarehouseRow, setReturnToWarehouseRow] = useState<any | null>(null);
     const [showAlerts, setShowAlerts] = useState(false);
     const [inventorySearch, setInventorySearch] = useState('');
     const [storeSearch, setStoreSearch] = useState('');
     const [detailInventoryItem, setDetailInventoryItem] = useState<any | null>(null);
-    const [detailStoreInventoryItem, setDetailStoreInventoryItem] = useState<any | null>(null);
+    const [detailsetDetailStoreInventoryItem] = useState<any | null>(null);
     // Persisted across modal open/close — tracks product types hidden/replaced by the user
     const [hiddenProductTypes, setHiddenProductTypes] = useState<string[]>([]);
     const handleHideProductType = (typeName: string) => {
@@ -132,16 +118,11 @@ export default function InventoryPage({ user, onLogin }: PageProps) {
             // Fetch inventory from API
             const inventoryRes = await fetch('/api/inventory');
             const inventoryData = await inventoryRes.json();
-
-            // Fetch store inventory from API
-            const storeInvRes = await fetch('/api/storeInventory');
-            const storeInvData = await storeInvRes.json();
             
             setData({
                 inventory: inventoryData.inventory || [],
                 purchases: [],
-                storeInventory: storeInvData.storeInventory || {},
-                stores: storesData.stores || {},
+                                stores: storesData.stores || {},
                 products: productsData.products || [],
             });
         } catch (e) {
@@ -247,121 +228,14 @@ export default function InventoryPage({ user, onLogin }: PageProps) {
         }
     }
 
-    const handleDeleteAllotment = (item: any) => {
-        if (!item?.id) return toast.error('Missing allotment id')
-        setDeletingAllotmentRow(item)
-        setDeletingAllotment(false)
-    }
-
-    const confirmDeleteAllotment = async () => {
-        if (!deletingAllotmentRow?.id) return toast.error('Missing allotment id')
-
-        setDeletingAllotment(true)
-        showProcessing('Removing allotment...');
-        try {
-            const response = await fetch('/api/storeInventory', {
-                method: 'DELETE',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ id: deletingAllotmentRow.id })
-            })
-
-            const result = await response.json()
-            if (!response.ok) throw new Error(result.error || 'Failed to delete allotment')
-
-            const returned = Number(result?.returned) || 0
-            toast.success(`✅ Returned ${returned} piece${returned === 1 ? '' : 's'} to warehouse`)
-            setDeletingAllotment(false)
-            setDeletingAllotmentRow(null)
-            refresh()
-        } catch (e: any) {
-            toast.error(e?.message || 'Delete failed')
-        } finally {
-            setDeletingAllotment(false)
-            hideProcessing();
-        }
-    }
-
-    const handleReturnToWarehouse = async (payload: { id: string; returnQty: number; returnSizeQuantities?: any; returnColorQuantities?: any; returnVariantQuantities?: any }) => {
-        showProcessing('Returning stock to warehouse...');
-        try {
-            const response = await fetch('/api/storeInventory', {
-                method: 'PATCH',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ action: 'returnToWarehouse', ...payload }),
-            })
-            const result = await response.json()
-            if (!response.ok) throw new Error(result.error || 'Failed to return to warehouse')
-            const returnedQty = result.returned ?? payload.returnQty
-            toast.success(`✅ ${returnedQty} piece${returnedQty !== 1 ? 's' : ''} returned to Main Store successfully.`)
-            setReturnToWarehouseRow(null)
-            refresh()
-        } catch (e: any) {
-            toast.error(e?.message || 'Return to warehouse failed')
-        } finally {
-            hideProcessing();
-        }
-    }
-
-    // Flatten store inventory for the table
-    const stockProvided = [];
-    Object.entries(data.storeInventory).forEach(([storeName, items]) => {
-        const canSee = isSuperAdmin || (isStoreAdmin && storeNameMatches(storeName)) || (!isAdmin && storeNameMatches(storeName));
-        if (!canSee) return;
-        Object.values(items).forEach((item) => {
-            stockProvided.push({ ...item, storeName });
-        });
-    });
-
-    // Keyed by inventory.id (batch-level), NOT productName, to avoid cross-batch confusion
-    const allotedQtyByProduct: Record<string, number> = {};
-    Object.values(data.storeInventory || {}).forEach((items: any) => {
-        Object.values(items || {}).forEach((it: any) => {
-            const key = it?.inventoryId;   // inventory.id FK — unique per batch
-            if (!key) return;
-            allotedQtyByProduct[key] = (allotedQtyByProduct[key] || 0) + Math.max(0, (Number(it.quantityAssigned) || 0));
-        });
-    });
-
-    // Enrich warehouse inventory items with per-variant CURRENT available quantities for the
-    // Add Allotment modal. inventory.variant_quantities is maintained as the current warehouse
-    // breakdown (reduced on allot, restored on return/delete), so it is used directly - NOT
-    // reduced further by allocations here (that would double-count).
-    const inventoryWithRemaining = data.inventory.map((item: any) => {
-        const variants = item.variantQuantities;
-        if (!variants) return item;
-        const variantQuantitiesRemaining: Record<string, Record<string, number>> = {};
-        Object.entries(variants as Record<string, Record<string, number>>).forEach(([color, sizes]) => {
-            variantQuantitiesRemaining[color] = {};
-            Object.entries(sizes || {}).forEach(([size, qty]) => {
-                variantQuantitiesRemaining[color][size] = Math.max(0, Number(qty) || 0);
-            });
-        });
-        return { ...item, variantQuantitiesRemaining };
-    });
-
-    const storeCommissionByName: Record<string, number> = {};
-    Object.entries(data.stores || {}).forEach(([name, s]) => {
-        storeCommissionByName[name] = Number((s as any)?.commission) || 0;
-    });
-
-    const deletingStoreAllotments = deletingInventoryItem
-        ? stockProvided.filter((item) => item.inventoryId === deletingInventoryItem.id)
-        : [];
-
     // Build alerts list
-    const alerts: Array<{ type: 'out' | 'low' | 'store-out'; product: string; detail: string; rowId: string; section: 'warehouse' | 'store' }> = [];
+    const alerts: Array<{ type: 'out' | 'low'; product: string; detail: string; rowId: string; section: 'warehouse' }> = [];
     data.inventory.forEach(item => {
-        const allotedQty = allotedQtyByProduct[item.id] || 0;
         const availableQty = Math.max(0, (Number(item.quantityAvailable) || 0));
         if (availableQty <= 0) {
             alerts.push({ type: 'out', product: item.productName, detail: `Batch ${item.batchNumber} — 0 units left in warehouse`, rowId: `inv-row-${item.batchNumber}`, section: 'warehouse' });
         } else if (availableQty <= (item.lowStockWarning || 5)) {
             alerts.push({ type: 'low', product: item.productName, detail: `Batch ${item.batchNumber} — only ${availableQty} unit${availableQty !== 1 ? 's' : ''} remaining`, rowId: `inv-row-${item.batchNumber}`, section: 'warehouse' });
-        }
-    });
-    stockProvided.forEach((item, idx) => {
-        if ((item.quantityRemaining || 0) <= 0) {
-            alerts.push({ type: 'store-out', product: item.productName, detail: `${item.storeName} — 0 units left in shop`, rowId: `store-inv-row-${item.id || idx}`, section: 'store' });
         }
     });
 
@@ -428,9 +302,9 @@ export default function InventoryPage({ user, onLogin }: PageProps) {
                             </div>
                             <div className="kpi-card purple">
                                 <div className="kpi-icon">{IC.store}</div>
-                                <div className="kpi-label">Shared Stock</div>
-                                <div className="kpi-value">{totalItemsInStores}</div>
-                                <div className="kpi-trend">Available Across Stores</div>
+                                <div className="kpi-label">Global Stock</div>
+                                 <div className="kpi-value">{totalItemsInWarehouse}</div>
+                                 <div className="kpi-trend">Available to Every Store</div>
                             </div>
                             <div className="kpi-card red" onClick={() => alerts.length > 0 && setShowAlerts(true)} style={{ cursor: alerts.length > 0 ? 'pointer' : 'default', position: 'relative' }}>
                                 {alerts.length > 0 && (
@@ -461,12 +335,6 @@ export default function InventoryPage({ user, onLogin }: PageProps) {
                         <div className="kpi-trend">Product Catalog</div>
                     </div>
                 </section>
-
-                {isAdmin && stockProvided.length === 0 && !isSuperAdmin && (
-                    <div style={{ padding: 40, textAlign: 'center', background: 'var(--surface-2)', borderRadius: 12, marginTop: 24 }}>
-                        <p className="text-muted">No goods have been supplied to your managed stores yet.</p>
-                    </div>
-                )}
 
 
                 {isSuperAdmin && (
@@ -721,10 +589,11 @@ export default function InventoryPage({ user, onLogin }: PageProps) {
                 )}
 
                 <SectionCard
-                    title="Global Inventory"
-                    helpKey="inventory.allInventory"
-                    icon={IC.stock}
-                >
+                     title="Global Inventory"
+                     helpKey="inventory.allInventory"
+                     icon={IC.stock}
+                     action={isSuperAdmin ? <button className="btn btn-primary" onClick={() => setShowAddInventoryModal(true)}>+ Add Inventory</button> : undefined}
+                 >
                     <div style={{ padding: "8px 0 16px", color: "var(--text-muted)", fontSize: 13 }}>
                         All stores use the same physical inventory pool. Store-specific quantities are tracked through sales and reports, not inventory ownership.
                     </div>
@@ -753,143 +622,10 @@ export default function InventoryPage({ user, onLogin }: PageProps) {
                         </table>
                     </div>
                 </SectionCard>
-                {showAllotModal && (
-                    <AllotToStoreModal
-                        stores={Object.keys(data.stores)}
-                        inventory={inventoryWithRemaining}
-                        allotedQtyByProduct={allotedQtyByProduct}
-                        storeCommissionByName={storeCommissionByName}
-                        onSave={async ({ storeName, batchNumber, quantity, ownerSupplyPrice, commissionPercent, extraQty, sizeQuantitiesAssigned, colorQuantitiesAssigned, variantQuantitiesAssigned }) => {
-                            try {
-                                const resp = await fetch('/api/storeInventory', {
-                                    method: 'POST',
-                                    headers: { 'Content-Type': 'application/json' },
-                                    body: JSON.stringify({
-                                        storeName,
-                                        batchNumber,
-                                        quantity,
-                                        variantQuantitiesAssigned,
-                                        sizeQuantitiesAssigned,
-                                        colorQuantitiesAssigned,
-                                        ownerSupplyPrice,
-                                        commissionPercent,
-                                        extraQty: extraQty || 0,
-                                    })
-                                })
-                                const json = await resp.json()
-                                if (!resp.ok) throw new Error(json?.error || 'Failed to save allotment')
-                                toast.success('✅ Allotment saved')
-                                refresh()
-                            } catch (e: any) {
-                                toast.error(e?.message || 'Failed to save allotment')
-                            }
-                        }}
-                        onClose={() => setShowAllotModal(false)}
-                    />
-                )}
-
-                {showEditModalUI && editingRow && (
-                    <EditStoreInventoryModal
-                        item={editingRow}
-                        storeNames={Object.keys(data.stores)}
-                        onSave={async (fields: any) => {
-                            try {
-                                const resp = await fetch('/api/storeInventory', {
-                                    method: 'PATCH',
-                                    headers: { 'Content-Type': 'application/json' },
-                                    body: JSON.stringify({ id: editingRow.id, fields })
-                                })
-                                const json = await resp.json()
-                                if (!resp.ok) throw new Error(json?.error || 'Failed to update allotment')
-                                toast.success('✅ Allotment updated')
-                                setShowEditModalUI(false)
-                                setEditingRow(null)
-                                refresh()
-                            } catch (e: any) {
-                                toast.error(e?.message || 'Update failed')
-                            }
-                        }}
-                        onClose={() => { setShowEditModalUI(false); setEditingRow(null); }}
-                    />
-                )}
-
-                {deletingAllotmentRow && (
-                    <div className="modal-overlay" onClick={() => { if (!deletingAllotment) { setDeletingAllotmentRow(null); } }}>
-                        <div className="modal-box delete-modal" onClick={e => e.stopPropagation()}>
-                            <div className="delete-modal__hero">
-                                <div className="delete-modal__head">
-                                    <div className="delete-modal__icon">
-                                        {IC.trash}
-                                    </div>
-                                    <div className="delete-modal__copy">
-                                        <div className="delete-modal__eyebrow">Destructive action</div>
-                                        <h3 className="delete-modal__title">Delete store allotment?</h3>
-                                        <div className="delete-modal__subtitle">
-                                            This will remove the allotment for <strong>{deletingAllotmentRow.productName}</strong> from <strong>{deletingAllotmentRow.storeName}</strong>.
-                                        </div>
-                                    </div>
-                                </div>
-                            </div>
-
-                            {(() => {
-                                const totalSent = Math.max(0, Number(deletingAllotmentRow.quantityAssigned) || 0)
-                                const remaining = Math.max(0, Number(deletingAllotmentRow.quantityRemaining) || 0)
-                                const sold = Math.max(0, totalSent - remaining)
-
-                                return (
-                                    <div className="delete-modal__body">
-                                        <div className="delete-modal__summary">
-                                            <div className="delete-modal__summary-top">
-                                                <div>
-                                                    <div className="delete-modal__label">Item details</div>
-                                                    <div className="delete-modal__item-name">{deletingAllotmentRow.productName}</div>
-                                                    <div className="delete-modal__batch">{deletingAllotmentRow.storeName}</div>
-                                                </div>
-                                                <div className="delete-modal__count-wrap">
-                                                    <div className="delete-modal__label delete-modal__label--right">Will return</div>
-                                                    <div className="delete-modal__count">{remaining}</div>
-                                                </div>
-                                            </div>
-                                            <div className="delete-modal__chips">
-                                                <span className="badge badge-red">Total sent: {totalSent}</span>
-                                                <span className="badge badge-blue">Items sold: {sold}</span>
-                                                <span className="badge badge-gray">In shop stock: {remaining}</span>
-                                            </div>
-                                        </div>
-
-                                        <div className="delete-modal__warning">
-                                            Deleting this allotment will keep the sold pieces as-is and return only the remaining {remaining} piece{remaining === 1 ? '' : 's'} to warehouse stock.
-                                        </div>
-                                    </div>
-                                )
-                            })()}
-
-                            <div className="delete-modal__footer">
-                                <button
-                                    type="button"
-                                    className="btn btn-sm btn-glass delete-modal__cancel"
-                                    onClick={() => { if (!deletingAllotment) { setDeletingAllotmentRow(null); } }}
-                                    disabled={deletingAllotment}
-                                >
-                                    Cancel
-                                </button>
-                                <button
-                                    type="button"
-                                    className="btn btn-sm delete-modal__confirm"
-                                    onClick={confirmDeleteAllotment}
-                                    disabled={deletingAllotment}
-                                >
-                                    {deletingAllotment ? 'Deleting...' : 'Delete Allotment'}
-                                </button>
-                            </div>
-                        </div>
-                    </div>
-                )}
-
-                {showEditInventoryModal && editingInventoryItem && (
+                 {showEditInventoryModal && editingInventoryItem && (
                     <EditInventoryModal
                         item={editingInventoryItem}
-                        minQuantity={editingInventoryItem.id ? (allotedQtyByProduct[editingInventoryItem.id] || 0) : 0}
+                        minQuantity={0}
                         products={data.products}
                         onSave={async (payload: any) => {
                             await handleUpdateInventory(editingInventoryItem, payload)
@@ -928,30 +664,18 @@ export default function InventoryPage({ user, onLogin }: PageProps) {
                                             <div className="delete-modal__batch">{deletingInventoryItem.batchNumber}</div>
                                         </div>
                                         <div className="delete-modal__count-wrap">
-                                            <div className="delete-modal__label delete-modal__label--right">Linked allotments</div>
-                                            <div className="delete-modal__count">
-                                                {deletingStoreAllotments.length}
-                                            </div>
+                                            <div className="delete-modal__label delete-modal__label--right">Available stock</div>
+                                             <div className="delete-modal__count">{Math.max(0, Number(deletingInventoryItem.quantityAvailable) || 0)}</div>
                                         </div>
                                     </div>
                                     <div className="delete-modal__chips">
-                                        <span className="badge badge-red">Warehouse item</span>
-                                        {deletingStoreAllotments.length > 0 ? (
-                                            deletingStoreAllotments.slice(0, 3).map((item) => (
-                                                <Badge key={`${item.storeName}-${item.id}`} type="blue">
-                                                    {item.storeName}
-                                                </Badge>
-                                            ))
-                                        ) : (
-                                            <span className="text-muted">No store allotments found</span>
-                                        )}
-                                        {deletingStoreAllotments.length > 3 && <Badge type="gray">+{deletingStoreAllotments.length - 3} more</Badge>}
-                                    </div>
-                                </div>
+                                         <span className="badge badge-gray">Global inventory batch</span>
+                                     </div>
+                                 </div>
 
-                                <div className="delete-modal__warning">
-                                    This permanently deletes the item and every linked allotment. The action cannot be undone.
-                                </div>
+                                 <div className="delete-modal__warning">
+                                     This permanently deletes this global inventory batch. Historical orders remain preserved.
+                                 </div>
                             </div>
                             <div className="delete-modal__footer">
                                 <button
@@ -975,27 +699,8 @@ export default function InventoryPage({ user, onLogin }: PageProps) {
             </div>
 
             {/* â”€â”€ Return to Warehouse Modal (Scenario B) â”€â”€ */}
-            {returnToWarehouseRow && (
-                <ReturnToWarehouseModal
-                    allotment={{
-                        id: returnToWarehouseRow.id,
-                        productName: returnToWarehouseRow.productName,
-                        storeName: returnToWarehouseRow.storeName,
-                        quantityRemaining: Number(returnToWarehouseRow.quantityRemaining) || 0,
-                        pendingReturnQty: Number(returnToWarehouseRow.pendingReturnQty) || 0,
-                        pendingReturnSizeQuantities: returnToWarehouseRow.pendingReturnSizeQuantities ?? null,
-                        pendingReturnColorQuantities: returnToWarehouseRow.pendingReturnColorQuantities ?? null,
-                        pendingReturnVariantQuantities: returnToWarehouseRow.pendingReturnVariantQuantities ?? null,
-                        sizeQuantitiesRemaining: returnToWarehouseRow.sizeQuantitiesRemaining ?? null,
-                        colorQuantitiesRemaining: returnToWarehouseRow.colorQuantitiesRemaining ?? null,
-                        variantQuantitiesRemaining: returnToWarehouseRow.variantQuantitiesRemaining ?? null,
-                    }}
-                    onConfirm={handleReturnToWarehouse}
-                    onClose={() => setReturnToWarehouseRow(null)}
-                />
-            )}
 
-            {/* â”€â”€ Alerts Popup â”€â”€ */}
+             {/* ── Alerts Popup â”€â”€ */}
             {showAlerts && (
                 <div className="modal-overlay" onClick={() => setShowAlerts(false)}>
                     <div className="modal-box" style={{ maxWidth: 520 }} onClick={e => e.stopPropagation()}>
