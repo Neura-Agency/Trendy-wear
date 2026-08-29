@@ -340,8 +340,34 @@ export default function InventoryPage({ user, onLogin }: PageProps) {
                             <tbody>
                                 {data.inventory.filter(item => !inventorySearch || matchesWarehouseSearch(item, inventorySearch)).map((item, idx) => {
                                     const availableQty = Math.max(0, Number(item.quantityAvailable) || 0);
+                                    const picture = item.productImage || (item as any)?.otherVariants?.picture as string | undefined;
+                                    const pictureSrc = (typeof picture === 'string' && picture.trim().length > 0) ? picture : '/images/size_L.webp';
                                     return <tr key={item.productName + "-" + item.batchNumber + "-" + idx}>
-                                        <td className="font-bold">{item.productName}</td>
+                                        <td className="font-bold">
+                                            <div className="item-wrap">
+                                                <div className="item-thumb">
+                                                    <img
+                                                        src={pictureSrc}
+                                                        alt={item.productName}
+                                                        className="item-thumb-img"
+                                                        loading="lazy"
+                                                        onError={(e) => {
+                                                            const img = e.currentTarget;
+                                                            if (img.src.includes('/images/size_L.webp')) return;
+                                                            img.src = '/images/size_L.webp';
+                                                        }}
+                                                    />
+                                                </div>
+                                                <div>
+                                                    <div>{item.productName}</div>
+                                                    <div className="item-meta-tags">
+                                                        {item.brand && <Badge type="gray">{item.brand}</Badge>}
+                                                        {item.size && (Array.isArray(item.size) ? item.size.map((s) => <Badge key={s} type="purple">{s}</Badge>) : <Badge type="purple">{item.size}</Badge>)}
+                                                        {item.color && (Array.isArray(item.color) ? item.color.map((c) => <Badge key={c} type="blue">{c}</Badge>) : <Badge type="blue">{item.color}</Badge>)}
+                                                    </div>
+                                                </div>
+                                            </div>
+                                        </td>
                                         <td className="type-cell"><Badge type="gray"><span className="type-cell__text">{item.category}</span></Badge></td>
                                         <td className="text-muted font-mono" style={{fontWeight:700}}>{formatItemCode(item.batchNumber)}</td>
                                         <td>{Rs(item.costPrice)}</td>
@@ -358,6 +384,20 @@ export default function InventoryPage({ user, onLogin }: PageProps) {
                         </table>
                     </div>
                 </SectionCard>
+                 {showAddInventoryModal && (
+                    <AddInventoryModal
+                        stores={[]}
+                        products={data.products}
+                        inventory={data.inventory}
+                        hiddenProductTypes={hiddenProductTypes}
+                        onHideProductType={handleHideProductType}
+                        onSave={async (payload: any) => {
+                            await handleSaveInventory(payload);
+                            setShowAddInventoryModal(false);
+                        }}
+                        onClose={() => setShowAddInventoryModal(false)}
+                    />
+                )}
                  {showEditInventoryModal && editingInventoryItem && (
                     <EditInventoryModal
                         item={editingInventoryItem}
@@ -496,6 +536,35 @@ export default function InventoryPage({ user, onLogin }: PageProps) {
                 @keyframes slideUp { 
                     from { opacity: 0; transform: translateY(20px); } 
                     to { opacity: 1; transform: translateY(0); } 
+                }
+                .item-wrap {
+                    display: flex;
+                    align-items: center;
+                    gap: 12px;
+                }
+                .item-thumb {
+                    width: 44px;
+                    height: 44px;
+                    border-radius: 10px;
+                    overflow: hidden;
+                    border: 1px solid var(--border);
+                    background: var(--surface-2);
+                    flex: 0 0 auto;
+                }
+                .item-thumb-img {
+                    width: 100%;
+                    height: 100%;
+                    object-fit: cover;
+                    display: block;
+                }
+                .item-meta-tags {
+                    font-size: 10px;
+                    color: var(--text-muted);
+                    font-weight: 400;
+                    margin-top: 4px;
+                    display: flex;
+                    flex-wrap: wrap;
+                    gap: 4px;
                 }
                 .form-grid-2 {
                     background: var(--surface-2);

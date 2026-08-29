@@ -1508,3 +1508,14 @@ button,
   .ctx-help-pop { width: min(320px, calc(100vw - 24px)); }
   .modal-body { padding: 18px 16px 24px; }
 }
+
+/* Cart / New Order modal: two-column item-entry + cart layout needs more
+   room than the standard dialog cap above. Class selector out-specifies
+   the generic .modal-box rule so it wins regardless of stylesheet order. */
+@media (min-width: 577px) {
+  .modal-box.cart-order-modal {
+    width: min(1500px, 97vw) !important;
+    max-width: min(1500px, 97vw) !important;
+    max-height: 95vh !important;
+  }
+}

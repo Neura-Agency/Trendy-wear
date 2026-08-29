@@ -1662,7 +1662,19 @@ function OrdersSection({ orders, overallOrders = [], inventory = [], isAdmin, ca
         open={!!detailOrder}
         onClose={() => setDetailOrder(null)}
         title={detailOrder ? `Order Details — ${detailOrder.orderCode || detailOrder.id}` : undefined}
-        data={detailOrder || {}}
+        data={
+          detailOrder
+            ? (isAdmin
+                ? detailOrder
+                // Shop owners shouldn't see internal financials — cost price, the
+                // commission cut, the admin's take, or the computed profit.
+                : Object.fromEntries(
+                    Object.entries(detailOrder).filter(
+                      ([key]) => !['costPrice', 'commissionAmount', 'adminTake', 'profit'].includes(key)
+                    )
+                  ))
+            : {}
+        }
       />
     </div>
   );
