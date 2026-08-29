@@ -473,7 +473,19 @@ html[data-theme="dark"] [style*="background:rgba(238, 238, 238, 1)"],
 html[data-theme="dark"] [style*="background:#eee"],
 html[data-theme="dark"] [style*="background: rgb(238, 238, 238)"],
 html[data-theme="dark"] [style*="background: rgba(238, 238, 238, 1)"],
-html[data-theme="dark"] [style*="background: #eee"] {
+html[data-theme="dark"] [style*="background: #eee"],
+html[data-theme="dark"] [style*="background:rgb(245, 243, 255)"],
+html[data-theme="dark"] [style*="background:rgba(245, 243, 255, 1)"],
+html[data-theme="dark"] [style*="background:#f5f3ff"],
+html[data-theme="dark"] [style*="background: rgb(245, 243, 255)"],
+html[data-theme="dark"] [style*="background: rgba(245, 243, 255, 1)"],
+html[data-theme="dark"] [style*="background: #f5f3ff"],
+html[data-theme="dark"] [style*="background:rgb(255, 247, 237)"],
+html[data-theme="dark"] [style*="background:rgba(255, 247, 237, 1)"],
+html[data-theme="dark"] [style*="background:#fff7ed"],
+html[data-theme="dark"] [style*="background: rgb(255, 247, 237)"],
+html[data-theme="dark"] [style*="background: rgba(255, 247, 237, 1)"],
+html[data-theme="dark"] [style*="background: #fff7ed"] {
   background: var(--surface-3) !important;
   color: var(--text-body);
 }
