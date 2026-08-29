@@ -10,6 +10,10 @@ type SaleInventoryItem = Pick<InventoryItem, 'productName' | 'quantityAvailable'
     productId?: string;
     brandName?: string;
     productType?: string;
+    // Present on rows served by GET /api/inventory (mapped from products.brand_name / products.product_type);
+    // absent on the direct-sales cart mapping, hence optional with '' fallbacks at use sites.
+    brand?: string;
+    category?: string;
     sizes?: string[];
     colors?: string[];
     ownerSupplyPrice?: number;
