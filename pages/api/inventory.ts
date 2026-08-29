@@ -564,7 +564,13 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       if (!id) {
         return res.status(400).json({ error: 'id is required' })
       }
-       if (inventoryDeleteError) {
+
+      const { error: inventoryDeleteError } = await supabaseAdmin
+        .from(TABLES.INVENTORY)
+        .delete()
+        .eq('id', id)
+
+      if (inventoryDeleteError) {
         console.error('inventory delete error:', inventoryDeleteError)
         return res.status(500).json({ error: 'Failed to delete inventory item' })
       }

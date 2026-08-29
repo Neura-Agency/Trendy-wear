@@ -1,4 +1,4 @@
-﻿import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { usePopup } from '../components/Popup';
 import SectionCard from "../components/SectionCard";
 import Badge from "../components/Badge";
@@ -86,8 +86,13 @@ export default function InventoryPage({ user, onLogin }: PageProps) {
     // Assume each inventory item has an 'owner' field (username)
     const [loading, setLoading] = useState<boolean>(true);
     const [showAddInventoryModal, setShowAddInventoryModal] = useState(false);
+    const [showEditInventoryModal, setShowEditInventoryModal] = useState(false);
+    const [showDeleteInventoryModal, setShowDeleteInventoryModal] = useState(false);
+    const [editingInventoryItem, setEditingInventoryItem] = useState<any | null>(null);
+    const [deletingInventoryItem, setDeletingInventoryItem] = useState<any | null>(null);
     const [showAlerts, setShowAlerts] = useState(false);
-    const [inventorySearch, setInventorySearch] = useState('');    const [detailInventoryItem, setDetailInventoryItem] = useState<any | null>(null);
+    const [inventorySearch, setInventorySearch] = useState('');
+    const [detailInventoryItem, setDetailInventoryItem] = useState<any | null>(null);
     
     // Persisted across modal open/close — tracks product types hidden/replaced by the user
     const [hiddenProductTypes, setHiddenProductTypes] = useState<string[]>([]);
@@ -453,15 +458,15 @@ export default function InventoryPage({ user, onLogin }: PageProps) {
                                     style={{
                                         display: 'flex', alignItems: 'center', gap: 12,
                                         padding: '10px 12px', borderRadius: 8, marginBottom: 6,
-                                        background: alert.type === 'out' || alert.type === 'store-out' ? '#fef2f2' : '#fffbeb',
-                                        border: `1px solid ${alert.type === 'out' || alert.type === 'store-out' ? '#fecaca' : '#fde68a'}`,
+                                        background: alert.type === 'out' ? '#fef2f2' : '#fffbeb',
+                                        border: `1px solid ${alert.type === 'out' ? '#fecaca' : '#fde68a'}`,
                                         cursor: 'pointer', transition: 'opacity 0.15s',
                                     }}
                                     onMouseEnter={e => (e.currentTarget.style.opacity = '0.8')}
                                     onMouseLeave={e => (e.currentTarget.style.opacity = '1')}
                                 >
                                     <span style={{ fontSize: 18, flexShrink: 0 }}>
-                                        {alert.type === 'out' || alert.type === 'store-out' ? 'ðŸš«' : '⚠ï¸'}
+                                        {alert.type === 'out' ? '🚫' : '⚠️'}
                                     </span>
                                     <div style={{ flex: 1, minWidth: 0 }}>
                                         <div style={{ fontWeight: 700, fontSize: 13, color: 'var(--text-head)' }}>{alert.product}</div>
@@ -470,10 +475,10 @@ export default function InventoryPage({ user, onLogin }: PageProps) {
                                     <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexShrink: 0 }}>
                                         <span style={{
                                             fontSize: 10, fontWeight: 700, padding: '2px 8px', borderRadius: 4,
-                                            background: alert.type === 'out' || alert.type === 'store-out' ? '#fee2e2' : '#fef3c7',
-                                            color: alert.type === 'out' || alert.type === 'store-out' ? '#b91c1c' : '#92400e',
+                                            background: alert.type === 'out' ? '#fee2e2' : '#fef3c7',
+                                            color: alert.type === 'out' ? '#b91c1c' : '#92400e',
                                         }}>
-                                            {alert.type === 'out' ? 'OUT OF STOCK' : alert.type === 'store-out' ? 'SHOP EMPTY' : 'LOW STOCK'}
+                                            {alert.type === 'out' ? 'OUT OF STOCK' : 'LOW STOCK'}
                                         </span>
                                         <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#94a3b8" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M5 12h14"/><path d="m12 5 7 7-7 7"/></svg>
                                     </div>

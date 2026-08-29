@@ -18,7 +18,7 @@ export function middleware(request: NextRequest) {
     return NextResponse.rewrite(url)
   }
 
-  if (request.method === 'POST' && request.nextUrl.pathname === '/api/storeInventory') {
+  if (['POST', 'PATCH', 'DELETE'].includes(request.method) && request.nextUrl.pathname === '/api/storeInventory') {
     return NextResponse.json(
       {
         error: 'Inventory allotment is retired. Stores sell from global inventory.',

@@ -38,8 +38,8 @@ import handlerInventory from '../../pages/api/inventory'
 import { supabaseAdmin, TABLES } from '../../lib/supabase'
 
 const num = (v: any): number => { const n = Number(v); return Number.isFinite(n) ? n : 0 }
-const variantTotal = (v: any): number => Object.values(v || {}).reduce((a: any, sizes: any) => a + Object.values(sizes || {}).reduce((x: any, y: any) => x + Number(y || 0), 0), 0)
-const flatTotal = (v: any): number => Object.values(v || {}).reduce((a: any, b: any) => a + Number(b || 0), 0)
+const variantTotal = (v: any): number => (Object.values(v || {}) as any[]).reduce((a: number, sizes: any) => a + (Object.values(sizes || {}) as any[]).reduce((x: number, y: any) => x + Number(y || 0), 0), 0)
+const flatTotal = (v: any): number => (Object.values(v || {}) as any[]).reduce((a: number, b: any) => a + Number(b || 0), 0)
 
 describe('Warehouse stock model: allot -> GET -> return -> delete (breakdowns stay consistent)', () => {
   let productId = ''

@@ -918,6 +918,7 @@ function StoresOverviewSection({ stores, orders, filter, getFiltered, onPayOrder
             >
               {paying === 'ALL' ? 'Processing...' : `Confirm & Mark All Paid (${Rs(totalUnpaid)})`}
             </button>
+          )}
         </div>
       )}
     </div>
@@ -2323,9 +2324,7 @@ export default function Home({ user, onLogin }: PageProps) {
             <div className="kpi-trend">
               {isSuperAdmin
                 ? "Units available in warehouse"
-                : isStoreManager
-                  ? `Units available in managed shops${stockAsOfLabel ? ` · as of ${stockAsOfLabel}` : ''}`
-                  : `Units available in my shop${stockAsOfLabel ? ` · as of ${stockAsOfLabel}` : ''}`}
+                : "Units available in global inventory"}
             </div>
           </div>
 
