@@ -17,7 +17,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
   // No current sales, returns, replacements, or UI depend on this data.
   const { data, error } = await supabaseAdmin
     .from(TABLES.STORE_INVENTORY)
-    .select('id, store_id, product_id, product_name, inventory_id, quantity_assigned, quantity_remaining, created_at, updated_at')
+    .select('id, store_id, product_id, inventory_id, quantity_assigned, quantity_remaining, returned_to_warehouse_qty, created_at, updated_at')
     .order('created_at', { ascending: true })
 
   if (error) return res.status(500).json({ error: 'Failed to fetch legacy store inventory' })
