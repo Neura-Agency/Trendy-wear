@@ -443,3 +443,28 @@ WHERE plain_password IS NULL OR plain_password = '';
 ---
 
 *This document contains sensitive credentials. Keep it secure and only share with authorized personnel.*
+
+
+---
+
+## Global Shared Inventory Migration — 2026-08
+
+The inventory architecture is now one shared physical pool. inventory.quantity_available is the current global available quantity and orders.store_id identifies the store that made the sale.
+
+New sales use sell_from_inventory() with deterministic FIFO locking and order_inventory_allocations. allocation_type='sale' records original sale consumption and allocation_type='replacement' records replacement consumption. Returns restore original sale allocations. Refund-only operations do not change stock. Replacement operations deduct global replacement stock and can restore the original item atomically. Order deletion reverses the complete global transaction atomically.
+
+New store-allotment mutations return 410 STORE_ALLOTMENT_RETIRED. The legacy store_inventory endpoint is read-only during the migration window and is not used by active sales, returns, replacements, dashboards, or inventory UI.
+
+Engine version: inventoryEngineVersion = 2. Version mismatch fails with INVENTORY_ENGINE_VERSION_MISMATCH.
+
+Primary RPCs:
+- sell_from_inventory
+- process_global_order_return
+- undo_global_order_return
+- process_global_refund
+- undo_global_refund
+- delete_global_order
+
+Deploy scripts/2026-08-global-inventory-engine.sql before enabling the application commit. Run reconcile-global-inventory-dry-run.sql, resolve discrepancies, then run reconcile-global-inventory-apply.sql while stock-changing operations are paused. Keep global_inventory_reconciliation as the audit record.
+
+Before legacy schema retirement, verify a database backup and monitor one complete production payout cycle for sales, commission, COGS, returns, refunds, replacements, profit, payouts, included_in_payout, owner profit split, and global inventory.
