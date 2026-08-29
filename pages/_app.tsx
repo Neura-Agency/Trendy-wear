@@ -87,7 +87,12 @@ export default function App({ Component, pageProps }: ExtendedAppProps) {
           return
         }
         const u = await res.json()
-        setUser(u)
+        // Bail out with the SAME object reference when the confirmed session
+        // matches what we already have (e.g. from the localStorage fast path).
+        // Returning `prev` (not a new object) lets React skip the re-render,
+        // so every page's `useEffect([user, ...])` data-fetch does NOT refire —
+        // without this, every page fetched its data twice on each load.
+        setUser(prev => (prev && JSON.stringify(prev) === JSON.stringify(u)) ? prev : u)
         try {
           localStorage.setItem('user', JSON.stringify(u))
         } catch {}
@@ -123,9 +128,6 @@ export default function App({ Component, pageProps }: ExtendedAppProps) {
       <title>Trendy Wear</title>
       <link rel="icon" type="image/jpeg" href="/logo.jpg" />
       <link rel="apple-touch-icon" href="/logo.jpg" />
-      <link href="https://fonts.googleapis.com/css2?family=Pacifico&display=swap" rel="stylesheet" />
-      <link rel="preconnect" href="https://fonts.gstatic.com" crossOrigin="anonymous" />
-      <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet" />
       <meta name="application-name" content="Trendy Wear" />
     </Head>
   );

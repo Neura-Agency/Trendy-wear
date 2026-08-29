@@ -137,18 +137,9 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
           return res.status(500).json({ error: 'Failed to merge inventory rows' })
         }
 
-        // Re-point store_inventory rows
-        const { error: storeInvMergeErr } = await supabaseAdmin
-          .from(TABLES.STORE_INVENTORY)
-          .update({ product_id: collision.id, product_name: renamedProductName })
-          .eq('product_id', oldProduct.id)
+         // Inventory rows are the sole physical-stock records.
 
-        if (storeInvMergeErr) {
-          console.error('store_inventory merge error:', storeInvMergeErr)
-          return res.status(500).json({ error: 'Failed to merge store inventory rows' })
-        }
-
-        // Delete old product row (inventory FK is set null on delete per schema,
+         // Delete old product row/ (inventory FK is set null on delete per schema,
         // but we already re-pointed so the rows are safe)
         const { error: delErr } = await supabaseAdmin
           .from(TABLES.PRODUCTS)
@@ -175,11 +166,6 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
         if (field === 'productName') {
           await supabaseAdmin
             .from(TABLES.INVENTORY)
-            .update({ product_name: trimmedNew })
-            .eq('product_id', oldProduct.id)
-
-          await supabaseAdmin
-            .from(TABLES.STORE_INVENTORY)
             .update({ product_name: trimmedNew })
             .eq('product_id', oldProduct.id)
         }

@@ -2805,6 +2805,20 @@ export function CartModal({ inventory, storeName, isAdmin, storeNames, onAdd, on
     const [variantQuantities, setVariantQuantities] = useState<VariantQuantities>({});
     const [itemSize, setItemSize] = useState('');
     const [itemColor, setItemColor] = useState('');
+    // Search box state for the searchable "Select Product" combobox below
+    const [productQuery, setProductQuery] = useState('');
+    const [productDropdownOpen, setProductDropdownOpen] = useState(false);
+    const productSelectRef = React.useRef<HTMLDivElement>(null);
+
+    React.useEffect(() => {
+        const handleClickOutsideProductSelect = (event: MouseEvent) => {
+            if (productSelectRef.current && !productSelectRef.current.contains(event.target as Node)) {
+                setProductDropdownOpen(false);
+            }
+        };
+        document.addEventListener('mousedown', handleClickOutsideProductSelect);
+        return () => document.removeEventListener('mousedown', handleClickOutsideProductSelect);
+    }, []);
 
     const buildEmptyQuantities = (keys: string[]) => keys.reduce((acc, key) => { acc[key] = 0; return acc; }, {} as Record<string, number>);
 
@@ -2816,6 +2830,15 @@ export function CartModal({ inventory, storeName, isAdmin, storeNames, onAdd, on
     };
 
     const currentSelected = inventory.find(i => (selectedProductId && i.productId === selectedProductId) || (!selectedProductId && i.productName === selectedProductId));
+
+    const filteredProductOptions = (() => {
+        const q = productQuery.trim().toLowerCase();
+        if (!q) return inventory;
+        return inventory.filter(i => {
+            const code = formatItemCode(i.productId || i.productName).toLowerCase();
+            return i.productName.toLowerCase().includes(q) || code.includes(q) || (i.brand || '').toLowerCase().includes(q) || (i.category || '').toLowerCase().includes(q);
+        });
+    })();
 
     React.useEffect(() => {
         if (!selectedProductId) {
@@ -3049,7 +3072,7 @@ export function CartModal({ inventory, storeName, isAdmin, storeNames, onAdd, on
 
     return (
         <div className="modal-overlay">
-            <div className="modal-box" style={{ maxWidth: '1100px', width: '95%', maxHeight: '90vh', overflowY: 'auto' }}>
+            <div className="modal-box cart-order-modal" style={{ maxWidth: '1500px', width: '97%', maxHeight: '95vh', overflowY: 'auto' }}>
                 <div className="modal-head" style={{ padding: '12px 20px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                     <h3 style={{ fontSize: '16px' }}>New Order (Cart)</h3>
                     <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
@@ -3065,16 +3088,41 @@ export function CartModal({ inventory, storeName, isAdmin, storeNames, onAdd, on
                         <div style={{ borderRight: '1px solid var(--border)', paddingRight: 16 }}>
                             <h4 style={{ margin: '0 0 12px 0', fontSize: 14 }}>Add Item</h4>
                             <div className="form-grid-2">
-                                <div className="input-group full-width">
+                                <div className="input-group full-width" ref={productSelectRef} style={{ position: 'relative' }}>
                                     <label>Select Product</label>
-                                    <select value={selectedProductId} onChange={e => setSelectedProductId(e.target.value)} required>
-                                        <option value="">Choose...</option>
-                                        {inventory.map(i => (
-                                        <option key={i.productId || i.productName} value={i.productId || i.productName}>
-                                            {i.productName} ({formatItemCode(i.productId || i.productName)})
-                                        </option>
-                                        ))}
-                                    </select>
+                                    <input
+                                        type="text"
+                                        value={productDropdownOpen ? productQuery : (currentSelected ? `${currentSelected.productName} (${formatItemCode(currentSelected.productId || currentSelected.productName)})` : '')}
+                                        onFocus={() => { setProductQuery(''); setProductDropdownOpen(true); }}
+                                        onChange={e => { setProductQuery(e.target.value); setProductDropdownOpen(true); }}
+                                        placeholder="Search by name, brand, or item ID…"
+                                        autoComplete="off"
+                                    />
+                                    {productDropdownOpen && (
+                                        <div style={{ position: 'absolute', top: 'calc(100% + 4px)', left: 0, right: 0, background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 8, boxShadow: '0 10px 25px -8px rgba(0,0,0,0.25)', zIndex: 1000, maxHeight: 260, overflowY: 'auto' }}>
+                                            {filteredProductOptions.length === 0 ? (
+                                                <div style={{ padding: '10px 14px', fontSize: 13, color: 'var(--text-muted)' }}>No products match "{productQuery}"</div>
+                                            ) : filteredProductOptions.map(i => {
+                                                const optionValue = i.productId || i.productName;
+                                                const isSelected = optionValue === selectedProductId;
+                                                return (
+                                                    <div
+                                                        key={optionValue}
+                                                        onClick={() => {
+                                                            setSelectedProductId(optionValue);
+                                                            setProductQuery('');
+                                                            setProductDropdownOpen(false);
+                                                        }}
+                                                        onMouseEnter={e => { if (!isSelected) e.currentTarget.style.background = 'var(--surface-2)'; }}
+                                                        onMouseLeave={e => { if (!isSelected) e.currentTarget.style.background = 'transparent'; }}
+                                                        style={{ padding: '10px 14px', cursor: 'pointer', fontSize: 13, fontWeight: isSelected ? 700 : 500, color: isSelected ? 'var(--acc)' : 'var(--text-body)', background: isSelected ? 'var(--acc-soft)' : 'transparent' }}
+                                                    >
+                                                        {i.productName} ({formatItemCode(optionValue)})
+                                                    </div>
+                                                );
+                                            })}
+                                        </div>
+                                    )}
                                 </div>
 
                                 {hasVariantGrid && (

@@ -42,5 +42,8 @@
     "node-fetch": "^2.7.0",
     "ts-jest": "^29.4.11",
     "typescript": "^5.9.3"
+  },
+  "optionalDependencies": {
+    "@next/swc-win32-x64-msvc": "15.5.12"
   }
 }

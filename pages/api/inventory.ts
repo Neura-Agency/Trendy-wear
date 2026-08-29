@@ -349,10 +349,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
           ? storedBatch
           : (productDerivedId || storedBatch)
         
-        // Source of truth for "available warehouse stock" is the inventory.quantity_available
-        // column. It is decremented by allotments and restored by Return-to-Main / Delete.
-        // Do NOT replace it with the variant_quantities rollup (that is a lifetime/batch
-        // breakdown, not the currently-available quantity).
+        // Source of truth for available global stock is inventory.quantity_available.
         const correctQty = Number(row.quantity_available) || 0
 
         return {
@@ -510,24 +507,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
         return res.status(400).json({ error: 'no updatable fields provided' })
       }
 
-      if (inventoryUpdate.quantity_available !== undefined) {
-        const { data: assignedRows, error: assignedErr } = await supabaseAdmin
-          .from(TABLES.STORE_INVENTORY)
-          .select('quantity_assigned')
-          .eq('inventory_id', id)
-
-        if (assignedErr) {
-          console.error('assigned sum error:', assignedErr)
-          return res.status(500).json({ error: 'Failed to validate available quantity' })
-        }
-
-        const alreadyAssigned = (assignedRows || []).reduce((acc: number, r: any) => acc + num(r.quantity_assigned), 0)
-        if (inventoryUpdate.quantity_available < alreadyAssigned) {
-          return res.status(400).json({ error: `quantityAvailable cannot be below assigned total (${alreadyAssigned})` })
-        }
-      }
-
-      let resolvedProductId: string | null = productId || null
+       let resolvedProductId: string | null = productId || null
       if (!resolvedProductId && Object.keys(productUpdate).length > 0) {
         const { data: invRow, error: invErr } = await supabaseAdmin
           .from(TABLES.INVENTORY)
@@ -583,16 +563,6 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 
       if (!id) {
         return res.status(400).json({ error: 'id is required' })
-      }
-
-      const { error: storeInventoryError } = await supabaseAdmin
-        .from(TABLES.STORE_INVENTORY)
-        .delete()
-        .eq('inventory_id', id)
-
-      if (storeInventoryError) {
-        console.error('store inventory delete error:', storeInventoryError)
-        return res.status(500).json({ error: 'Failed to delete related store allocations' })
       }
 
       const { error: inventoryDeleteError } = await supabaseAdmin
