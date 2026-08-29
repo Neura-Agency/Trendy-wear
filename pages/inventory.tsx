@@ -319,12 +319,10 @@ export default function InventoryPage({ user, onLogin }: PageProps) {
                         <div className="kpi-trend">Product Catalog</div>
                     </div>
                 </section>
-
-
+                <SectionCard
                      title="Global Inventory"
                      helpKey="inventory.allInventory"
                      icon={IC.stock}
-                     action={isSuperAdmin ? <button className="btn btn-primary" onClick={() => setShowAddInventoryModal(true)}>+ Add Inventory</button> : undefined}
                      action={isSuperAdmin ? <button className="btn btn-primary" onClick={() => setShowAddInventoryModal(true)}>+ Add Inventory</button> : undefined}
                  >
                     <div style={{ padding: "8px 0 16px", color: "var(--text-muted)", fontSize: 13 }}>
