@@ -572,6 +572,14 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 
       if (inventoryDeleteError) {
         console.error('inventory delete error:', inventoryDeleteError)
+        // 23503 = Postgres foreign-key violation. This batch has been sold from at
+        // least once, so order_inventory_allocations.inventory_id (ON DELETE RESTRICT)
+        // is blocking the delete to protect the sales/cost history tied to it.
+        if (inventoryDeleteError.code === '23503') {
+          return res.status(409).json({
+            error: 'Cannot delete: this batch has order history linked to it (it was sold from at least once). Delete or reassign those orders first, or ask an admin to force-remove it from the database.'
+          })
+        }
         return res.status(500).json({ error: 'Failed to delete inventory item' })
       }
 

@@ -714,7 +714,23 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
         }
       }
 
-      // 7. Hard-delete the order
+      // 7. Clean up rows in the global-inventory-engine tables that reference this
+      // order with a RESTRICT (not CASCADE) foreign key. Without this, deleting the
+      // order fails with a Postgres foreign-key violation (23503) because
+      // inventory_sale_idempotency.order_id -> orders.id is ON DELETE RESTRICT.
+      // (order_inventory_allocations / order_replacement_restock_allocations already
+      // cascade automatically, so they don't need explicit cleanup here.)
+      const { error: idempotencyDelErr } = await supabaseAdmin
+        .from('inventory_sale_idempotency')
+        .delete()
+        .eq('order_id', id)
+
+      if (idempotencyDelErr) {
+        console.error('Delete idempotency cleanup error:', idempotencyDelErr)
+        return res.status(500).json({ error: 'Failed to clean up sale record before delete' })
+      }
+
+      // 8. Hard-delete the order
       const { error: delErr } = await supabaseAdmin
         .from(TABLES.ORDERS)
         .delete()
@@ -722,6 +738,9 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 
       if (delErr) {
         console.error('Delete final error:', delErr)
+        if (delErr.code === '23503') {
+          return res.status(409).json({ error: 'Cannot delete: another record still references this order. Check owner payouts or transfers linked to it.' })
+        }
         return res.status(500).json({ error: 'Failed to delete order' })
       }
 
