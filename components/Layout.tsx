@@ -176,14 +176,6 @@ export default function Layout({ children, user, onLogout }: LayoutProps) {
       path: "/inventory",
     },
     {
-      id: "all-inventory",
-      group: "Operations",
-      icon: iconInventory as any,
-      label: "All inventory",
-      path: "/all-inventory",
-      storeOnly: true,
-    },
-    {
       id: "credentials",
       group: "Administration",
       icon: iconCredentials as any,

@@ -336,7 +336,7 @@ export default function InventoryPage({ user, onLogin }: PageProps) {
                     <SearchBar value={inventorySearch} onChange={setInventorySearch} placeholder="Search by name, brand, type, or item ID…" resultCount={data.inventory.filter(item => !inventorySearch || matchesWarehouseSearch(item, inventorySearch)).length} />
                     <div className="table-wrap">
                         <table className="desktop-table-view">
-                            <thead><tr><th>Item Name</th><th>Type</th><th>Item ID</th><th>Cost/pc</th><th>Available</th><th>Status</th><th style={{textAlign:"center"}}>Actions</th></tr></thead>
+                            <thead><tr><th>Item Name</th><th>Type</th><th>Item ID</th>{isAdmin && <th>Cost/pc</th>}<th>Available</th><th>Status</th><th style={{textAlign:"center"}}>Actions</th></tr></thead>
                             <tbody>
                                 {data.inventory.filter(item => !inventorySearch || matchesWarehouseSearch(item, inventorySearch)).map((item, idx) => {
                                     const availableQty = Math.max(0, Number(item.quantityAvailable) || 0);
@@ -370,7 +370,7 @@ export default function InventoryPage({ user, onLogin }: PageProps) {
                                         </td>
                                         <td className="type-cell"><Badge type="gray"><span className="type-cell__text">{item.category}</span></Badge></td>
                                         <td className="text-muted font-mono" style={{fontWeight:700}}>{formatItemCode(item.batchNumber)}</td>
-                                        <td>{Rs(item.costPrice)}</td>
+                                        {isAdmin && <td>{Rs(item.costPrice)}</td>}
                                         <td className="font-bold">{availableQty}</td>
                                         <td>{availableQty <= 0 ? <Badge type="red">Out</Badge> : availableQty <= (item.lowStockWarning || 5) ? <Badge type="orange">Low</Badge> : <Badge type="green">Good</Badge>}</td>
                                         <td style={{textAlign:"center"}}><div style={{display:"flex",justifyContent:"center",gap:8}}>
@@ -720,7 +720,10 @@ export default function InventoryPage({ user, onLogin }: PageProps) {
           open={!!detailInventoryItem}
           onClose={() => setDetailInventoryItem(null)}
           title={detailInventoryItem ? `Inventory Details — ${detailInventoryItem.productName}` : undefined}
-          data={detailInventoryItem || {}}
+          data={detailInventoryItem ? (isAdmin ? detailInventoryItem : (() => {
+            const { costPrice, sellingPrice, ...rest } = detailInventoryItem as any;
+            return rest;
+          })()) : {}}
         />
     </>
 );
