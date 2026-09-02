@@ -42,6 +42,10 @@ export default function AllInventoryPage({ user, onLogin }: PageProps) {
   if (!user) return <Login onLogin={onLogin} />;
   if (loading) return <PageSkeleton label="Loading warehouse inventory" />;
 
+  // Shop/store accounts must never see cost or selling price — this page is
+  // read-only inventory visibility for shop staff, not a financial report.
+  const isAdmin = user.role === 'admin';
+
   const filtered = search
     ? inventory.filter(item => {
         const q = search.toLowerCase();
@@ -74,7 +78,7 @@ export default function AllInventoryPage({ user, onLogin }: PageProps) {
                 <th>Item Name</th>
                 <th>Type</th>
                 <th>Item ID</th>
-                <th>Cost/pc</th>
+                {isAdmin && <th>Cost/pc</th>}
                 <th>Qty</th>
                 <th>Status</th>
                 <th style={{ textAlign: 'center' }}>Actions</th>
@@ -83,7 +87,7 @@ export default function AllInventoryPage({ user, onLogin }: PageProps) {
             <tbody>
               {filtered.length === 0 ? (
                 <tr>
-                  <td colSpan={7} className="text-muted empty-cell">
+                  <td colSpan={isAdmin ? 7 : 6} className="text-muted empty-cell">
                     {search ? 'No warehouse inventory matches your search.' : 'No warehouse inventory found.'}
                   </td>
                 </tr>
@@ -124,7 +128,7 @@ export default function AllInventoryPage({ user, onLogin }: PageProps) {
                       </td>
                       <td className="type-cell"><Badge type="gray"><span className="type-cell__text">{item.category}</span></Badge></td>
                       <td className="text-muted font-mono batch-number">{formatItemCode(item.batchNumber)}</td>
-                      <td>{Rs(item.costPrice)}</td>
+                      {isAdmin && <td>{Rs(item.costPrice)}</td>}
                       <td className="font-bold qty-cell">{availableQty}</td>
                       <td>
                         {availableQty <= 0 ? (
@@ -177,10 +181,12 @@ export default function AllInventoryPage({ user, onLogin }: PageProps) {
                         <span className="mobile-card-label">Item ID</span>
                         <span className="mobile-card-value" style={{ fontFamily: 'monospace', fontSize: 11, fontWeight: 700 }}>{formatItemCode(item.batchNumber)}</span>
                       </div>
-                      <div className="mobile-card-row">
-                        <span className="mobile-card-label">Cost/pc</span>
-                        <span className="mobile-card-value">{Rs(item.costPrice)}</span>
-                      </div>
+                      {isAdmin && (
+                        <div className="mobile-card-row">
+                          <span className="mobile-card-label">Cost/pc</span>
+                          <span className="mobile-card-value">{Rs(item.costPrice)}</span>
+                        </div>
+                      )}
                       <div className="mobile-card-row">
                         <span className="mobile-card-label">Qty</span>
                         <span className="mobile-card-value" style={{ fontSize: '1.05rem' }}>{availableQty}</span>
@@ -248,7 +254,10 @@ export default function AllInventoryPage({ user, onLogin }: PageProps) {
         open={!!detailItem}
         onClose={() => setDetailItem(null)}
         title={detailItem ? `Inventory Details — ${detailItem.productName}` : undefined}
-        data={detailItem || {}}
+        data={detailItem ? (isAdmin ? detailItem : (() => {
+          const { costPrice, sellingPrice, ...rest } = detailItem as any;
+          return rest;
+        })()) : {}}
       />
     </div>
   );
