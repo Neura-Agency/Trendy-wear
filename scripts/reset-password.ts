@@ -56,7 +56,7 @@ async function main() {
 
   const { data: updated, error: updErr } = await supabase
     .from('accounts')
-    .update({ password_hash: passwordHash })
+    .update({ password_hash: passwordHash, plain_password: p })
     .eq('id', account.id)
     .select('id, username, role')
     .maybeSingle()

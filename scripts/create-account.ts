@@ -69,6 +69,7 @@ async function main() {
   const { error } = await supabase.from('accounts').insert({
     username: u,
     password_hash: passwordHash,
+    plain_password: p,
     role,
     scope,
     store_id: storeId,

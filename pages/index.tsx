@@ -935,6 +935,7 @@ function OrdersSection({ orders, overallOrders = [], inventory = [], isAdmin, ca
   const [returningOrder, setReturningOrder] = useState<any | null>(null);
   const [refundingOrder, setRefundingOrder] = useState<any | null>(null);
   const [detailOrder, setDetailOrder] = useState<any | null>(null);
+  const [search, setSearch] = useState('');
 
   const normalizeCatalogValue = (value: string) => String(value ?? '').trim().toLowerCase();
   const buildEmptyQuantities = (keys: string[]) => keys.reduce((acc, key) => {
@@ -1061,10 +1062,43 @@ function OrdersSection({ orders, overallOrders = [], inventory = [], isAdmin, ca
   const editingDeductions = Number(editing?.shipmentCost || 0) + Number(editing?.extraCharges || 0);
   const editingNetPayable = editingGross - editingDeductions;
 
-  const filteredQty = orders.reduce((s, o) => s + effectiveQty(o), 0);
-  const filteredGross = orders.reduce((s, o) => s + effectiveRevenue(o), 0);
-  const filteredShipping = orders.reduce((s, o) => s + (o.shipmentCost || 0), 0);
-  const filteredProfit = orders.reduce((s, o) => s + (o.profit || 0), 0);
+  const searchQuery = search.trim().toLowerCase();
+  const visibleOrders = searchQuery
+    ? orders.filter((o: any) => {
+        const soldQty = Number(o.quantity) || 0;
+        const returnedQty = Math.min(Number(o.returnQuantity) || 0, soldQty);
+        const refundedQty = Math.min(Number(o.refundQuantity) || 0, soldQty - returnedQty);
+        const effectiveQ = soldQty - returnedQty - refundedQty;
+        const gross = (o.sellingPrice || 0) * effectiveQ;
+        const shipment = o.shipmentCost || 0;
+        const netAmount = gross - shipment;
+        const totalCost = (o.costPrice || 0) * effectiveQ;
+        const fields = [
+          o.orderCode || o.id || '',
+          o.date ? new Date(o.date).toLocaleDateString() : '',
+          o.storeName,
+          o.clientName,
+          o.productName,
+          formatItemCode(o.batchNumber || o.id),
+          soldQty,
+          o.sellingPrice,
+          gross,
+          Rs(gross),
+          shipment,
+          netAmount,
+          Rs(netAmount),
+          o.commissionPercent,
+          o.commissionAmount,
+        ];
+        if (isAdmin) fields.push(o.adminTake, totalCost, o.profit, Rs(o.profit));
+        return fields.some((f) => String(f ?? '').toLowerCase().includes(searchQuery));
+      })
+    : orders;
+
+  const filteredQty = visibleOrders.reduce((s, o) => s + effectiveQty(o), 0);
+  const filteredGross = visibleOrders.reduce((s, o) => s + effectiveRevenue(o), 0);
+  const filteredShipping = visibleOrders.reduce((s, o) => s + (o.shipmentCost || 0), 0);
+  const filteredProfit = visibleOrders.reduce((s, o) => s + (o.profit || 0), 0);
 
   const overallQty = (overallOrders || []).reduce((s, o) => s + effectiveQty(o), 0);
   const overallGross = (overallOrders || []).reduce((s, o) => s + effectiveRevenue(o), 0);
@@ -1130,7 +1164,7 @@ function OrdersSection({ orders, overallOrders = [], inventory = [], isAdmin, ca
                           <input
                             type="number"
                             min="0"
-                            value={editingSizeQuantities[size] || 0}
+                            value={editingSizeQuantities[size] || ''}
                             onChange={e => setEditingSizeQuantities(curr => ({ ...curr, [size]: Math.max(0, parseInt(e.target.value) || 0) }))}
                           />
                         </div>
@@ -1149,7 +1183,7 @@ function OrdersSection({ orders, overallOrders = [], inventory = [], isAdmin, ca
                           <input
                             type="number"
                             min="0"
-                            value={editingColorQuantities[color] || 0}
+                            value={editingColorQuantities[color] || ''}
                             onChange={e => setEditingColorQuantities(curr => ({ ...curr, [color]: Math.max(0, parseInt(e.target.value) || 0) }))}
                           />
                         </div>
@@ -1164,7 +1198,7 @@ function OrdersSection({ orders, overallOrders = [], inventory = [], isAdmin, ca
                     <input
                       type="text"
                       inputMode="numeric"
-                      value={editingHasVariantTracking || editingHasSizeTracking || editingHasColorTracking ? editingQuantity : editing.quantity}
+                      value={(editingHasVariantTracking || editingHasSizeTracking || editingHasColorTracking ? editingQuantity : editing.quantity) || ''}
                       readOnly={editingHasVariantTracking || editingHasSizeTracking || editingHasColorTracking}
                       onChange={e => setEditing(prev => ({ ...prev, quantity: e.target.value }))}
                       style={(editingHasVariantTracking || editingHasSizeTracking || editingHasColorTracking) ? { background: 'var(--surface-2)', cursor: 'default' } : undefined}
@@ -1178,7 +1212,7 @@ function OrdersSection({ orders, overallOrders = [], inventory = [], isAdmin, ca
                     <input
                       type="text"
                       inputMode="decimal"
-                      value={editing.sellingPrice}
+                      value={editing.sellingPrice || ''}
                       onChange={e => setEditing(prev => ({ ...prev, sellingPrice: e.target.value }))}
                       style={{ fontWeight: 700 }}
                     />
@@ -1195,8 +1229,7 @@ function OrdersSection({ orders, overallOrders = [], inventory = [], isAdmin, ca
                   <input
                     type="text"
                     inputMode="decimal"
-                    placeholder="0"
-                    value={editing.shipmentCost}
+                    value={editing.shipmentCost || ''}
                     onChange={e => setEditing(prev => ({ ...prev, shipmentCost: e.target.value }))}
                     style={{ border: '1px solid var(--danger)' }}
                   />
@@ -1207,8 +1240,7 @@ function OrdersSection({ orders, overallOrders = [], inventory = [], isAdmin, ca
                   <input
                     type="text"
                     inputMode="decimal"
-                    placeholder="0"
-                    value={editing.extraCharges || 0}
+                    value={editing.extraCharges || ''}
                     onChange={e => setEditing(prev => ({ ...prev, extraCharges: e.target.value }))}
                     style={{ border: '1px solid var(--danger)' }}
                   />
@@ -1269,6 +1301,8 @@ function OrdersSection({ orders, overallOrders = [], inventory = [], isAdmin, ca
         </div>
       )}
 
+      <SearchBar value={search} onChange={setSearch} placeholder="Search by order, date, store, customer, item, price…" resultCount={visibleOrders.length} />
+
       {/* ── Desktop table view (hidden on mobile) ── */}
       <div className="table-wrap orders-desktop-table">
         <table className="sticky-actions">
@@ -1277,6 +1311,7 @@ function OrdersSection({ orders, overallOrders = [], inventory = [], isAdmin, ca
             <th>Order ID</th>
             <th>Date</th>
             <th>Store Name</th>
+            <th>Customer</th>
             <th>Item Name</th>
             <th>Item ID</th>
             <th>Quantity</th>
@@ -1295,7 +1330,7 @@ function OrdersSection({ orders, overallOrders = [], inventory = [], isAdmin, ca
           </tr>
         </thead>
         <tbody>
-          {orders.map((o, idx) => {
+          {visibleOrders.map((o, idx) => {
             const soldQty = Number(o.quantity) || 0;
             const returnedQty = Math.min(Number(o.returnQuantity) || 0, soldQty);
             const refundedQty = Math.min(Number(o.refundQuantity) || 0, soldQty - returnedQty);
@@ -1329,6 +1364,7 @@ function OrdersSection({ orders, overallOrders = [], inventory = [], isAdmin, ca
                   }
                 </td>
                 <td className="font-bold" style={{ color: 'var(--pri-700)' }}>{o.storeName}</td>
+                <td style={{ fontWeight: 600 }}>{o.clientName || '—'}</td>
                 <td className="font-bold">{o.productName}</td>
                 <td className="muted" style={{fontWeight:600, fontFamily:'monospace', fontSize:11}}>{formatItemCode((o as any).batchNumber || (o as any).id)}</td>
                 <td>
@@ -1443,8 +1479,8 @@ function OrdersSection({ orders, overallOrders = [], inventory = [], isAdmin, ca
                 </tr>
               );
             })}
-            {orders.length === 0 && (
-              <tr><td colSpan={isAdmin ? 13 : 10} style={{ textAlign: 'center', padding: 30, color: 'var(--text-muted)' }}>No partner sales match this period.</td></tr>
+            {visibleOrders.length === 0 && (
+              <tr><td colSpan={isAdmin ? 14 : 11} style={{ textAlign: 'center', padding: 30, color: 'var(--text-muted)' }}>{search ? 'No sales match your search.' : 'No partner sales match this period.'}</td></tr>
             )}
           </tbody>
         </table>
@@ -1452,10 +1488,10 @@ function OrdersSection({ orders, overallOrders = [], inventory = [], isAdmin, ca
 
       {/* ── Mobile card view (hidden on desktop) ── */}
       <div className="orders-mobile-cards">
-        {orders.length === 0 && (
-          <div className="orders-mobile-empty">No partner sales match this period.</div>
+        {visibleOrders.length === 0 && (
+          <div className="orders-mobile-empty">{search ? 'No sales match your search.' : 'No partner sales match this period.'}</div>
         )}
-        {orders.map((o, idx) => {
+        {visibleOrders.map((o, idx) => {
           const soldQty = Number(o.quantity) || 0;
           const returnedQty = Math.min(Number(o.returnQuantity) || 0, soldQty);
           const refundedQty = Math.min(Number(o.refundQuantity) || 0, soldQty - returnedQty);
@@ -1476,6 +1512,10 @@ function OrdersSection({ orders, overallOrders = [], inventory = [], isAdmin, ca
               </div>
               <div className="order-card-product">{o.productName}</div>
               <div className="order-card-grid">
+                <div className="order-card-field">
+                  <span className="order-card-label">Client</span>
+                  <span className="order-card-value">{o.clientName || '—'}</span>
+                </div>
                 <div className="order-card-field">
                   <span className="order-card-label">Qty</span>
                   <span className="order-card-value">{o.quantity}</span>

@@ -39,8 +39,12 @@ export default function ShopCredentials({ user, onLogin }: PageProps) {
             });
             const data = await res.json();
             if (!res.ok) throw new Error(data.error || 'Failed to reveal password');
-            setRevealedPw(prev => ({ ...prev, [username]: data.password || '' }));
-            return (data.password as string) || '';
+            if (!data.password) {
+                alert(`No password stored for "${username}". Set one via Edit.`);
+                return '';
+            }
+            setRevealedPw(prev => ({ ...prev, [username]: data.password }));
+            return data.password as string;
         } catch (e: any) {
             alert(e.message || 'Failed to reveal password');
             return '';
