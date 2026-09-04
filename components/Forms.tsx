@@ -333,8 +333,8 @@ export function AddExpenseForm({ onAdd, initialData, owners }: AddExpenseFormPro
           <input
             type="text"
             inputMode="decimal"
-            value={String(formData.amount)}
-            onChange={(e) => setFormData({ ...formData, amount: parseFloat(e.target.value) })}
+            value={formData.amount ? String(formData.amount) : ''}
+            onChange={(e) => setFormData({ ...formData, amount: parseFloat(e.target.value) || 0 })}
           />
         </div>
 

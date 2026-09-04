@@ -62,20 +62,20 @@ function EditDirectSaleModal({ order, onSave, onClose }: { order: any; onSave: (
           <div className="form-grid-2">
             <div className="input-group">
               <label>Qty Sold</label>
-              <input type="text" value={qty} readOnly style={{ background: "var(--surface-2)", cursor: "default" }} />
+              <input type="text" value={qty || ''} readOnly style={{ background: "var(--surface-2)", cursor: "default" }} />
             </div>
             <div className="input-group">
               <label>Selling Price (PKR)</label>
-              <input type="number" min="0" step="0.01" value={sellingPrice} onChange={(e) => setSellingPrice(parseFloat(e.target.value) || 0)} style={{ fontWeight: 700 }} />
+              <input type="number" min="0" step="0.01" value={sellingPrice || ''} onChange={(e) => setSellingPrice(parseFloat(e.target.value) || 0)} style={{ fontWeight: 700 }} />
             </div>
           </div>
           <div className="input-group">
             <label style={{ color: "var(--danger)", fontWeight: 700 }}>Shipment Cost (PKR)</label>
-            <input type="number" min="0" step="0.01" value={shipmentCost} onChange={(e) => setShipmentCost(parseFloat(e.target.value) || 0)} style={{ border: "1px solid var(--danger)" }} />
+            <input type="number" min="0" step="0.01" value={shipmentCost || ''} onChange={(e) => setShipmentCost(parseFloat(e.target.value) || 0)} style={{ border: "1px solid var(--danger)" }} />
           </div>
           <div className="input-group">
             <label style={{ color: "var(--danger)", fontWeight: 700 }}>Extra Charges (PKR)</label>
-            <input type="number" min="0" step="0.01" value={extraCharges} onChange={(e) => setExtraCharges(parseFloat(e.target.value) || 0)} style={{ border: "1px solid var(--danger)" }} />
+            <input type="number" min="0" step="0.01" value={extraCharges || ''} onChange={(e) => setExtraCharges(parseFloat(e.target.value) || 0)} style={{ border: "1px solid var(--danger)" }} />
           </div>
           <div className="input-group full-width">
             <label>Date of Sale</label>

@@ -1130,7 +1130,7 @@ function OrdersSection({ orders, overallOrders = [], inventory = [], isAdmin, ca
                           <input
                             type="number"
                             min="0"
-                            value={editingSizeQuantities[size] || 0}
+                            value={editingSizeQuantities[size] || ''}
                             onChange={e => setEditingSizeQuantities(curr => ({ ...curr, [size]: Math.max(0, parseInt(e.target.value) || 0) }))}
                           />
                         </div>
@@ -1149,7 +1149,7 @@ function OrdersSection({ orders, overallOrders = [], inventory = [], isAdmin, ca
                           <input
                             type="number"
                             min="0"
-                            value={editingColorQuantities[color] || 0}
+                            value={editingColorQuantities[color] || ''}
                             onChange={e => setEditingColorQuantities(curr => ({ ...curr, [color]: Math.max(0, parseInt(e.target.value) || 0) }))}
                           />
                         </div>
@@ -1164,7 +1164,7 @@ function OrdersSection({ orders, overallOrders = [], inventory = [], isAdmin, ca
                     <input
                       type="text"
                       inputMode="numeric"
-                      value={editingHasVariantTracking || editingHasSizeTracking || editingHasColorTracking ? editingQuantity : editing.quantity}
+                      value={(editingHasVariantTracking || editingHasSizeTracking || editingHasColorTracking ? editingQuantity : editing.quantity) || ''}
                       readOnly={editingHasVariantTracking || editingHasSizeTracking || editingHasColorTracking}
                       onChange={e => setEditing(prev => ({ ...prev, quantity: e.target.value }))}
                       style={(editingHasVariantTracking || editingHasSizeTracking || editingHasColorTracking) ? { background: 'var(--surface-2)', cursor: 'default' } : undefined}
@@ -1178,7 +1178,7 @@ function OrdersSection({ orders, overallOrders = [], inventory = [], isAdmin, ca
                     <input
                       type="text"
                       inputMode="decimal"
-                      value={editing.sellingPrice}
+                      value={editing.sellingPrice || ''}
                       onChange={e => setEditing(prev => ({ ...prev, sellingPrice: e.target.value }))}
                       style={{ fontWeight: 700 }}
                     />
@@ -1195,8 +1195,7 @@ function OrdersSection({ orders, overallOrders = [], inventory = [], isAdmin, ca
                   <input
                     type="text"
                     inputMode="decimal"
-                    placeholder="0"
-                    value={editing.shipmentCost}
+                    value={editing.shipmentCost || ''}
                     onChange={e => setEditing(prev => ({ ...prev, shipmentCost: e.target.value }))}
                     style={{ border: '1px solid var(--danger)' }}
                   />
@@ -1207,8 +1206,7 @@ function OrdersSection({ orders, overallOrders = [], inventory = [], isAdmin, ca
                   <input
                     type="text"
                     inputMode="decimal"
-                    placeholder="0"
-                    value={editing.extraCharges || 0}
+                    value={editing.extraCharges || ''}
                     onChange={e => setEditing(prev => ({ ...prev, extraCharges: e.target.value }))}
                     style={{ border: '1px solid var(--danger)' }}
                   />

@@ -169,7 +169,7 @@ export function VariantQuantityGrid({
                                             type="number"
                                             min="0"
                                             max={max}
-                                            value={currentVal || 0}
+                                            value={currentVal || ''}
                                             onChange={e => setCell(color, size, parseInt(e.target.value) || 0)}
                                             title={max !== undefined ? `Max ${max}` : undefined}
                                             style={{
@@ -1205,7 +1205,7 @@ export function AddInventoryModal({ onSave, onClose, stores, products, inventory
                                     {colors.map(c => (
                                         <div key={c} style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
                                             <label style={{ fontSize: 11, fontWeight: 700, color: 'var(--text-muted)' }}>{c}</label>
-                                            <input type="text" inputMode="numeric" value={item.colorQuantities[c] || 0} onChange={e => updateColorQuantity(c, parseInt(e.target.value) || 0)} />
+                                            <input type="text" inputMode="numeric" value={item.colorQuantities[c] || ''} onChange={e => updateColorQuantity(c, parseInt(e.target.value) || 0)} />
                                         </div>
                                     ))}
                                 </div>
@@ -1231,7 +1231,7 @@ export function AddInventoryModal({ onSave, onClose, stores, products, inventory
                                         {sizes.map(s => (
                                             <div key={s} style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
                                                 <label style={{ fontSize: 11, fontWeight: 700, color: 'var(--text-muted)' }}>{s}</label>
-                                                <input type="text" inputMode="numeric" value={item.sizeQuantities[s] || 0} onChange={e => updateSizeQuantity(s, parseInt(e.target.value) || 0)} />
+                                                <input type="text" inputMode="numeric" value={item.sizeQuantities[s] || ''} onChange={e => updateSizeQuantity(s, parseInt(e.target.value) || 0)} />
                                             </div>
                                         ))}
                                     </div>
@@ -1769,9 +1769,9 @@ export function EditStoreInventoryModal({ item, storeNames, onSave, onClose }: {
                             <div className="input-group">
                                 <label>Quantity (Remaining {warehouseRemainingQty})</label>
                                 {hasSizeTracking || hasColorTracking ? (
-                                    <input type="text" inputMode="numeric" value={form.quantityAssigned} onChange={(e) => handleAssignedChange(e.target.value)} placeholder="Enter total for equal distribution" />
+                                    <input type="text" inputMode="numeric" value={form.quantityAssigned || ''} onChange={(e) => handleAssignedChange(e.target.value)} placeholder="Enter total for equal distribution" />
                                 ) : (
-                                    <input type="text" inputMode="numeric" value={form.quantityAssigned} onChange={(e) => handleAssignedChange(e.target.value)} required />
+                                    <input type="text" inputMode="numeric" value={form.quantityAssigned || ''} onChange={(e) => handleAssignedChange(e.target.value)} required />
                                 )}
                                 <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 6 }}>
                                     Total Qty: <b>{warehouseTotalQty}</b> · Allotted Qty: <b>{warehouseAllottedQty}</b> · Remaining: <b>{warehouseRemainingQty}</b> · Increase left: <b>{remainingForIncrease}</b>
@@ -1820,7 +1820,7 @@ export function EditStoreInventoryModal({ item, storeNames, onSave, onClose }: {
                                             <label style={{ fontSize: 11, fontWeight: 700, color: 'var(--text-muted)' }}>
                                                 {size} <span style={{ fontSize: 10 }}>(remaining: {(item?.sizeQuantitiesRemaining as any)?.[size] ?? (item?.sizeQuantities as any)?.[size] ?? 0})</span>
                                             </label>
-                                            <input type="number" min="0" value={form.sizeQuantitiesAssigned[size] || 0} onChange={e => updateSizeQuantity(size, parseInt(e.target.value) || 0)} />
+                                            <input type="number" min="0" value={form.sizeQuantitiesAssigned[size] || ''} onChange={e => updateSizeQuantity(size, parseInt(e.target.value) || 0)} />
                                         </div>
                                     ))}
                                 </div>
@@ -1843,7 +1843,7 @@ export function EditStoreInventoryModal({ item, storeNames, onSave, onClose }: {
                                             <label style={{ fontSize: 11, fontWeight: 700, color: 'var(--text-muted)', textTransform: 'capitalize' }}>
                                                 {color} <span style={{ fontSize: 10 }}>(remaining: {(item?.colorQuantitiesRemaining as any)?.[color] ?? (item?.colorQuantities as any)?.[color] ?? 0})</span>
                                             </label>
-                                            <input type="number" min="0" value={form.colorQuantitiesAssigned[color] || 0} onChange={e => updateColorQuantity(color, parseInt(e.target.value) || 0)} />
+                                            <input type="number" min="0" value={form.colorQuantitiesAssigned[color] || ''} onChange={e => updateColorQuantity(color, parseInt(e.target.value) || 0)} />
                                         </div>
                                     ))}
                                 </div>
@@ -1857,7 +1857,7 @@ export function EditStoreInventoryModal({ item, storeNames, onSave, onClose }: {
                         <div style={{ marginBottom: 18 }}>
                             <div className="input-group">
                                 <label>Partner Commission %</label>
-                                <input type="text" inputMode="decimal" value={form.commissionPercent} onChange={(e) => setForm({ ...form, commissionPercent: parseFloat(e.target.value) || 0 })} required />
+                                <input type="text" inputMode="decimal" value={form.commissionPercent || ''} onChange={(e) => setForm({ ...form, commissionPercent: parseFloat(e.target.value) || 0 })} />
                             </div>
                         </div>
 
@@ -1865,7 +1865,7 @@ export function EditStoreInventoryModal({ item, storeNames, onSave, onClose }: {
                         <div style={{ marginBottom: 18 }}>
                             <div className="input-group" style={{ maxWidth: '50%' }}>
                                 <label>Extra Qty <span style={{ fontSize: '10px', fontWeight: 400, color: '#8c8c8c' }}>(gift / display — expensed at cost)</span></label>
-                                <input type="text" inputMode="numeric" value={form.extraQty} onChange={(e) => setForm({ ...form, extraQty: parseInt(e.target.value) || 0 })} placeholder="0" />
+                                <input type="text" inputMode="numeric" value={form.extraQty || ''} onChange={(e) => setForm({ ...form, extraQty: parseInt(e.target.value) || 0 })} />
                             </div>
                         </div>
 
@@ -2218,13 +2218,13 @@ export function EditInventoryModal({ item, minQuantity, onSave, onClose, product
 
                         <div className="input-group" style={{ marginBottom: 12 }}>
                             <label>Cost Per Piece</label>
-                            <input type="text" inputMode="decimal" value={form.costPrice} onChange={e => setForm({ ...form, costPrice: parseFloat(e.target.value) || 0 })} />
+                            <input type="text" inputMode="decimal" value={form.costPrice || ''} onChange={e => setForm({ ...form, costPrice: parseFloat(e.target.value) || 0 })} />
                         </div>
 
                         <div className="form-grid-2" style={{ marginBottom: 12 }}>
                             <div className="input-group">
                                 <label>Low Stock Warning</label>
-                                <input type="text" inputMode="numeric" value={form.lowStockWarning} onChange={e => setForm({ ...form, lowStockWarning: parseInt(e.target.value) || 0 })} />
+                                <input type="text" inputMode="numeric" value={form.lowStockWarning || ''} onChange={e => setForm({ ...form, lowStockWarning: parseInt(e.target.value) || 0 })} />
                             </div>
                             <div className="input-group">
                                 <label>Total Quantity</label>
@@ -2290,7 +2290,7 @@ export function EditInventoryModal({ item, minQuantity, onSave, onClose, product
                                             <input
                                                 type="number"
                                                 min="0"
-                                                value={colorQuantities[c] || 0}
+                                                value={colorQuantities[c] || ''}
                                                 onChange={e => updateColorQuantity(c, parseInt(e.target.value) || 0)}
                                             />
                                         </div>
@@ -2353,7 +2353,7 @@ export function EditInventoryModal({ item, minQuantity, onSave, onClose, product
                                             <input
                                                 type="number"
                                                 min="0"
-                                                value={sizeQuantities[s] || 0}
+                                                value={sizeQuantities[s] || ''}
                                                 onChange={e => updateSizeQuantity(s, parseInt(e.target.value) || 0)}
                                             />
                                         </div>
@@ -2625,7 +2625,7 @@ export function SaleModal({ inventory, storeName, isAdmin, storeNames, onAdd, on
                                                 <input
                                                     type="number"
                                                     min="0"
-                                                    value={sizeQuantities[size] || 0}
+                                                    value={sizeQuantities[size] || ''}
                                                     onChange={e => updateSizeQuantity(size, parseInt(e.target.value) || 0)}
                                                     style={{ padding: '8px 12px', fontSize: 14 }}
                                                 />
@@ -2647,7 +2647,7 @@ export function SaleModal({ inventory, storeName, isAdmin, storeNames, onAdd, on
                                                 <input
                                                     type="number"
                                                     min="0"
-                                                    value={colorQuantities[color] || 0}
+                                                    value={colorQuantities[color] || ''}
                                                     onChange={e => updateColorQuantity(color, parseInt(e.target.value) || 0)}
                                                     style={{ padding: '8px 12px', fontSize: 14 }}
                                                 />
@@ -2662,7 +2662,7 @@ export function SaleModal({ inventory, storeName, isAdmin, storeNames, onAdd, on
                                 <input
                                     type="text"
                                     inputMode="numeric"
-                                    value={hasAnyVariantBreakdown ? totalQuantity : sale.quantity}
+                                    value={(hasAnyVariantBreakdown ? totalQuantity : sale.quantity) || ''}
                                     readOnly={hasAnyVariantBreakdown}
                                     onChange={e => setSale({ ...sale, quantity: parseInt(e.target.value) || 0 })}
                                     style={hasAnyVariantBreakdown ? { background: 'var(--surface-2)', cursor: 'default' } : undefined}
@@ -2680,7 +2680,7 @@ export function SaleModal({ inventory, storeName, isAdmin, storeNames, onAdd, on
                                 <input
                                     type="text"
                                     inputMode="numeric"
-                                    value={sale.extraQty}
+                                    value={sale.extraQty || ''}
                                     onChange={e => setSale({ ...sale, extraQty: parseInt(e.target.value) || 0 })}
                                 />
                             </div>
@@ -2691,7 +2691,7 @@ export function SaleModal({ inventory, storeName, isAdmin, storeNames, onAdd, on
                                 <input
                                     type="text"
                                     inputMode="decimal"
-                                    value={sale.sellingPrice}
+                                    value={sale.sellingPrice || ''}
                                     onChange={e => setSale({ ...sale, sellingPrice: parseFloat(e.target.value) || 0 })}
                                     style={{ fontWeight: 700 }}
                                 />
@@ -2708,8 +2708,7 @@ export function SaleModal({ inventory, storeName, isAdmin, storeNames, onAdd, on
                                 <input
                                     type="text"
                                     inputMode="decimal"
-                                    placeholder="0"
-                                    value={sale.shipmentCost}
+                                    value={sale.shipmentCost || ''}
                                     onChange={e => setSale({ ...sale, shipmentCost: parseFloat(e.target.value) || 0 })}
                                     style={{ border: '1px solid var(--danger)' }}
                                 />
@@ -2721,8 +2720,7 @@ export function SaleModal({ inventory, storeName, isAdmin, storeNames, onAdd, on
                                 <input
                                     type="text"
                                     inputMode="decimal"
-                                    placeholder="0"
-                                    value={sale.extraCharges}
+                                    value={sale.extraCharges || ''}
                                     onChange={e => setSale({ ...sale, extraCharges: parseFloat(e.target.value) || 0 })}
                                     style={{ border: '1px solid var(--danger)' }}
                                 />
@@ -2771,7 +2769,7 @@ export function SaleModal({ inventory, storeName, isAdmin, storeNames, onAdd, on
                                 </div>
                             )}
                             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderTop: '1px solid #eee', paddingTop: 8 }}>
-                                <span style={{ color: '#000', fontSize: '12px', fontWeight: 700, textTransform: 'uppercase' }}>Final Net Payable (Rs):</span>
+                                <span style={{ color: 'var(--text-head)', fontSize: '12px', fontWeight: 700, textTransform: 'uppercase' }}>Final Net Payable (Rs):</span>
                                 <span style={{ fontSize: '18px', fontWeight: 900, color: 'var(--success)' }}>Rs {netPayable.toLocaleString()}</span>
                             </div>
                         </div>
@@ -3142,7 +3140,7 @@ export function CartModal({ inventory, storeName, isAdmin, storeNames, onAdd, on
                                             {availableSizes.map(([size, qty]) => (
                                                 <div key={size} style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
                                                     <label style={{ fontSize: 11, fontWeight: 700, color: 'var(--text-muted)' }}>{size} <span style={{ fontSize: 10 }}>(max: {qty})</span></label>
-                                                    <input type="number" min="0" value={sizeQuantities[size] || 0} onChange={e => updateSizeQuantity(size, parseInt(e.target.value) || 0)} style={{ padding: '6px 10px', fontSize: 13 }} />
+                                                    <input type="number" min="0" value={sizeQuantities[size] || ''} onChange={e => updateSizeQuantity(size, parseInt(e.target.value) || 0)} style={{ padding: '6px 10px', fontSize: 13 }} />
                                                 </div>
                                             ))}
                                         </div>
@@ -3156,7 +3154,7 @@ export function CartModal({ inventory, storeName, isAdmin, storeNames, onAdd, on
                                             {availableColors.map(([color, qty]) => (
                                                 <div key={color} style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
                                                     <label style={{ fontSize: 11, fontWeight: 700, color: 'var(--text-muted)' }}>{color} <span style={{ fontSize: 10 }}>(max: {qty})</span></label>
-                                                    <input type="number" min="0" value={colorQuantities[color] || 0} onChange={e => updateColorQuantity(color, parseInt(e.target.value) || 0)} style={{ padding: '6px 10px', fontSize: 13 }} />
+                                                    <input type="number" min="0" value={colorQuantities[color] || ''} onChange={e => updateColorQuantity(color, parseInt(e.target.value) || 0)} style={{ padding: '6px 10px', fontSize: 13 }} />
                                                 </div>
                                             ))}
                                         </div>
@@ -3165,20 +3163,20 @@ export function CartModal({ inventory, storeName, isAdmin, storeNames, onAdd, on
 
                                 <div className="input-group">
                                     <label>Qty</label>
-                                    <input type="number" min="0" value={hasAnyVariantBreakdown ? itemTotalQty : itemQty} readOnly={hasAnyVariantBreakdown} onChange={e => setItemQty(parseInt(e.target.value) || 0)} style={hasAnyVariantBreakdown ? { background: 'var(--surface-2)', cursor: 'default' } : undefined} />
+                                    <input type="number" min="0" value={(hasAnyVariantBreakdown ? itemTotalQty : itemQty) || ''} readOnly={hasAnyVariantBreakdown} onChange={e => setItemQty(parseInt(e.target.value) || 0)} style={hasAnyVariantBreakdown ? { background: 'var(--surface-2)', cursor: 'default' } : undefined} />
                                     {hasAnyVariantBreakdown && <div style={{ fontSize: 10, marginTop: 2, color: 'var(--text-muted)' }}>Auto-calculated</div>}
                                 </div>
 
                                 {isAdmin && (
                                     <div className="input-group">
                                         <label>Extra Qty <span style={{ fontSize: '10px', fontWeight: 400, color: '#8c8c8c' }}>(bonus)</span></label>
-                                        <input type="number" min="0" value={itemExtraQty} onChange={e => setItemExtraQty(parseInt(e.target.value) || 0)} />
+                                        <input type="number" min="0" value={itemExtraQty || ''} onChange={e => setItemExtraQty(parseInt(e.target.value) || 0)} />
                                     </div>
                                 )}
 
                                 <div className="input-group">
                                     <label>Price ({currency})</label>
-                                    <input type="number" min="0" step="0.01" value={itemPrice === 0 ? '' : itemPrice} placeholder={isAdmin ? '0' : 'Enter the price you sold it for'} onChange={e => setItemPrice(parseFloat(e.target.value) || 0)} style={{ fontWeight: 700 }} />
+                                    <input type="number" min="0" step="0.01" value={itemPrice === 0 ? '' : itemPrice} placeholder={isAdmin ? undefined : 'Enter the price you sold it for'} onChange={e => setItemPrice(parseFloat(e.target.value) || 0)} style={{ fontWeight: 700 }} />
                                     {currency === 'GBP' && <div style={{ fontSize: 10, color: 'var(--success)', marginTop: 2, fontWeight: 600 }}>≈ Rs {(itemPrice * gbpRate).toLocaleString()}</div>}
                                 </div>
 
@@ -3261,11 +3259,11 @@ export function CartModal({ inventory, storeName, isAdmin, storeNames, onAdd, on
                                     <>
                                         <div className="input-group" style={{ marginBottom: 4 }}>
                                             <label style={{ fontSize: 11 }}>Shipment Cost (PKR)</label>
-                                            <input type="number" min="0" step="0.01" value={shipmentCost} onChange={e => setShipmentCost(parseFloat(e.target.value) || 0)} style={{ border: '1px solid var(--danger)', fontSize: 13 }} />
+                                            <input type="number" min="0" step="0.01" value={shipmentCost || ''} onChange={e => setShipmentCost(parseFloat(e.target.value) || 0)} style={{ border: '1px solid var(--danger)', fontSize: 13 }} />
                                         </div>
                                         <div className="input-group" style={{ marginBottom: 4 }}>
                                             <label style={{ fontSize: 11 }}>Extra Charges (PKR)</label>
-                                            <input type="number" min="0" step="0.01" value={extraCharges} onChange={e => setExtraCharges(parseFloat(e.target.value) || 0)} style={{ border: '1px solid var(--danger)', fontSize: 13 }} />
+                                            <input type="number" min="0" step="0.01" value={extraCharges || ''} onChange={e => setExtraCharges(parseFloat(e.target.value) || 0)} style={{ border: '1px solid var(--danger)', fontSize: 13 }} />
                                         </div>
                                     </>
                                 )}
@@ -4132,7 +4130,7 @@ export function AllotToStoreModal({ onSave, onClose, stores, inventory, allotedQ
                                     <input
                                         type="text"
                                         inputMode="numeric"
-                                        value={form.quantity}
+                                        value={form.quantity || ''}
                                         onChange={(e) => setForm({ ...form, quantity: parseInt(e.target.value) || 0 })}
                                         placeholder="Enter total for equal distribution"
                                     />
@@ -4140,7 +4138,7 @@ export function AllotToStoreModal({ onSave, onClose, stores, inventory, allotedQ
                                     <input
                                         type="text"
                                         inputMode="numeric"
-                                        value={form.quantity}
+                                        value={form.quantity || ''}
                                         onChange={(e) => setForm({ ...form, quantity: parseInt(e.target.value) || 0 })}
                                         required
                                     />
@@ -4203,7 +4201,7 @@ export function AllotToStoreModal({ onSave, onClose, stores, inventory, allotedQ
                                                 type="number" 
                                                 min="0"
                                                 max={availableQty as number}
-                                                value={form.sizeQuantitiesAssigned[size] || 0}
+                                                value={form.sizeQuantitiesAssigned[size] || ''}
                                                 onChange={e => updateSizeQuantity(size, parseInt(e.target.value) || 0)}
                                             />
                                         </div>
@@ -4240,7 +4238,7 @@ export function AllotToStoreModal({ onSave, onClose, stores, inventory, allotedQ
                                                 type="number"
                                                 min="0"
                                                 max={availableQty as number}
-                                                value={form.colorQuantitiesAssigned[color] || 0}
+                                                value={form.colorQuantitiesAssigned[color] || ''}
                                                 onChange={e => updateColorQuantity(color, parseInt(e.target.value) || 0)}
                                             />
                                         </div>
@@ -4257,9 +4255,8 @@ export function AllotToStoreModal({ onSave, onClose, stores, inventory, allotedQ
                             <input
                                 type="text"
                                 inputMode="decimal"
-                                value={form.commissionPercent}
+                                value={form.commissionPercent || ''}
                                 onChange={(e) => setForm({ ...form, commissionPercent: parseFloat(e.target.value) || 0 })}
-                                required
                             />
                         </div>
 
@@ -4271,9 +4268,8 @@ export function AllotToStoreModal({ onSave, onClose, stores, inventory, allotedQ
                                 <input
                                     type="text"
                                     inputMode="numeric"
-                                    value={form.extraQty}
+                                    value={form.extraQty || ''}
                                     onChange={(e) => setForm({ ...form, extraQty: parseInt(e.target.value) || 0 })}
-                                    placeholder="0"
                                 />
                                 {Number(form.extraQty) > 0 && Number(selectedInv?.costPrice) > 0 && (
                                     <div style={{ fontSize: 11, marginTop: 4, fontWeight: 600, color: 'var(--danger)' }}>
@@ -4670,7 +4666,7 @@ export function SaleReturnModal({ order, onConfirm, onClose }: SaleReturnModalPr
                                         <label style={{ fontSize: 11, fontWeight: 600, display: 'block', marginBottom: 3 }}>{size}</label>
                                         <input
                                             type="number" min={0} max={remainingSizeQuantities![size]}
-                                            value={sizeInputs[size] ?? 0}
+                                            value={sizeInputs[size] || ''}
                                             onChange={e => setSizeInputs(prev => ({ ...prev, [size]: Math.min(remainingSizeQuantities![size], Math.max(0, Number(e.target.value))) }))}
                                             style={{ width: '100%' }}
                                         />
@@ -4690,7 +4686,7 @@ export function SaleReturnModal({ order, onConfirm, onClose }: SaleReturnModalPr
                                         <label style={{ fontSize: 11, fontWeight: 600, display: 'block', marginBottom: 3 }}>{color}</label>
                                         <input
                                             type="number" min={0} max={remainingColorQuantities![color]}
-                                            value={colorInputs[color] ?? 0}
+                                            value={colorInputs[color] || ''}
                                             onChange={e => setColorInputs(prev => ({ ...prev, [color]: Math.min(remainingColorQuantities![color], Math.max(0, Number(e.target.value))) }))}
                                             style={{ width: '100%' }}
                                         />
@@ -5212,7 +5208,7 @@ export function SaleRefundModal({ order, onConfirm, onClose }: SaleRefundModalPr
                                                 <label style={{ fontSize: 11, fontWeight: 600, display: 'block', marginBottom: 3 }}>{size}</label>
                                                 <input
                                                     type="number" min={0} max={remainingSizeQuantities![size]}
-                                                    value={sizeInputs[size] ?? 0}
+                                                    value={sizeInputs[size] || ''}
                                                     onChange={e => setSizeInputs(prev => ({ ...prev, [size]: Math.min(remainingSizeQuantities![size], Math.max(0, Number(e.target.value))) }))}
                                                     style={{ width: '100%' }}
                                                 />
@@ -5231,7 +5227,7 @@ export function SaleRefundModal({ order, onConfirm, onClose }: SaleRefundModalPr
                                                 <label style={{ fontSize: 11, fontWeight: 600, display: 'block', marginBottom: 3 }}>{color}</label>
                                                 <input
                                                     type="number" min={0} max={remainingColorQuantities![color]}
-                                                    value={colorInputs[color] ?? 0}
+                                                    value={colorInputs[color] || ''}
                                                     onChange={e => setColorInputs(prev => ({ ...prev, [color]: Math.min(remainingColorQuantities![color], Math.max(0, Number(e.target.value))) }))}
                                                     style={{ width: '100%' }}
                                                 />
@@ -5610,7 +5606,7 @@ export function ReturnToWarehouseModal({ allotment, onConfirm, onClose }: Return
                                         <label style={{ fontSize: 11, fontWeight: 600, display: 'block', marginBottom: 3 }}>{size} (max {baseSizes![size]})</label>
                                         <input
                                             type="number" min={0} max={baseSizes![size]}
-                                            value={sizeInputs[size] ?? 0}
+                                            value={sizeInputs[size] || ''}
                                             onChange={e => setSizeInputs(prev => ({ ...prev, [size]: Math.min(baseSizes![size], Math.max(0, Number(e.target.value))) }))}
                                         />
                                     </div>
@@ -5629,7 +5625,7 @@ export function ReturnToWarehouseModal({ allotment, onConfirm, onClose }: Return
                                         <label style={{ fontSize: 11, fontWeight: 600, display: 'block', marginBottom: 3 }}>{color} (max {baseColors![color]})</label>
                                         <input
                                             type="number" min={0} max={baseColors![color]}
-                                            value={colorInputs[color] ?? 0}
+                                            value={colorInputs[color] || ''}
                                             onChange={e => setColorInputs(prev => ({ ...prev, [color]: Math.min(baseColors![color], Math.max(0, Number(e.target.value))) }))}
                                         />
                                     </div>
