@@ -22,7 +22,11 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 
     if (!(await canReveal(session, account))) return res.status(403).json({ error: 'Forbidden' });
 
-    return res.json({ success: true, username: account.username, password: account.plain_password || null });
+    if (!account.plain_password) {
+      return res.status(404).json({ error: `No password stored for "${account.username}". Set one via the Edit button.` });
+    }
+
+    return res.json({ success: true, username: account.username, password: account.plain_password });
   } catch (e) {
     console.error('reveal-password error');
     return res.status(500).json({ error: 'Internal server error' });
